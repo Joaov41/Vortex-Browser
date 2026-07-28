@@ -20,6 +20,12 @@ The project includes:
 
 Swift package dependencies are pinned in `Browser.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
 
+## Website and policies
+
+- [Vortex Browser website](https://joaov41.github.io/Vortex-Browser/)
+- [Privacy Policy](https://joaov41.github.io/Vortex-Browser/privacy/)
+- [Terms of Service](https://joaov41.github.io/Vortex-Browser/terms/)
+
 ## Local gateway
 
 The optional gateway binds to the local network and generates a fresh bearer token when it starts:
