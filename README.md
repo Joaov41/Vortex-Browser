@@ -29,3 +29,7 @@ The optional gateway binds to the local network and generates a fresh bearer tok
 ```
 
 Keep generated tokens and signing credentials out of source control.
+
+## License
+
+Copyright © 2026 Joao Valente. All rights reserved. See [LICENSE](LICENSE).
