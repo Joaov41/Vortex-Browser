@@ -32,4 +32,6 @@ Keep generated tokens and signing credentials out of source control.
 
 ## License
 
-Copyright © 2026 Joao Valente. All rights reserved. See [LICENSE](LICENSE).
+MIT License. You may use, modify, and distribute this code as long as the
+copyright and license notice crediting Joao Valente are retained. See
+[LICENSE](LICENSE).
