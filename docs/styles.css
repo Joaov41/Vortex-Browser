@@ -7,6 +7,10 @@
   --line: #dfe3e8;
   --surface: #f6f8fb;
   --page: #ffffff;
+  --body-text: #343942;
+  --feature-band: #f3f7ff;
+  --media-border: #cdd2d9;
+  --media-shadow: 0 24px 70px rgba(20, 30, 50, 0.15);
   --max-width: 1120px;
 }
 
@@ -147,7 +151,7 @@ a:focus-visible {
 .product-hero-copy > p {
   max-width: 540px;
   margin: 1.7rem 0 0;
-  color: #343942;
+  color: var(--body-text);
   font-size: clamp(1.12rem, 1.8vw, 1.35rem);
   line-height: 1.55;
 }
@@ -204,9 +208,9 @@ a:focus-visible {
   display: block;
   width: 100%;
   height: auto;
-  border: 1px solid #cdd2d9;
+  border: 1px solid var(--media-border);
   border-radius: 22px;
-  box-shadow: 0 24px 70px rgba(20, 30, 50, 0.15);
+  box-shadow: var(--media-shadow);
 }
 
 .feature-rail {
@@ -290,7 +294,7 @@ a:focus-visible {
 .plain-feature-list li {
   position: relative;
   padding-left: 1.65rem;
-  color: #343942;
+  color: var(--body-text);
 }
 
 .plain-feature-list li + li {
@@ -307,8 +311,8 @@ a:focus-visible {
 
 .phone-story {
   grid-template-columns: minmax(0, 1fr) minmax(240px, 0.72fr);
-  background: #f3f7ff;
-  box-shadow: 50vw 0 #f3f7ff, -50vw 0 #f3f7ff;
+  background: var(--feature-band);
+  box-shadow: 50vw 0 var(--feature-band), -50vw 0 var(--feature-band);
 }
 
 .phone-pair {
@@ -330,9 +334,9 @@ a:focus-visible {
   display: block;
   width: 100%;
   height: auto;
-  border: 1px solid #d5d9df;
+  border: 1px solid var(--media-border);
   border-radius: 28px;
-  box-shadow: 0 24px 60px rgba(20, 30, 50, 0.13);
+  box-shadow: var(--media-shadow);
 }
 
 .tabs-section {
@@ -447,7 +451,7 @@ h1 {
 .hero p {
   max-width: 720px;
   margin: 0;
-  color: #343942;
+  color: var(--body-text);
   font-size: clamp(1.15rem, 2.2vw, 1.45rem);
   line-height: 1.48;
 }
@@ -539,7 +543,7 @@ h1 {
 
 .document-content p,
 .document-content li {
-  color: #343942;
+  color: var(--body-text);
 }
 
 .document-content ul {
@@ -573,6 +577,38 @@ h1 {
 
 .site-footer p {
   margin: 0;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --accent: #78a9ff;
+    --accent-dark: #a9c8ff;
+    --ink: #f3f5f8;
+    --muted: #aeb6c2;
+    --line: #303640;
+    --surface: #181c22;
+    --page: #0b0d10;
+    --body-text: #c6ccd5;
+    --feature-band: #111824;
+    --media-border: #3a424e;
+    --media-shadow: 0 24px 70px rgba(0, 0, 0, 0.46);
+  }
+
+  .primary-action {
+    background: #2f6fe8;
+    color: #fff;
+  }
+
+  .primary-action:hover {
+    background: #4784ef;
+    color: #fff;
+  }
+
+  .skip-link {
+    background: var(--ink);
+    color: var(--page);
+  }
 }
 
 @media (max-width: 760px) {
