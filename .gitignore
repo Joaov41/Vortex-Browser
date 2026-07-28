@@ -1,0 +1,40 @@
+# macOS and local editor state
+.DS_Store
+.claude/
+
+# Xcode user and build state
+**/xcuserdata/
+*.xcuserstate
+DerivedData/
+.DerivedData/
+.derived/
+build/
+
+# Swift package caches
+.build/
+.build-cache/
+.spm/
+.spm-checkouts/
+
+# Release artifacts and local signing configuration
+.asc/
+*.ipa
+*.xcarchive/
+*.mobileprovision
+*.p8
+*.p12
+*.cer
+*.csr
+*.key
+.env
+.env.*
+
+# Screenshots and local image exports
+screenshots_ready/
+images ipad/
+images iphone/
+logo.png
+
+# Local scratch and generated source aggregates
+corrected/
+all-swift-code.txt
