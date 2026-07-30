@@ -96,12 +96,15 @@ private struct PCCGatewayConfiguration {
 }
 
 private enum PCCGatewayError: LocalizedError {
+    case unavailableOnCurrentOS
     case invalidConfiguration(String)
     case httpStatus(Int, String)
     case emptyResponse
 
     var errorDescription: String? {
         switch self {
+        case .unavailableOnCurrentOS:
+            return "Apple PCC Gateway requires iOS 27 or later in this build."
         case .invalidConfiguration(let message):
             return message
         case .httpStatus(let status, let message):
@@ -755,6 +758,24 @@ enum AIModelBackend: String, CaseIterable {
     case webChatGPT
     case webGemini
 
+    var isAvailableInCurrentEnvironment: Bool {
+        switch self {
+        case .applePCCGateway:
+            #if DEBUG
+            return true
+            #else
+            if #available(iOS 27.0, *) {
+                return true
+            }
+            // TestFlight uses a sandbox receipt. Treat missing/unknown receipts
+            // as pre-release too, so an iOS 26 distribution cannot fail open.
+            return Bundle.main.appStoreReceiptURL?.lastPathComponent == "receipt"
+            #endif
+        default:
+            return true
+        }
+    }
+
     var displayName: String {
         switch self {
         case .localApple:
@@ -1077,7 +1098,12 @@ class SimpleAIService: ObservableObject {
     private init() {
         if let savedBackend = UserDefaults.standard.string(forKey: "selectedAIBackend"),
            let restored = AIModelBackend(rawValue: savedBackend) {
-            self.backend = restored
+            if restored.isAvailableInCurrentEnvironment {
+                self.backend = restored
+            } else {
+                self.backend = .localApple
+                UserDefaults.standard.set(AIModelBackend.localApple.rawValue, forKey: "selectedAIBackend")
+            }
         }
         self.pccGatewayToken = BrowserAIKeychain.string(for: "token") ?? ""
     }
@@ -1098,6 +1124,9 @@ class SimpleAIService: ObservableObject {
     }
 
     private func makePCCGatewayClient() throws -> PCCGatewayClient {
+        guard AIModelBackend.applePCCGateway.isAvailableInCurrentEnvironment else {
+            throw PCCGatewayError.unavailableOnCurrentOS
+        }
         let host = pccGatewayHost.trimmingCharacters(in: .whitespacesAndNewlines)
         let model = pccGatewayModel.trimmingCharacters(in: .whitespacesAndNewlines)
         let config = PCCGatewayConfiguration(

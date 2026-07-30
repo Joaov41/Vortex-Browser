@@ -4183,7 +4183,11 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
-                    Text("Run scripts/start-fm-pcc-gateway.command on your Mac, then use this Mac IP from iPhone/iPad.")
+                    Text(
+                        AIModelBackend.applePCCGateway.isAvailableInCurrentEnvironment
+                            ? "Run scripts/start-fm-pcc-gateway.command on your Mac, then use this Mac IP from iPhone/iPad."
+                            : "Requires iOS 27 or later in TestFlight."
+                    )
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
@@ -4220,7 +4224,10 @@ struct ContentView: View {
                         }
                     }
                     .buttonStyle(.bordered)
-                    .disabled(isTestingPCCGateway)
+                    .disabled(
+                        isTestingPCCGateway
+                            || !AIModelBackend.applePCCGateway.isAvailableInCurrentEnvironment
+                    )
 
                     if let pccGatewayStatusMessage, !pccGatewayStatusMessage.isEmpty {
                         Text(pccGatewayStatusMessage)
@@ -4228,6 +4235,7 @@ struct ContentView: View {
                             .foregroundStyle(pccGatewayStatusMessage.lowercased().contains("failed") ? .red : .secondary)
                     }
                 }
+                .disabled(!AIModelBackend.applePCCGateway.isAvailableInCurrentEnvironment)
 
                 Divider()
 

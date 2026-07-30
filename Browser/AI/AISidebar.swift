@@ -342,9 +342,16 @@ struct AISidebar: View {
                 Spacer()
                 Picker("Model", selection: $aiService.backend) {
                     ForEach(AIModelBackend.allCases, id: \.self) { backend in
-                        Text(backend.displayName)
+                        Text(
+                            backend == .applePCCGateway && !backend.isAvailableInCurrentEnvironment
+                                ? "\(backend.displayName) (iOS 27+)"
+                                : backend.displayName
+                        )
                             .tag(backend)
-                            .disabled(backend == .mlxLocal && !mlxAvailable)
+                            .disabled(
+                                (backend == .mlxLocal && !mlxAvailable)
+                                    || !backend.isAvailableInCurrentEnvironment
+                            )
                     }
                 }
                 .pickerStyle(.menu)
