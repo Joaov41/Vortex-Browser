@@ -96,6 +96,39 @@ The token is stored in the user's Apple Keychain. The default host is `127.0.0.1
 - Stop the script when the gateway is not needed.
 - The local device-to-Mac connection uses HTTP with bearer-token authentication. Anyone who can reach the gateway and obtain the token could submit requests.
 
+## ChatGPT (OpenAI) and Gemini
+
+These options use the providers' websites inside Vortex. They do not use an OpenAI or Google API key, the Cloud Shortcut, or the Apple PCC Gateway.
+
+### Sign in
+
+1. Open Vortex settings.
+2. Tap **Log In to ChatGPT** or **Log In to Gemini**.
+3. Sign in on the provider's own page.
+4. Open the AI panel and choose **ChatGPT** or **Gemini** from **Model**.
+
+Vortex keeps that website session in its own in-app browser data store so it can be reused for later questions. It is separate from a Safari login. **Reset ChatGPT** or **Reset Gemini** clears the matching provider's website data from Vortex, so the user may need to sign in again.
+
+### Ask about a page
+
+When the user submits a question with ChatGPT or Gemini selected:
+
+1. Vortex combines the question with selected text or extracted visible page context when either is available.
+2. Vortex opens the selected provider's website inside the app.
+3. It inserts the combined prompt into the website and sends it.
+4. The provider generates the answer using the user's account and the options available on that website.
+5. Vortex attempts to capture the completed answer and show it in the AI panel.
+
+The provider, account plan and region determine which underlying model is used, what limits apply and which features are available. Vortex does not select or guarantee a particular ChatGPT or Gemini model.
+
+### Data and limitations
+
+- The question and any included selection or page context are sent to OpenAI or Google through the selected provider's website.
+- The provider's privacy policy, account settings, retention rules and safety rules apply.
+- Login credentials are entered on the provider's website. Vortex does not require a provider API key.
+- Vortex sends content only when the user submits a request using that backend.
+- Automatic prompt insertion and response capture depend on the provider's current website. A website update, login prompt or consent screen can interrupt the process. If capture fails, open the provider view to inspect the session and try again.
+
 ## Privacy summary
 
 - Local and MLX process requests on the device.

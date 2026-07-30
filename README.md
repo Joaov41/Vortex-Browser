@@ -37,7 +37,7 @@ Vortex has several independent AI backends. You choose one from **AI panel > Mod
 | Cloud | The provided Apple Intelligence Shortcut | [Install RSS Reader Cloud Summary](https://www.icloud.com/shortcuts/ffd100c18df34543a2c8ca25c321f6c6) |
 | Apple PCC Gateway | The user's own Mac gateway | TestFlight requires iOS 27 or later |
 | MLX | A compatible model downloaded to the device | Configure an MLX model in Vortex |
-| ChatGPT / Gemini | The provider's website in Vortex | Sign in to the provider |
+| ChatGPT (OpenAI) / Gemini | The provider's website inside Vortex | Sign in inside Vortex |
 
 ### TestFlight on iOS 26 and iOS 27
 
@@ -45,7 +45,9 @@ Vortex has several independent AI backends. You choose one from **AI panel > Mod
 - **iOS 27 or later:** Apple PCC Gateway can be selected and configured. Vortex does not include a developer gateway address or token. Each tester must run and secure their own gateway.
 - **Cloud is separate from Apple PCC Gateway.** Cloud runs the Shortcut named in Vortex. The user decides which model that Shortcut uses.
 
-See [Using AI models in Vortex](docs/AI_MODELS.md) for the complete Cloud Shortcut and Apple PCC Gateway setup.
+ChatGPT and Gemini use their normal websites, not an OpenAI or Google API key. Vortex can send your question with selected text or extracted page context, then attempts to bring the provider's response back into the AI panel.
+
+See [Using AI models in Vortex](docs/AI_MODELS.md) for the complete setup and privacy details for every backend.
 
 ## Local gateway script
 
