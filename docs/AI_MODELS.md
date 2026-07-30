@@ -31,27 +31,22 @@ Apple Intelligence must be supported by the device, enabled in Settings, and ava
 
 Cloud does not refer to a server operated by Vortex. It launches a Shortcut installed on the user's device, passes the question and selected page context to it as text, then waits for the Shortcut to copy its response to the clipboard.
 
-### Create the Shortcut
+### Install the provided Shortcut
 
-1. Open Apple's **Shortcuts** app and create a new shortcut.
-2. Name it `RSS Reader Cloud Summary`, or choose another name and enter that exact name in Vortex's **Shortcut name** field.
-3. Add the **Use Model** action.
-4. Set the action's input to **Shortcut Input**.
-5. Choose the model that should answer:
-   - **On-Device** for Apple's model on the device.
-   - **Private Cloud Compute** for Apple's PCC model.
-   - **Extension Model** for a supported extension such as ChatGPT.
-6. Leave **Follow Up** disabled so the Shortcut can finish without waiting for another interactive response.
-7. Add **Copy to Clipboard** after **Use Model** and set it to copy the model's response.
-8. Run the Shortcut once in Shortcuts and approve any requested Apple Intelligence, model or clipboard permissions.
+1. Open [RSS Reader Cloud Summary on iCloud](https://www.icloud.com/shortcuts/ffd100c18df34543a2c8ca25c321f6c6) on the iPhone or iPad.
+2. Tap **Get Shortcut**, then add it to Apple Shortcuts.
+3. Keep its name as `RSS Reader Cloud Summary`. This is the name Vortex expects by default.
+4. Run it once in Shortcuts and approve any requested Apple Intelligence or clipboard permissions.
 
-Apple documents the available model choices in [Use Apple Intelligence in Shortcuts on iPhone](https://support.apple.com/guide/iphone/iph78c41eaf8/ios).
+The shared Shortcut is already configured to accept Vortex's text as **Shortcut Input**, run Apple's **Use Model** action, copy the response to the clipboard, and return the result. Users do not need to assemble those actions manually.
+
+Users can inspect the Shortcut before adding it. They can also edit its **Use Model** action after installation if they want to select another model that Apple makes available on their device. Apple documents the available choices in [Use Apple Intelligence in Shortcuts on iPhone](https://support.apple.com/guide/iphone/iph78c41eaf8/ios).
 
 ### Use it in Vortex
 
 1. Open Vortex's AI panel.
 2. Choose **Cloud** from **Model**.
-3. Enter the Shortcut's exact name in **Shortcut name**.
+3. Leave **Shortcut name** set to `RSS Reader Cloud Summary`. If the Shortcut was renamed, enter its new name exactly.
 4. Ask a question or request a summary.
 5. Shortcuts opens and runs the configured model. Return to Vortex if iOS does not return automatically.
 

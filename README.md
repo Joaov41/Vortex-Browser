@@ -34,7 +34,7 @@ Vortex has several independent AI backends. You choose one from **AI panel > Mod
 | Model in Vortex | Where it runs | Extra setup |
 | --- | --- | --- |
 | Local | Apple Foundation Models on the device | Apple Intelligence must be available and enabled |
-| Cloud | A Shortcut created by the user | Create a Shortcut with a matching name |
+| Cloud | The provided Apple Intelligence Shortcut | [Install RSS Reader Cloud Summary](https://www.icloud.com/shortcuts/ffd100c18df34543a2c8ca25c321f6c6) |
 | Apple PCC Gateway | The user's own Mac gateway | TestFlight requires iOS 27 or later |
 | MLX | A compatible model downloaded to the device | Configure an MLX model in Vortex |
 | ChatGPT / Gemini | The provider's website in Vortex | Sign in to the provider |
