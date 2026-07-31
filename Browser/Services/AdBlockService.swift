@@ -23,6 +23,13 @@ struct FilterList: Codable, Identifiable {
 class AdBlockService: NSObject, ObservableObject {
     static let shared = AdBlockService()
 
+    // iOS 27 currently crashes inside WebKit while initializing or tearing down
+    // native content-extension rule trees. Keep the JavaScript blocker enabled
+    // there until that WebKit path is safe to use again.
+    private static var nativeContentRuleListsSupported: Bool {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27
+    }
+
     @Published var isEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "adBlockEnabled")
@@ -44,7 +51,7 @@ class AdBlockService: NSObject, ObservableObject {
     // Cached JavaScript needs regeneration when cosmetic selectors change
     private var cachedBlockingJavaScriptStorage: String?
 
-    private let contentRuleListStore: WKContentRuleListStore
+    private let contentRuleListStore: WKContentRuleListStore?
     private var activeRuleList: WKContentRuleList?
     private var customRuleList: WKContentRuleList?
     private var registeredWebViews: NSHashTable<WKWebView> = NSHashTable.weakObjects()
@@ -449,7 +456,9 @@ class AdBlockService: NSObject, ObservableObject {
     ]
 
     override init() {
-        self.contentRuleListStore = WKContentRuleListStore.default()!
+        self.contentRuleListStore = Self.nativeContentRuleListsSupported
+            ? WKContentRuleListStore.default()
+            : nil
         self.ruleCacheDirectoryURL = Self.makeRuleCacheDirectoryURL()
         let savedValue = UserDefaults.standard.object(forKey: "adBlockEnabled") as? Bool
         self.isEnabled = savedValue ?? true
@@ -469,6 +478,12 @@ class AdBlockService: NSObject, ObservableObject {
     func prepareAsync() {
         guard !isReady else { return }
         Task {
+            guard Self.nativeContentRuleListsSupported else {
+                // Native rules are intentionally bypassed on iOS 27+.
+                // The hardcoded JavaScript blocker remains active in each web view.
+                isReady = true
+                return
+            }
             await downloadMissingFilterLists()
             await loadContentBlockingRules()
             isReady = true
@@ -673,6 +688,13 @@ class AdBlockService: NSObject, ObservableObject {
     func clearCacheAndRecompile() async {
         isUpdatingFilters = true
 
+        guard Self.nativeContentRuleListsSupported,
+              let contentRuleListStore else {
+            cachedBlockingJavaScriptStorage = nil
+            isUpdatingFilters = false
+            return
+        }
+
         // 1. Clear WebKit website data cache (important: removes cached ad content)
         let dataStore = WKWebsiteDataStore.default()
         let dataTypes: Set<String> = [
@@ -863,6 +885,9 @@ class AdBlockService: NSObject, ObservableObject {
     }
 
     private func compileCustomRules() async {
+        guard Self.nativeContentRuleListsSupported,
+              let contentRuleListStore else { return }
+
         // Convert custom rules to WebKit content blocker format
         var jsonRules: [[String: Any]] = []
 
@@ -901,12 +926,14 @@ class AdBlockService: NSObject, ObservableObject {
         // Track WebView so we can apply rules later if they're not ready yet
         registeredWebViews.add(webView)
 
-        if let ruleList = activeRuleList {
-            webView.configuration.userContentController.add(ruleList)
-        }
+        if Self.nativeContentRuleListsSupported {
+            if let ruleList = activeRuleList {
+                webView.configuration.userContentController.add(ruleList)
+            }
 
-        if let customList = customRuleList {
-            webView.configuration.userContentController.add(customList)
+            if let customList = customRuleList {
+                webView.configuration.userContentController.add(customList)
+            }
         }
 
         // Add JavaScript to block ads and trackers (cached to avoid regenerating per webview)
@@ -1366,6 +1393,13 @@ class AdBlockService: NSObject, ObservableObject {
     }
 
     private func loadContentBlockingRules() async {
+        guard Self.nativeContentRuleListsSupported,
+              let contentRuleListStore else {
+            activeRuleList = nil
+            customRuleList = nil
+            return
+        }
+
         guard isEnabled else {
             activeRuleList = nil
             return

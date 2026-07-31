@@ -7,6 +7,12 @@ import Combine
 final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     static let shared = ThirdPartyCookieBlocker()
 
+    // Keep the iOS 27+ WebKit content-extension path disabled. The cookie
+    // pruning fallback below remains available when this setting is enabled.
+    private static var nativeRuleListsSupported: Bool {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27
+    }
+
     @AppStorage("blockThirdPartyCookies") var isEnabled: Bool = false {
         didSet {
             if isEnabled != oldValue {
@@ -21,13 +27,17 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
 
     private var registeredWebViews: NSHashTable<WKWebView> = NSHashTable.weakObjects()
     private var webViewHosts: [ObjectIdentifier: String] = [:]
-    private let contentRuleListStore = WKContentRuleListStore.default()
+    private let contentRuleListStore: WKContentRuleListStore?
     private let ruleListIdentifier = "thirdPartyCookieBlocker"
     private var ruleList: WKContentRuleList?
     private var supportsRuleList: Bool = true
 
     override init() {
+        self.contentRuleListStore = Self.nativeRuleListsSupported
+            ? WKContentRuleListStore.default()
+            : nil
         super.init()
+        supportsRuleList = Self.nativeRuleListsSupported
         if isEnabled {
             enableBlocking()
         }
@@ -58,6 +68,12 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     }
 
     private func enableBlocking() {
+        guard Self.nativeRuleListsSupported else {
+            supportsRuleList = false
+            pruneAllStores()
+            return
+        }
+
         if supportsRuleList {
             if let ruleList {
                 applyRuleListToAll(ruleList)
@@ -83,6 +99,7 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
 
     private func applyRuleListIfAvailable(to webView: WKWebView) {
         guard isEnabled else { return }
+        guard Self.nativeRuleListsSupported else { return }
         guard let ruleList else {
             Task { await loadRuleListIfNeeded() }
             return
@@ -103,7 +120,7 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     }
 
     private func loadRuleListIfNeeded() async {
-        if ruleList != nil || !supportsRuleList { return }
+        if ruleList != nil || !supportsRuleList || !Self.nativeRuleListsSupported { return }
         do {
             if let cached = try? await lookupContentRuleListAsync(forIdentifier: ruleListIdentifier) {
                 ruleList = cached
