@@ -58,9 +58,22 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
             webViewHosts[id] = nil
         }
 
-        guard shouldUseFallback else { return }
+        guard shouldUseFallback,
+              !SitePrivacyStore.shared.isCookieBlockingAllowed(for: url) else { return }
         let store = webView.configuration.websiteDataStore.httpCookieStore
         pruneCookies(in: store)
+    }
+
+    func setProtectionEnabled(_ enabled: Bool, for webView: WKWebView) {
+        guard isEnabled else { return }
+        if enabled {
+            applyRuleListIfAvailable(to: webView)
+            if shouldUseFallback {
+                pruneCookies(in: webView.configuration.websiteDataStore.httpCookieStore)
+            }
+        } else if let ruleList {
+            webView.configuration.userContentController.remove(ruleList)
+        }
     }
 
     private var shouldUseFallback: Bool {

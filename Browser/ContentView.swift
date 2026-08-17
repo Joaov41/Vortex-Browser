@@ -140,6 +140,11 @@ private struct GlassEffectCompatModifier<S: InsettableShape>: ViewModifier {
 }
 
 private extension View {
+    func browserToolbarControl() -> some View {
+        frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+    }
+
     @ViewBuilder
     func glassEffectCompat<S: InsettableShape>(
         in shape: S,
@@ -1263,337 +1268,6 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
 struct ContentView: View {
     private let shareAppURLScheme = "webmebrowser"
 
-    // MARK: - Single Tab Model (Class to avoid value-type copy issues)
-    @MainActor
-    final class BrowserTab: ObservableObject, Identifiable {
-        static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-        static let desktopUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-
-        let id = UUID()
-        @Published var title: String
-        @Published var address: String   // what's in the omnibox
-        @Published var url: URL?         // nil means "blank/new tab"
-        @Published var favicon: UIImage?
-        @Published var thumbnail: UIImage?  // High-res preview for sidebar
-        var lastThumbnailSize: CGSize = .zero
-        @Published var isIncognito: Bool = false
-        @Published var isReaderMode: Bool = false
-        @Published var isDarkMode: Bool = false
-        @Published var hasDarkModeOverride: Bool = false  // true when user explicitly set per-tab dark mode
-        var lastAppliedDarkMode: Bool?
-        @Published var canGoBack: Bool = false
-        @Published var canGoForward: Bool = false
-        var webAIProvider: WebAIProvider?
-        let webView: WKWebView
-        private var canGoBackObserver: NSKeyValueObservation?
-        private var canGoForwardObserver: NSKeyValueObservation?
-
-        init(title: String, url: URL? = nil, isIncognito: Bool = false, useDesktopUserAgent: Bool = false) {
-            self.title = title
-            self.url = url
-            self.address = url?.absoluteString ?? ""
-            self.isIncognito = isIncognito
-            
-            let config = WKWebViewConfiguration()
-            if isIncognito {
-                // Use non-persistent data store for incognito
-                config.websiteDataStore = .nonPersistent()
-                // Disable features that might open external apps
-                config.preferences.javaScriptCanOpenWindowsAutomatically = false
-                config.allowsAirPlayForMediaPlayback = false
-                // Important: Set link preview to prevent universal links
-                if #available(iOS 10.0, *) {
-                    config.dataDetectorTypes = []
-                }
-                
-                // CRITICAL: Add the incognito privacy script!
-                let privacyScript = WKUserScript(
-                    source: IncognitoMode.shared.getPrivacyScript(),
-                    injectionTime: .atDocumentStart,
-                    forMainFrameOnly: false
-                )
-                config.userContentController.addUserScript(privacyScript)
-            } else {
-                config.websiteDataStore = .default() // persistent cookies
-            }
-            
-            self.webView = AIWebView(frame: .zero, configuration: config)
-            
-            // Use mobile user agent for better readability on mobile devices
-            // This ensures Google and other sites serve mobile-optimized content with appropriate font sizes
-            self.webView.customUserAgent = useDesktopUserAgent ? Self.desktopUserAgent : Self.mobileUserAgent
-            
-            // For incognito, prevent all external app launches
-            if isIncognito {
-                self.webView.allowsLinkPreview = false
-            }
-            self.webView.allowsBackForwardNavigationGestures = true
-            
-            // Configure services
-            AdBlockService.shared.configureWebView(self.webView)
-            if !isIncognito {
-                PasswordManager.shared.configureWebView(self.webView)
-            }
-            DarkModeService.shared.configureWebView(self.webView)
-            FontSizeService.shared.configureWebView(self.webView)
-
-            // Observe canGoBack/canGoForward for reactive UI updates (fixes SPA navigation like Reddit)
-            self.canGoBackObserver = self.webView.observe(\.canGoBack, options: [.new]) { [weak self] webView, _ in
-                Task { @MainActor in
-                    self?.canGoBack = webView.canGoBack
-                }
-            }
-            self.canGoForwardObserver = self.webView.observe(\.canGoForward, options: [.new]) { [weak self] webView, _ in
-                Task { @MainActor in
-                    self?.canGoForward = webView.canGoForward
-                }
-            }
-
-            // Defer loading until the WebViewHost attaches delegates.
-        }
-
-        var isBlank: Bool { url == nil && webView.url == nil }
-    }
-
-    // MARK: - Favorite Model
-    struct Favorite: Identifiable, Codable {
-        let id = UUID()
-        let title: String
-        let url: URL
-        let dateAdded: Date
-        var favicon: Data?
-    }
-
-    // MARK: - ViewModel
-    @MainActor
-    final class BrowserViewModel: ObservableObject {
-        @Published var tabs: [BrowserTab] = []
-        @Published var selectedTabID: UUID?
-        @Published var showSafari = false
-        @Published var safariURL: URL?
-        @Published var favorites: [Favorite] = []
-        var isSplitViewActive: Bool = false
-        private var useDesktopUserAgent = false
-
-        // Domains that should open in SFSafariViewController for auth
-        // Commented out to allow OAuth flows to complete in the main WebView
-        // let authDomains = ["login.microsoftonline.com", "accounts.google.com"]
-
-        init() {
-            // First tab: let's open Google by default (common startup)
-            let start = URL(string: "https://www.google.com")!
-            let first = BrowserTab(title: "Google", url: start, useDesktopUserAgent: useDesktopUserAgent)
-            tabs = [first]
-            selectedTabID = first.id
-            fetchFavicon(for: first)
-            loadFavorites()
-        }
-
-        var selectedIndex: Int? {
-            guard let id = selectedTabID else { return nil }
-            return tabs.firstIndex(where: { $0.id == id })
-        }
-
-        func setUserAgentPreference(_ useDesktop: Bool) {
-            useDesktopUserAgent = useDesktop
-            let userAgent = useDesktop ? BrowserTab.desktopUserAgent : BrowserTab.mobileUserAgent
-            for tab in tabs {
-                tab.webView.customUserAgent = userAgent
-            }
-        }
-
-        func addTabBlank() {
-            let googleURL = URL(string: "https://www.google.com")!
-            let tab = BrowserTab(title: "New Tab", url: googleURL, useDesktopUserAgent: useDesktopUserAgent)
-            tab.address = "https://www.google.com"
-            tabs.append(tab)
-            selectedTabID = tab.id
-        }
-
-        func openFavoriteInNewTab(_ favorite: Favorite) {
-            let tab = BrowserTab(title: favorite.title, url: favorite.url, useDesktopUserAgent: useDesktopUserAgent)
-            if let data = favorite.favicon, let image = UIImage(data: data) {
-                tab.favicon = image
-            }
-            tabs.append(tab)
-            selectedTabID = tab.id
-            if tab.favicon == nil {
-                fetchFavicon(for: tab)
-            }
-        }
-
-        func closeTab(_ tab: BrowserTab) {
-            if let idx = tabs.firstIndex(where: { $0.id == tab.id }) {
-                tabs.remove(at: idx)
-                // choose a sensible next selection
-                if tabs.isEmpty {
-                    // create a fresh tab if all closed
-                    let newTab = BrowserTab(title: "New Tab", url: URL(string: "https://www.google.com")!, useDesktopUserAgent: useDesktopUserAgent)
-                    tabs = [newTab]
-                    selectedTabID = newTab.id
-                } else {
-                    let newIdx = min(idx, tabs.count - 1)
-                    selectedTabID = tabs[newIdx].id
-                }
-            }
-        }
-
-        // MARK: - Navigation
-        func submitAddress(_ text: String, for tab: BrowserTab) {
-            guard let url = buildURL(from: text) else { return }
-            navigate(to: url, in: tab)
-        }
-
-        func navigate(to url: URL, in tab: BrowserTab) {
-            // Don't redirect incognito tabs to Safari for auth
-            if !tab.isIncognito && handleAuthIfNeeded(for: url) { return }
-            tab.url = url
-            tab.address = url.absoluteString
-
-            // Wait for ad block rules to be ready before loading (prevents race condition on fast devices)
-            if !AdBlockService.shared.isReady {
-                Task {
-                    // Wait up to 3 seconds for rules to compile
-                    for _ in 0..<30 {
-                        if AdBlockService.shared.isReady { break }
-                        try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
-                    }
-                    await MainActor.run {
-                        tab.webView.load(URLRequest(url: url))
-                    }
-                }
-            } else {
-                tab.webView.load(URLRequest(url: url))
-            }
-            fetchFavicon(for: tab)
-        }
-
-        // Parse omnibox text into URL or Google search
-        private func buildURL(from raw: String) -> URL? {
-            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { return nil }
-
-            // Already a valid URL with scheme
-            if let u = URL(string: trimmed), u.scheme != nil {
-                return u
-            }
-
-            // Looks like a host (contains a dot or is localhost) — prefix https
-            let lower = trimmed.lowercased()
-            if lower == "localhost" || trimmed.contains(".") {
-                return URL(string: "https://\(trimmed)")
-            }
-
-            // Otherwise treat as a Google search
-            let q = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            return URL(string: "https://www.google.com/search?q=\(q)")
-        }
-
-        // MARK: - Favicons & Auth
-        func fetchFavicon(for tab: BrowserTab) {
-            guard let host = tab.url?.host,
-                  let faviconURL = URL(string: "https://www.google.com/s2/favicons?domain=\(host)") else { return }
-            URLSession.shared.dataTask(with: faviconURL) { data, _, _ in
-                guard let data = data, let img = UIImage(data: data) else { return }
-                Task { @MainActor in tab.favicon = img }
-            }.resume()
-        }
-
-        // MARK: - Tab Thumbnail Capture
-        func captureTabThumbnail(for tab: BrowserTab, targetSize: CGSize? = nil) {
-            guard !tab.isBlank else { return }
-
-            let config = WKSnapshotConfiguration()
-            let thumbnailWidth: CGFloat = 280  // Sidebar width minus padding
-            let aspectRatio: CGFloat = 0.75    // 4:3 aspect ratio for preview
-            tab.webView.layoutIfNeeded()
-            let effectiveSize = targetSize ?? tab.webView.scrollView.bounds.size
-            guard effectiveSize.width > 1, effectiveSize.height > 1 else { return }
-            let size = effectiveSize
-
-            // Always snapshot at a stable width so thumbnails don't change when the tab is resized
-            // (e.g. entering split view), which can make the sidebar preview look "pushed" or cropped oddly.
-            config.snapshotWidth = NSNumber(value: Float(max(1, thumbnailWidth)))
-
-            tab.webView.takeSnapshot(with: config) { image, error in
-                guard let image = image else { return }
-                let scale = image.scale
-                let pixelWidth = image.size.width * scale
-                let pixelHeight = image.size.height * scale
-                let targetHeight = min(pixelHeight, pixelWidth * aspectRatio)
-                let cropRect = CGRect(x: 0, y: 0, width: pixelWidth, height: targetHeight)
-
-                let outputImage: UIImage
-                if let cgImage = image.cgImage,
-                   let cropped = cgImage.cropping(to: cropRect) {
-                    outputImage = UIImage(cgImage: cropped, scale: scale, orientation: image.imageOrientation)
-                } else {
-                    outputImage = image
-                }
-
-                Task { @MainActor in
-                    tab.lastThumbnailSize = size
-                    tab.thumbnail = outputImage
-                }
-            }
-        }
-
-        func handleAuthIfNeeded(for url: URL) -> Bool {
-            // Disabled to allow OAuth flows to complete in the main WebView
-            // This fixes Office 365 and other OAuth authentication
-            // if let host = url.host, authDomains.contains(where: { host.contains($0) }) {
-            //     safariURL = url
-            //     showSafari = true
-            //     return true
-            // }
-            return false
-        }
-
-        // MARK: - Favorites Management
-        func addToFavorites(_ tab: BrowserTab) {
-            guard let url = tab.url else { return }
-            // Check if already exists
-            if favorites.contains(where: { $0.url == url }) { return }
-            
-            var newFavorite = Favorite(
-                title: tab.title,
-                url: url,
-                dateAdded: Date()
-            )
-            
-            // Convert favicon UIImage to Data
-            if let favicon = tab.favicon {
-                newFavorite.favicon = favicon.pngData()
-            }
-            
-            favorites.append(newFavorite)
-            saveFavorites()
-        }
-        
-        func removeFromFavorites(_ favorite: Favorite) {
-            favorites.removeAll { $0.id == favorite.id }
-            saveFavorites()
-        }
-        
-        func isFavorite(_ url: URL?) -> Bool {
-            guard let url = url else { return false }
-            return favorites.contains { $0.url == url }
-        }
-        
-        private func saveFavorites() {
-            let encoder = JSONEncoder()
-            if let data = try? encoder.encode(favorites) {
-                UserDefaults.standard.set(data, forKey: "browser_favorites")
-            }
-        }
-        
-        private func loadFavorites() {
-            guard let data = UserDefaults.standard.data(forKey: "browser_favorites"),
-                  let decoded = try? JSONDecoder().decode([Favorite].self, from: data) else { return }
-            favorites = decoded
-        }
-    }
-
     private struct TabRowView<RowContent: View>: View {
         @ObservedObject var tab: BrowserTab
         let content: (BrowserTab) -> RowContent
@@ -1608,6 +1282,14 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @FocusState private var omniboxFocused: Bool
+    @ScaledMetric(relativeTo: .caption) private var scaledSidebarSectionFontSize: CGFloat = 13
+    @ScaledMetric(relativeTo: .body) private var scaledSidebarTitleFontSize: CGFloat = 16
+    @ScaledMetric(relativeTo: .caption) private var scaledSidebarSubtitleFontSize: CGFloat = 13
+    @ScaledMetric(relativeTo: .body) private var scaledSidebarIconFontSize: CGFloat = 15
+    @State private var tabSearchText = ""
+    @State private var selectedTabScope: BrowserTabScope = .all
+    @State private var showRecentlyClosedTabs = false
+    @State private var showTabGroupManager = false
     @State private var showAIPanel = false
     @State private var aiHasUnreadResponse = false
     @State private var aiQuery: String = ""
@@ -1643,7 +1325,7 @@ struct ContentView: View {
     private let splitDividerHitSize: CGFloat = 16
     @State private var isToolbarCollapsed: Bool = true
     @State private var isScrolling: Bool = false
-    private let toolbarPillHeight: CGFloat = 40
+    private let toolbarPillHeight: CGFloat = 44
     // New service states
     @StateObject private var adBlockService = AdBlockService.shared
     @StateObject private var passwordManager = PasswordManager.shared
@@ -1746,19 +1428,19 @@ struct ContentView: View {
     }
 
     private var sidebarSectionFontSize: CGFloat {
-        isNativeTouchDevice ? 13 : 12
+        isNativeTouchDevice ? scaledSidebarSectionFontSize : 12
     }
 
     private var sidebarTitleFontSize: CGFloat {
-        isNativeTouchDevice ? 16 : 14
+        isNativeTouchDevice ? scaledSidebarTitleFontSize : 14
     }
 
     private var sidebarSubtitleFontSize: CGFloat {
-        isNativeTouchDevice ? 13 : 12
+        isNativeTouchDevice ? scaledSidebarSubtitleFontSize : 12
     }
 
     private var sidebarIconFontSize: CGFloat {
-        isNativeTouchDevice ? 15 : 14
+        isNativeTouchDevice ? scaledSidebarIconFontSize : 14
     }
 
     private var sidebarPrimaryText: Color {
@@ -1883,21 +1565,30 @@ struct ContentView: View {
 
     private func toolbarCollapsedPill(for tab: BrowserTab) -> some View {
         HStack(spacing: 12) {
-            Button { tab.webView.goBack() } label: {
+            Button { tab.activateWebView().goBack() } label: {
                 Image(systemName: "chevron.left")
             }
+            .browserToolbarControl()
             .disabled(!tab.canGoBack)
 
-            Button { tab.webView.goForward() } label: {
+            Button { tab.activateWebView().goForward() } label: {
                 Image(systemName: "chevron.right")
             }
+            .browserToolbarControl()
             .disabled(!tab.canGoForward)
+
+            SitePrivacyShieldButton(
+                url: tab.currentURL,
+                webView: tab.activateWebView(),
+                onOpenAdBlockSettings: { showFilterListSettings = true }
+            )
 
             Button {
                 expandToolbar(focusOmnibox: true)
             } label: {
                 Image(systemName: "magnifyingglass")
             }
+            .browserToolbarControl()
         }
         .font(.system(size: 13, weight: .semibold))
         .foregroundColor(darkModeService.isDarkMode ? .white : .primary)
@@ -1967,7 +1658,7 @@ struct ContentView: View {
 
     private var activeAIContextStatusText: String? {
         guard let tab = activeAIContextTab,
-              let url = tab.webView.url ?? tab.url,
+              let url = tab.currentURL,
               PageContentExtractor.isRedditURL(url),
               let entry = cachedAIPageContentEntry(for: tab) else { return nil }
 
@@ -2020,9 +1711,98 @@ struct ContentView: View {
         let text: String
     }
 
+    private var hibernationProtectedTabIDs: Set<UUID> {
+        Set([vm.selectedTabID, splitPrimaryID, splitSecondaryID, aiContextTabID].compactMap { $0 })
+    }
+
+    private func refreshHibernationProtection() {
+        vm.updateProtectedTabIDs(hibernationProtectedTabIDs)
+    }
+
 
     var body: some View {
         mainLayout
+            .sheet(isPresented: $showRecentlyClosedTabs) {
+                RecentlyClosedTabsSheet(viewModel: vm)
+            }
+            .sheet(isPresented: $showTabGroupManager) {
+                TabGroupManagerSheet(viewModel: vm)
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase != .active {
+                    vm.saveSession()
+                } else {
+                    vm.activateSelectedTab()
+                    vm.enforceWebViewBudget()
+                }
+            }
+            .onChange(of: vm.selectedTabID) { _, _ in
+                refreshHibernationProtection()
+                vm.activateSelectedTab()
+            }
+            .onChange(of: splitPrimaryID) { _, _ in
+                refreshHibernationProtection()
+            }
+            .onChange(of: splitSecondaryID) { _, _ in
+                refreshHibernationProtection()
+            }
+            .onChange(of: vm.tabGroups) { _, groups in
+                if case .group(let id) = selectedTabScope,
+                   !groups.contains(where: { $0.id == id }) {
+                    selectedTabScope = .all
+                }
+            }
+            .overlay {
+                keyboardCommandButtons
+            }
+    }
+
+    private var keyboardCommandButtons: some View {
+        Group {
+            Button("New Tab") {
+                vm.addTabBlank()
+                expandToolbar(focusOmnibox: true)
+            }
+            .keyboardShortcut("t", modifiers: .command)
+
+            Button("Close Tab") {
+                if let index = vm.selectedIndex {
+                    performClose(vm.tabs[index])
+                }
+            }
+            .keyboardShortcut("w", modifiers: .command)
+
+            Button("Reopen Closed Tab") {
+                if let record = vm.recentlyClosedTabs.first {
+                    vm.reopenRecentlyClosed(record)
+                }
+            }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+
+            Button("Focus Address Bar") {
+                expandToolbar(focusOmnibox: true)
+            }
+            .keyboardShortcut("l", modifiers: .command)
+
+            Button("Go Back") {
+                selectedTab?.activateWebView().goBack()
+            }
+            .keyboardShortcut("[", modifiers: .command)
+
+            Button("Go Forward") {
+                selectedTab?.activateWebView().goForward()
+            }
+            .keyboardShortcut("]", modifiers: .command)
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0.001)
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
+    }
+
+    private var selectedTab: BrowserTab? {
+        guard let index = vm.selectedIndex else { return nil }
+        return vm.tabs[index]
     }
 
     @ViewBuilder
@@ -2126,6 +1906,7 @@ struct ContentView: View {
             syncAIContextSelection(previousSelectedTabID: previousSelected)
         }
         .onChange(of: aiContextTabID) { _ in
+            refreshHibernationProtection()
             if showAIPanel {
                 prepareAIContext()
             }
@@ -2157,6 +1938,8 @@ struct ContentView: View {
         }
         .onAppear {
             lastSelectedTabID = vm.selectedTabID
+            refreshHibernationProtection()
+            vm.activateSelectedTab()
             applyUserAgentPreference()
             setupSharedURLHandling()
             checkForSharedURL()
@@ -2325,7 +2108,7 @@ struct ContentView: View {
 
     @MainActor
     private func startCapturedWebAIRequest(provider: WebAIProvider, userPrompt: String, composedPrompt: String) {
-        aiService.prepareForNewContext(webProviderContextSourceTab()?.webView.url ?? webProviderContextSourceTab()?.url)
+        aiService.prepareForNewContext(webProviderContextSourceTab()?.currentURL)
         browserAIWebLog("startCapturedWebAIRequest prepare userChars=\(userPrompt.count) promptChars=\(composedPrompt.count) sourceContextChars=\(aiService.sourcePageContextText?.count ?? 0)")
         guard let requestID = aiService.beginExternalWebRequest(userMessage: userPrompt) else { return }
         browserAIWebLog("startCaptured request=\(requestID.uuidString.prefix(8)) provider=\(provider.displayName) userChars=\(userPrompt.count) promptChars=\(composedPrompt.count)")
@@ -2356,7 +2139,7 @@ struct ContentView: View {
 
         let sourceTab = webProviderContextSourceTab()
         if let sourceTab {
-            let contextURL = sourceTab.webView.url ?? sourceTab.url
+            let contextURL = sourceTab.currentURL
             webProviderContextTabID = sourceTab.id
             webProviderContextURLString = contextURL.map { normalizedContextURL($0) }
         } else {
@@ -2389,8 +2172,8 @@ struct ContentView: View {
             return
         }
 
-        let sourceWebView = sourceTab.webView
-        let contextURL = sourceTab.webView.url ?? sourceTab.url
+        let sourceWebView = sourceTab.activateWebView()
+        let contextURL = sourceTab.currentURL
         let sourceTabID = sourceTab.id
         let contextURLString = contextURL.map { normalizedContextURL($0) }
         Task {
@@ -2603,19 +2386,7 @@ struct ContentView: View {
             return
         }
 
-        // Build URL from shared string
-        let url: URL
-        if let directURL = URL(string: trimmed), directURL.scheme != nil {
-            // Already a valid URL with scheme
-            url = directURL
-        } else if trimmed.lowercased() == "localhost" || trimmed.contains(".") {
-            // Looks like a host - prefix https
-            url = URL(string: "https://\(trimmed)") ?? URL(string: "https://www.google.com/search?q=\(trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")!
-        } else {
-            // Treat as a Google search
-            let q = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
-            url = URL(string: "https://www.google.com/search?q=\(q)")!
-        }
+        guard let url = vm.destinationURL(from: trimmed) else { return }
 
         print("DEBUG: Opening new tab with URL: \(url)")
 
@@ -2654,6 +2425,12 @@ struct ContentView: View {
             onSummaryExtraction: { extractedContent in
                 if let tab = activeAIContextTab {
                     storeAIPageContent(extractedContent, for: tab)
+                }
+            },
+            onContextSelected: { id in
+                if let tab = vm.tabs.first(where: { $0.id == id }) {
+                    _ = tab.activateWebView()
+                    refreshHibernationProtection()
                 }
             }
         )
@@ -2730,6 +2507,7 @@ struct ContentView: View {
             newTab.favicon = image
         }
         vm.tabs.append(newTab)
+        vm.saveSession()
         splitPrimaryID = vm.selectedTabID
         splitSecondaryID = newTab.id
         splitSecondaryExternalTab = nil
@@ -2851,7 +2629,7 @@ struct ContentView: View {
         pendingWebProviderProvider = nil
         pendingWebProviderTargetID = nil
         pendingWebProviderContextOverride = nil
-        handleWebProviderPrompt(provider: provider, prompt: prompt, from: tab.webView, contextOverride: contextOverride)
+        handleWebProviderPrompt(provider: provider, prompt: prompt, from: tab.activateWebView(), contextOverride: contextOverride)
     }
 
     @MainActor
@@ -2875,7 +2653,7 @@ struct ContentView: View {
         pendingWebProviderProvider = nil
         pendingWebProviderTargetID = nil
         pendingWebProviderContextOverride = nil
-        providerTab.webView.load(URLRequest(url: provider.url))
+        providerTab.activateWebView().load(URLRequest(url: provider.url))
     }
 
     private func clearSplitView() {
@@ -2928,7 +2706,7 @@ struct ContentView: View {
             id: tab.id,
             title: title,
             subtitle: subtitle,
-            webView: tab.webView
+            webView: tab.liveWebView as WKWebView?
         )
     }
 
@@ -2967,7 +2745,7 @@ struct ContentView: View {
 
     @MainActor
     private func prepareAIContext() {
-        let contextURL = activeAIContextTab?.webView.url ?? activeAIContextTab?.url
+        let contextURL = activeAIContextTab?.currentURL
         aiService.prepareForNewContext(contextURL)
     }
 
@@ -3014,7 +2792,7 @@ struct ContentView: View {
         })();
         """
 
-        tab.webView.evaluateJavaScript(script) { result, _ in
+        tab.activateWebView().evaluateJavaScript(script) { result, _ in
             let selectedText = (result as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             guard !selectedText.isEmpty else { return }
             pendingAISelection = AISelection(tabID: tab.id, markerID: markerID, text: selectedText)
@@ -3040,7 +2818,7 @@ struct ContentView: View {
           return true;
         })();
         """
-        tab.webView.evaluateJavaScript(script, completionHandler: nil)
+        tab.activateWebView().evaluateJavaScript(script, completionHandler: nil)
     }
 
     private func clearAISelectionHighlight(_ selection: AISelection) {
@@ -3056,7 +2834,7 @@ struct ContentView: View {
           return true;
         })();
         """
-        tab.webView.evaluateJavaScript(script, completionHandler: nil)
+        tab.activateWebView().evaluateJavaScript(script, completionHandler: nil)
     }
 
     private func clearAISelectionContext() {
@@ -3082,9 +2860,9 @@ struct ContentView: View {
     }
 
     private func toggleReaderMode(for tab: BrowserTab) {
-        guard let url = tab.webView.url ?? tab.url else { return }
+        guard let url = tab.currentURL else { return }
         guard let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return }
-        tab.webView.evaluateJavaScript(ReaderModeService.toggleScript) { result, _ in
+        tab.activateWebView().evaluateJavaScript(ReaderModeService.toggleScript) { result, _ in
             let enabled = (result as? Bool) == true
             Task { @MainActor in
                 tab.isReaderMode = enabled
@@ -3101,14 +2879,15 @@ struct ContentView: View {
         }
 
         // Mark this webview as having a per-tab override so global toggle won't affect it
-        DarkModeService.shared.setOverride(for: tab.webView, hasOverride: true)
+        let webView = tab.activateWebView()
+        DarkModeService.shared.setOverride(for: webView, hasOverride: true)
 
         if tab.isDarkMode {
-            DarkModeService.shared.enableDarkMode(for: tab.webView)
+            DarkModeService.shared.enableDarkMode(for: webView)
         } else {
-            DarkModeService.shared.disableDarkMode(for: tab.webView)
+            DarkModeService.shared.disableDarkMode(for: webView)
         }
-        tab.webView.overrideUserInterfaceStyle = .light
+        webView.overrideUserInterfaceStyle = .light
         tab.lastAppliedDarkMode = tab.isDarkMode
     }
 
@@ -3121,7 +2900,7 @@ struct ContentView: View {
         let userAgent = useDesktop ? BrowserTab.desktopUserAgent : BrowserTab.mobileUserAgent
         vm.setUserAgentPreference(useDesktop)
         if let external = splitSecondaryExternalTab {
-            external.webView.customUserAgent = userAgent
+            external.activateWebView().customUserAgent = userAgent
         }
         reloadVisibleTabsForUserAgentChange()
     }
@@ -3136,8 +2915,8 @@ struct ContentView: View {
     }
 
     private func reloadTabIfNeeded(_ tab: BrowserTab?) {
-        guard let tab, tab.webView.url != nil else { return }
-        tab.webView.reload()
+        guard let tab, tab.currentURL != nil else { return }
+        tab.activateWebView().reload()
     }
 
     private var sidebarPanel: some View {
@@ -3171,13 +2950,29 @@ struct ContentView: View {
     private var sidebarContent: some View {
         ScrollView(showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 10) {
+                BrowserTabOrganizerHeader(
+                    searchText: $tabSearchText,
+                    selectedScope: $selectedTabScope,
+                    groups: vm.tabGroups,
+                    recentlyClosedCount: vm.recentlyClosedTabs.count,
+                    onManageGroups: { showTabGroupManager = true },
+                    onShowRecentlyClosed: { showRecentlyClosedTabs = true }
+                )
                 sidebarSectionHeader("Tabs", systemImage: "rectangle.on.rectangle")
                 sidebarNewTabRow
 
-                ForEach(vm.tabs) { tab in
+                ForEach(visibleSidebarTabs) { tab in
                     TabRowView(tab: tab) { observedTab in
                         tabRow(observedTab)
                     }
+                }
+
+                if visibleSidebarTabs.isEmpty {
+                    Text(tabSearchText.isEmpty ? "No tabs in this group." : "No matching tabs.")
+                        .font(.subheadline)
+                        .foregroundStyle(sidebarSecondaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
                 }
 
                 if !vm.favorites.isEmpty {
@@ -3204,6 +2999,10 @@ struct ContentView: View {
                 .font(.system(size: sidebarIconFontSize, weight: .semibold))
                 .foregroundColor(sidebarPrimaryText)
         }
+    }
+
+    private var visibleSidebarTabs: [BrowserTab] {
+        vm.tabs(matching: tabSearchText, scope: selectedTabScope)
     }
 
     private func sidebarSectionHeader(_ title: String, systemImage: String) -> some View {
@@ -3324,6 +3123,15 @@ struct ContentView: View {
                         .foregroundColor(sidebarSecondaryText)
                         .lineLimit(1)
                 }
+                if tab.showsHibernationIndicator {
+                    Image(systemName: "moon.zzz.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(sidebarSecondaryText)
+                        .frame(width: 24, height: 24)
+                        .background(Circle().fill(sidebarIconBackground))
+                        .accessibilityLabel("Sleeping tab")
+                        .accessibilityHint("Reloads when selected")
+                }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 10)
@@ -3356,6 +3164,20 @@ struct ContentView: View {
                         vm.addToFavorites(tab)
                     }
                     .disabled(tab.url == nil)
+                }
+                Menu("Move to Tab Group", systemImage: "folder") {
+                    Button {
+                        vm.move(tab, to: nil)
+                    } label: {
+                        Label("Ungrouped", systemImage: tab.groupID == nil ? "checkmark" : "tray")
+                    }
+                    ForEach(vm.tabGroups) { group in
+                        Button {
+                            vm.move(tab, to: group.id)
+                        } label: {
+                            Label(group.title, systemImage: tab.groupID == group.id ? "checkmark" : "folder")
+                        }
+                    }
                 }
                 Divider()
                 Button("Open in Split View Vertically") {
@@ -3692,7 +3514,7 @@ struct ContentView: View {
                 // Balance the layout
                 Button {
                     if let provider = tab.webAIProvider {
-                        tab.webView.load(URLRequest(url: provider.url))
+                        tab.activateWebView().load(URLRequest(url: provider.url))
                     }
                 } label: {
                     Image(systemName: "arrow.clockwise")
@@ -3980,13 +3802,22 @@ struct ContentView: View {
 
     private func toolbarView(for tab: BrowserTab) -> some View {
         HStack(spacing: 8) {
-            Button { tab.webView.goBack() } label: { Image(systemName: "chevron.left") }
+            Button { tab.activateWebView().goBack() } label: { Image(systemName: "chevron.left") }
+                .browserToolbarControl()
                 .disabled(!tab.canGoBack)
 
-            Button { tab.webView.goForward() } label: { Image(systemName: "chevron.right") }
+            Button { tab.activateWebView().goForward() } label: { Image(systemName: "chevron.right") }
+                .browserToolbarControl()
                 .disabled(!tab.canGoForward)
 
-            Button { tab.webView.reload() } label: { Image(systemName: "arrow.clockwise") }
+            Button { tab.activateWebView().reload() } label: { Image(systemName: "arrow.clockwise") }
+                .browserToolbarControl()
+
+            SitePrivacyShieldButton(
+                url: tab.currentURL,
+                webView: tab.activateWebView(),
+                onOpenAdBlockSettings: { showFilterListSettings = true }
+            )
 
             GlassTextField(
                 text: Binding(
@@ -4007,7 +3838,7 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(tab.isReaderMode ? "Exit reader mode" : "Enter reader mode")
-                    .disabled(tab.webView.url == nil && tab.url == nil)
+                    .disabled(tab.currentURL == nil)
                 )
             )
             .focused($omniboxFocused)
@@ -4018,6 +3849,7 @@ struct ContentView: View {
                 Image(systemName: "chevron.up")
                     .foregroundColor(.secondary)
             }
+            .browserToolbarControl()
 
             if passwordManager.showPasswordPrompt {
                 Button(action: {
@@ -4028,6 +3860,7 @@ struct ContentView: View {
                     Image(systemName: "key.fill")
                         .foregroundColor(.yellow)
                 }
+                .browserToolbarControl()
                 .help("Save password?")
             }
 
@@ -4074,6 +3907,24 @@ struct ContentView: View {
                 Text("Settings")
                     .font(.headline)
                     .padding(.bottom, 8)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("Default Search Engine", systemImage: "magnifyingglass")
+                    Picker("Default Search Engine", selection: $vm.defaultSearchEngine) {
+                        ForEach(BrowserSearchEngine.allCases) { engine in
+                            Text(engine.displayName).tag(engine)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                }
+
+                Text("Used for new tabs and searches typed in the address bar.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                Divider()
 
                 Toggle(isOn: $adBlockService.isEnabled) {
                     HStack {
@@ -4256,7 +4107,7 @@ struct ContentView: View {
                         Slider(value: $fontSizeService.baseFontSize, in: 10...24, step: 1) { _ in
                             if let idx = vm.selectedIndex {
                                 let tab = vm.tabs[idx]
-                                fontSizeService.applyFontSize(to: tab.webView)
+                                fontSizeService.applyFontSize(to: tab.activateWebView())
                             }
                         }
 
@@ -4579,7 +4430,7 @@ struct ContentView: View {
             default:
                 return
             }
-            aiService.prepareForNewContext(tab.webView.url ?? tab.url)
+            aiService.prepareForNewContext(tab.currentURL)
 
             if let selection, selection.tabID == tab.id {
                 clearAISelectionHighlight(selection)
@@ -4593,7 +4444,7 @@ struct ContentView: View {
             return
         }
 
-        aiService.prepareForNewContext(tab.webView.url ?? tab.url)
+        aiService.prepareForNewContext(tab.currentURL)
 
         if let selection, selection.tabID == tab.id {
             pendingAISelection = selection
@@ -4649,9 +4500,10 @@ struct ContentView: View {
                 contentText = cached
             } else {
                 browserAIFlowLog("sendAIQuery extracting page context from webView")
+                let webView = tab.activateWebView()
                 let extracted = await PageContentExtractor.extractContent(
-                    from: tab.webView,
-                    url: tab.webView.url ?? tab.url,
+                    from: webView,
+                    url: tab.currentURL,
                     preferFast: true
                 )
                 if let extracted {
@@ -4691,7 +4543,7 @@ struct ContentView: View {
 
         let sourceTab = webProviderContextSourceTab()
         if let sourceTab {
-            let contextURL = sourceTab.webView.url ?? sourceTab.url
+            let contextURL = sourceTab.currentURL
             webProviderContextTabID = sourceTab.id
             webProviderContextURLString = contextURL.map { normalizedContextURL($0) }
         } else {
@@ -4724,8 +4576,8 @@ struct ContentView: View {
             return
         }
 
-        let sourceWebView = sourceTab.webView
-        let contextURL = sourceTab.webView.url ?? sourceTab.url
+        let sourceWebView = sourceTab.activateWebView()
+        let contextURL = sourceTab.currentURL
         Task {
             let extracted = await PageContentExtractor.extractContent(from: sourceWebView, url: contextURL, preferFast: true)
             let pageText = extracted?.formattedForAIContext ?? ""
@@ -4791,7 +4643,7 @@ struct ContentView: View {
 
     private func webProviderTabID(for webView: WKWebView) -> UUID? {
         guard let external = splitSecondaryExternalTab else { return nil }
-        if external.webView === webView {
+        if external.liveWebView === webView {
             return external.id
         }
         return nil
@@ -4829,7 +4681,7 @@ struct ContentView: View {
     }
 
     private func cachedAIPageContentEntry(for tab: BrowserTab) -> AICachedPageContent? {
-        guard let url = tab.webView.url ?? tab.url else { return nil }
+        guard let url = tab.currentURL else { return nil }
         let key = normalizedContextURL(url)
         guard let entry = aiPageContentCache[tab.id] else { return nil }
         guard entry.urlKey == key else { return nil }
@@ -4837,7 +4689,7 @@ struct ContentView: View {
     }
 
     private func storeAIPageContent(_ content: PageContentExtractor.ExtractedPageContent, for tab: BrowserTab) {
-        guard let url = tab.webView.url ?? tab.url else { return }
+        guard let url = tab.currentURL else { return }
         let trimmed = content.formattedForAIContext.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         aiPageContentCache[tab.id] = AICachedPageContent(
@@ -4901,60 +4753,67 @@ struct ContentView: View {
         }
 
         func makeUIView(context: Context) -> WKWebView {
-            tab.webView.navigationDelegate = context.coordinator
-            tab.webView.uiDelegate = context.coordinator
-            tab.webView.scrollView.delegate = context.coordinator
-            tab.webView.scrollView.alwaysBounceVertical = true
-            tab.webView.scrollView.refreshControl = context.coordinator.refreshControl
-            if let aiWebView = tab.webView as? AIWebView {
+            let webView = tab.activateWebView()
+            webView.navigationDelegate = context.coordinator
+            webView.uiDelegate = context.coordinator
+            webView.scrollView.delegate = context.coordinator
+            webView.scrollView.alwaysBounceVertical = true
+            webView.scrollView.refreshControl = context.coordinator.refreshControl
+            if let aiWebView = webView as? AIWebView {
                 aiWebView.onAskAI = onAskAI
                 AIWebView.installAskAIMenu()
             }
-            ThirdPartyCookieBlocker.shared.register(webView: tab.webView)
-            context.coordinator.installWebProviderMessageHandler(on: tab.webView)
-            context.coordinator.installGestures(on: tab.webView)
-            if tab.webView.url == nil, let url = tab.url, !tab.webView.isLoading {
+            ThirdPartyCookieBlocker.shared.register(webView: webView)
+            context.coordinator.installWebProviderMessageHandler(on: webView)
+            context.coordinator.installGestures(on: webView)
+            if webView.url == nil, let url = tab.url, !webView.isLoading {
                 // Wait for ad block rules before loading (prevents race condition)
-                loadWhenReady(webView: tab.webView, url: url)
+                loadWhenReady(webView: webView, url: url)
             }
-            return tab.webView
+            return webView
         }
 
         func updateUIView(_ uiView: WKWebView, context: Context) {
-            if tab.webView.url == nil, let url = tab.url, !tab.webView.isLoading {
+            let webView = tab.liveWebView ?? tab.activateWebView()
+            webView.navigationDelegate = context.coordinator
+            webView.uiDelegate = context.coordinator
+            webView.scrollView.delegate = context.coordinator
+            context.coordinator.installWebProviderMessageHandler(on: webView)
+            context.coordinator.installGestures(on: webView)
+            if webView.url == nil, let url = tab.url, !webView.isLoading {
                 // Wait for ad block rules before loading (prevents race condition)
-                loadWhenReady(webView: tab.webView, url: url)
+                loadWhenReady(webView: webView, url: url)
             }
 
-            if tab.webView.scrollView.refreshControl !== context.coordinator.refreshControl {
-                tab.webView.scrollView.refreshControl = context.coordinator.refreshControl
+            if webView.scrollView.refreshControl !== context.coordinator.refreshControl {
+                webView.scrollView.refreshControl = context.coordinator.refreshControl
             }
 
-            if let aiWebView = tab.webView as? AIWebView {
+            if let aiWebView = webView as? AIWebView {
                 aiWebView.onAskAI = onAskAI
             }
 
-            ThirdPartyCookieBlocker.shared.register(webView: tab.webView)
+            ThirdPartyCookieBlocker.shared.register(webView: webView)
 
-            tab.webView.allowsBackForwardNavigationGestures = allowEdgeGestures
+            webView.allowsBackForwardNavigationGestures = allowEdgeGestures
             context.coordinator.setEdgeGesturesEnabled(allowEdgeGestures)
 
-            if !tab.webView.isLoading {
+            if !webView.isLoading {
                 let shouldDark = tab.hasDarkModeOverride ? tab.isDarkMode : DarkModeService.shared.isDarkMode
-                tab.webView.overrideUserInterfaceStyle = .light
+                webView.overrideUserInterfaceStyle = .light
                 if tab.lastAppliedDarkMode != shouldDark {
                     if shouldDark {
-                        DarkModeService.shared.enableDarkMode(for: tab.webView)
+                        DarkModeService.shared.enableDarkMode(for: webView)
                     } else {
-                        DarkModeService.shared.disableDarkMode(for: tab.webView)
+                        DarkModeService.shared.disableDarkMode(for: webView)
                     }
                     tab.lastAppliedDarkMode = shouldDark
                 }
             }
 
             if allowThumbnailCapture,
-               tab.webView.url != nil,
-               !tab.webView.isLoading,
+               webView.url != nil,
+               !webView.isLoading,
                viewportSize.width > 1,
                viewportSize.height > 1 {
                 let dx = abs(viewportSize.width - tab.lastThumbnailSize.width)
@@ -4968,6 +4827,14 @@ struct ContentView: View {
                     }
                 }
             }
+        }
+
+        static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+            uiView.configuration.userContentController.removeScriptMessageHandler(forName: "webProviderPrompt")
+            uiView.navigationDelegate = nil
+            uiView.uiDelegate = nil
+            uiView.scrollView.delegate = nil
+            uiView.scrollView.refreshControl = nil
         }
 
         /// Wait for ad block rules to be ready before loading URL (prevents race condition on fast devices)
@@ -5028,10 +4895,6 @@ struct ContentView: View {
                 refreshControl.addTarget(self, action: #selector(handlePullToRefresh(_:)), for: .valueChanged)
             }
 
-            deinit {
-                tab.webView.configuration.userContentController.removeScriptMessageHandler(forName: Self.webProviderHandlerName)
-            }
-
             func installWebProviderMessageHandler(on webView: WKWebView) {
                 let controller = webView.configuration.userContentController
                 controller.removeScriptMessageHandler(forName: Self.webProviderHandlerName)
@@ -5049,7 +4912,7 @@ struct ContentView: View {
                       let providerID = body["provider"] as? String,
                       let provider = WebAIProvider(rawValue: providerID),
                       let prompt = body["prompt"] as? String else { return }
-                let targetWebView = message.webView ?? tab.webView
+                let targetWebView = message.webView ?? tab.liveWebView ?? tab.activateWebView()
                 onWebProviderPrompt?(targetWebView, provider, prompt)
             }
 
@@ -5506,12 +5369,14 @@ struct ContentView: View {
             
             func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
                 Task { @MainActor in
+                    self.tab.restoreScrollPositionIfNeeded(on: webView)
                     self.tab.title = webView.title ?? self.tab.title
                     if let u = webView.url {
                         self.tab.url = u
                         self.tab.address = u.absoluteString
 
                         ThirdPartyCookieBlocker.shared.updateHost(for: webView, url: u)
+                        SitePrivacyStore.shared.applyPolicies(to: webView, url: u, reloadIfChanged: true)
                         
                         // Apply dark mode with per-tab override support
                         let shouldDark = self.tab.hasDarkModeOverride ? self.tab.isDarkMode : DarkModeService.shared.isDarkMode
@@ -5579,6 +5444,7 @@ struct ContentView: View {
                         self.onNavigate?(self.tab, u)
                     }
                     self.viewModel.fetchFavicon(for: self.tab)
+                    self.viewModel.saveSession()
 
                     // Capture thumbnail after a brief delay to ensure page is rendered
                     if !self.viewModel.isSplitViewActive {
@@ -5621,6 +5487,7 @@ struct ContentView: View {
             }
 
             func scrollViewDidScroll(_ scrollView: UIScrollView) {
+                tab.recordScrollPosition(scrollView.contentOffset.y)
                 guard scrollView.isDragging || scrollView.isDecelerating || scrollView.isTracking else { return }
                 notifyScrollStartIfNeeded()
             }
@@ -5653,7 +5520,15 @@ struct ContentView: View {
 
             // MARK: - Gesture handling
             func installGestures(on webView: WKWebView) {
-                if leftEdgeGesture != nil { return }
+                if leftEdgeGesture?.view === webView { return }
+                [leftEdgeGesture, rightEdgeGesture, swipeRightGesture, swipeLeftGesture, interactionTapGesture]
+                    .compactMap { $0 }
+                    .forEach { $0.view?.removeGestureRecognizer($0) }
+                leftEdgeGesture = nil
+                rightEdgeGesture = nil
+                swipeRightGesture = nil
+                swipeLeftGesture = nil
+                interactionTapGesture = nil
                 let leftEdge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleLeftEdge(_:)))
                 leftEdge.edges = .left
                 leftEdge.cancelsTouchesInView = false
@@ -5703,22 +5578,24 @@ struct ContentView: View {
 
             @objc private func handleLeftEdge(_ g: UIScreenEdgePanGestureRecognizer) {
                 if g.state == .ended || g.state == .recognized {
-                    if tab.webView.canGoBack { tab.webView.goBack() }
+                    let webView = tab.activateWebView()
+                    if webView.canGoBack { webView.goBack() }
                 }
             }
 
             @objc private func handleRightEdge(_ g: UIScreenEdgePanGestureRecognizer) {
                 if g.state == .ended || g.state == .recognized {
-                    if tab.webView.canGoForward { tab.webView.goForward() }
+                    let webView = tab.activateWebView()
+                    if webView.canGoForward { webView.goForward() }
                 }
             }
 
             @objc private func handleSwipeRight(_ g: UISwipeGestureRecognizer) {
-                if g.state == .ended { if tab.webView.canGoBack { tab.webView.goBack() } }
+                if g.state == .ended { let webView = tab.activateWebView(); if webView.canGoBack { webView.goBack() } }
             }
 
             @objc private func handleSwipeLeft(_ g: UISwipeGestureRecognizer) {
-                if g.state == .ended { if tab.webView.canGoForward { tab.webView.goForward() } }
+                if g.state == .ended { let webView = tab.activateWebView(); if webView.canGoForward { webView.goForward() } }
             }
 
             @objc private func handleInteractionTap(_ g: UITapGestureRecognizer) {
@@ -5747,7 +5624,7 @@ struct ContentView: View {
             }
 
             @objc private func handlePullToRefresh(_ sender: UIRefreshControl) {
-                tab.webView.reload()
+                tab.activateWebView().reload()
             }
         }
     }

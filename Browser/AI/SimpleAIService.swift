@@ -748,6 +748,40 @@ private actor AppleLocalGenerationService {
     }
 }
 
+private actor ApplePrivateCloudGenerationService {
+    static let shared = ApplePrivateCloudGenerationService()
+
+    @available(iOS 27.0, *)
+    func respond(to prompt: String) async throws -> String {
+        let model = PrivateCloudComputeLanguageModel()
+        guard model.isAvailable else {
+            throw NSError(
+                domain: "SimpleAIService.AppleCloud",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Apple Private Cloud Compute is unavailable: \(model.availability)"
+                ]
+            )
+        }
+
+        let session = LanguageModelSession(model: model)
+        let response = try await session.respond(
+            to: prompt,
+            contextOptions: ContextOptions(reasoningLevel: .moderate)
+        )
+        let content = response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else {
+            throw NSError(
+                domain: "SimpleAIService.AppleCloud",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Apple Private Cloud Compute returned an empty response."]
+            )
+        }
+        return content
+    }
+}
+
 #endif
 
 enum AIModelBackend: String, CaseIterable {
@@ -1138,6 +1172,16 @@ class SimpleAIService: ObservableObject {
         return PCCGatewayClient(configuration: config)
     }
 
+    private func runPrivateCloudComputeIfAvailable(prompt: String) async throws -> String? {
+        #if canImport(FoundationModels)
+        if #available(iOS 27.0, *) {
+            print("☁️ [Apple Cloud] Using Apple Private Cloud Compute (prompt: \(prompt.count) chars)")
+            return try await ApplePrivateCloudGenerationService.shared.respond(to: prompt)
+        }
+        #endif
+        return nil
+    }
+
     func enqueueQuery(_ query: String, pageContent: String? = nil) {
         browserAIServiceLog("enqueueQuery backend=\(backend.rawValue) queryChars=\(query.count) pageContentChars=\(pageContent?.count ?? 0)")
         Task { @MainActor in
@@ -1499,6 +1543,22 @@ class SimpleAIService: ObservableObject {
                     concise: concise,
                     conversationContext: conversationContext
                 )
+
+                if let responseText = try await runPrivateCloudComputeIfAvailable(prompt: composed) {
+                    let counter = AIThroughputCounter()
+                    await MainActor.run {
+                        self.beginThroughputSession(sessionID: requestID, backend: .cloudShortcuts)
+                        self.completeRequest(with: responseText, requestID: requestID)
+                    }
+                    await finishThroughputSessionIfNeeded(
+                        requestID: requestID,
+                        backend: .cloudShortcuts,
+                        counter: counter,
+                        fallbackText: responseText
+                    )
+                    return
+                }
+
                 cloudService.shortcutName = shortcutName
 
                 await MainActor.run {
@@ -1860,6 +1920,22 @@ class SimpleAIService: ObservableObject {
                 } else {
                     prompt = "Summarize the following text clearly, highlighting key themes and points. Provide a detailed analysis:\n\n" + content
                 }
+
+                if let responseText = try await runPrivateCloudComputeIfAvailable(prompt: prompt) {
+                    let counter = AIThroughputCounter()
+                    await MainActor.run {
+                        self.beginThroughputSession(sessionID: requestID, backend: .cloudShortcuts)
+                        self.completeRequest(with: responseText, requestID: requestID)
+                    }
+                    await finishThroughputSessionIfNeeded(
+                        requestID: requestID,
+                        backend: .cloudShortcuts,
+                        counter: counter,
+                        fallbackText: responseText
+                    )
+                    return
+                }
+
                 cloudService.shortcutName = shortcutName
 
                 await MainActor.run {

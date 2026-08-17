@@ -948,6 +948,25 @@ class AdBlockService: NSObject, ObservableObject {
         webView.configuration.userContentController.add(self, name: "adBlockHandler")
     }
 
+    func setProtectionEnabled(_ enabled: Bool, for webView: WKWebView) {
+        guard isEnabled, Self.nativeContentRuleListsSupported else { return }
+        if enabled {
+            if let activeRuleList {
+                webView.configuration.userContentController.add(activeRuleList)
+            }
+            if let customRuleList {
+                webView.configuration.userContentController.add(customRuleList)
+            }
+        } else {
+            if let activeRuleList {
+                webView.configuration.userContentController.remove(activeRuleList)
+            }
+            if let customRuleList {
+                webView.configuration.userContentController.remove(customRuleList)
+            }
+        }
+    }
+
     private func generateBlockingJavaScript() -> String {
         let domainsJS = adNetworkDomains.map { "'\($0)'" }.joined(separator: ",\n                ")
 
@@ -971,6 +990,12 @@ class AdBlockService: NSObject, ObservableObject {
         return """
         (function() {
             'use strict';
+
+            try {
+                if (localStorage.getItem('__vortexAdBlockDisabled') === '1') {
+                    return;
+                }
+            } catch (_) {}
 
             let blockedCount = 0;
             let lastReportedBlockedCount = 0;

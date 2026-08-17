@@ -17,7 +17,6 @@ private extension View {
         }
     }
 }
-
 struct AISidebar: View {
     @ObservedObject var aiService: SimpleAIService
     var onSend: (String) -> Void
@@ -27,6 +26,7 @@ struct AISidebar: View {
     var selectionText: String? = nil
     var contextStatusText: String? = nil
     var onSummaryExtraction: ((PageContentExtractor.ExtractedPageContent) -> Void)? = nil
+    var onContextSelected: ((UUID) -> Void)? = nil
 
     @State private var input: String = ""
     @AppStorage("customPrompts") private var customPromptsData: String = "[]"
@@ -35,9 +35,14 @@ struct AISidebar: View {
     @State private var newCustomPrompt: String = ""
     @FocusState private var isInputFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @ScaledMetric(relativeTo: .body) private var scaledAssistantReplyFontSize: CGFloat = 16
+    @ScaledMetric(relativeTo: .caption) private var scaledSectionLabelFontSize: CGFloat = 13
+    @ScaledMetric(relativeTo: .body) private var scaledInputFontSize: CGFloat = 18
     @State private var areControlsExpanded = true
     @State private var shouldAutoCollapseAfterNextReply = false
     @State private var showFullConversation = false
+    @State private var presentedResponseCanvas: AIResponseCanvasPresentation?
+    @State private var automaticallyPresentedCanvasReplyIDs: Set<UUID> = []
 
     private var mlxAvailable: Bool {
         MLXLocalService.isAvailable()
@@ -64,7 +69,7 @@ struct AISidebar: View {
     }
 
     private var assistantReplyFontSize: CGFloat {
-        isNativeTouchDevice ? 16 : 14
+        isNativeTouchDevice ? scaledAssistantReplyFontSize : 14
     }
 
     private var conversationLineSpacing: CGFloat {
@@ -72,11 +77,11 @@ struct AISidebar: View {
     }
 
     private var sectionLabelFontSize: CGFloat {
-        isNativeTouchDevice ? 13 : 12
+        isNativeTouchDevice ? scaledSectionLabelFontSize : 12
     }
 
     private var inputFontSize: CGFloat {
-        isNativeTouchDevice ? 18 : 14
+        isNativeTouchDevice ? scaledInputFontSize : 14
     }
 
     private var rowBackground: Color {
@@ -206,11 +211,12 @@ struct AISidebar: View {
         .onChange(of: customPrompts) { _ in
             persistCustomPrompts()
         }
-        .onChange(of: aiService.messages) { _ in
+        .onChange(of: aiService.messages) { messages in
             if shouldAutoCollapseAfterNextReply && !aiService.isProcessing && hasCompletedAssistantReply {
                 areControlsExpanded = false
                 shouldAutoCollapseAfterNextReply = false
             }
+            presentLatestRichReplyIfNeeded(in: messages)
         }
         .sheet(isPresented: $showFullConversation) {
             AISidebarConversationArchiveSheet(
@@ -219,6 +225,9 @@ struct AISidebar: View {
                 assistantReplyFontSize: assistantReplyFontSize,
                 conversationLineSpacing: conversationLineSpacing
             )
+        }
+        .fullScreenCover(item: $presentedResponseCanvas) { presentation in
+            AIResponseCanvas(presentation: presentation)
         }
         .onReceive(aiService.$isProcessing.removeDuplicates()) { isProcessing in
             if isProcessing {
@@ -265,6 +274,7 @@ struct AISidebar: View {
                             )
                 }
                 .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
                 .accessibilityLabel(effectiveControlsExpanded ? "Collapse controls" : "Expand controls")
                 }
                 if !aiService.messages.isEmpty {
@@ -280,6 +290,7 @@ struct AISidebar: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
                     .accessibilityLabel("View full conversation")
                 }
                 Button {
@@ -294,6 +305,8 @@ struct AISidebar: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
+                .accessibilityLabel("Close AI assistant")
             }
         }
     }
@@ -580,6 +593,7 @@ struct AISidebar: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
                 .disabled(aiService.isProcessing)
                 .accessibilityLabel("Add custom prompt")
             }
@@ -632,6 +646,7 @@ struct AISidebar: View {
             ForEach(contextOptions) { option in
                 Button {
                     selectedContextID = option.id
+                    onContextSelected?(option.id)
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(option.title)
@@ -682,8 +697,23 @@ struct AISidebar: View {
             trimmedSelectionText: trimmedSelectionText,
             onClearConversation: {
                 aiService.reset()
+            },
+            onOpenResponseCanvas: { presentation in
+                presentedResponseCanvas = presentation
             }
         )
+    }
+
+    private func presentLatestRichReplyIfNeeded(in messages: [ChatMessage]) {
+        guard let latestReply = messages.last,
+              latestReply.role == .assistant,
+              !automaticallyPresentedCanvasReplyIDs.contains(latestReply.id) else {
+            return
+        }
+        let presentation = AIResponseCanvasPresentation(message: latestReply)
+        guard presentation.shouldAutoPresent else { return }
+        automaticallyPresentedCanvasReplyIDs.insert(latestReply.id)
+        presentedResponseCanvas = presentation
     }
 
     private var displayedMessages: [ChatMessage] {
@@ -738,13 +768,14 @@ struct AISidebar: View {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(primaryText)
-                        .frame(width: 30, height: 30)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            Circle().fill(iconBackground)
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(aiService.isProcessing)
-                .background(
-                    Circle().fill(iconBackground)
-                )
+                .accessibilityLabel("Send message")
             }
         }
     }
@@ -859,6 +890,7 @@ private struct AISidebarMessagesSection: View {
     let sectionLabelFontSize: CGFloat
     let trimmedSelectionText: String?
     let onClearConversation: () -> Void
+    let onOpenResponseCanvas: (AIResponseCanvasPresentation) -> Void
 
     @State private var renderedStreamingResponse: String = ""
     @State private var pendingStreamingResponse: String = ""
@@ -903,6 +935,7 @@ private struct AISidebarMessagesSection: View {
                         }
                         .accessibilityLabel("Clear conversation")
                         .buttonStyle(.plain)
+                        .frame(width: 44, height: 44)
                     }
                 }
 
@@ -910,7 +943,8 @@ private struct AISidebarMessagesSection: View {
                     messages: messages,
                     isDark: isDark,
                     assistantReplyFontSize: assistantReplyFontSize,
-                    conversationLineSpacing: conversationLineSpacing
+                    conversationLineSpacing: conversationLineSpacing,
+                    onOpenResponseCanvas: onOpenResponseCanvas
                 )
                 .equatable()
 
@@ -1063,7 +1097,7 @@ private struct AISidebarMessagesSection: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(primaryText)
             }
-            Text(verbatim: text)
+            Text(AIResponseMarkdown.inline(text))
                 .font(.system(size: assistantReplyFontSize))
                 .lineSpacing(conversationLineSpacing)
                 .foregroundColor(primaryText)
@@ -1099,6 +1133,7 @@ private struct AISidebarConversationArchiveSheet: View {
     let assistantReplyFontSize: CGFloat
     let conversationLineSpacing: CGFloat
     @Environment(\.dismiss) private var dismiss
+    @State private var presentedResponseCanvas: AIResponseCanvasPresentation?
 
     var body: some View {
         NavigationView {
@@ -1108,7 +1143,10 @@ private struct AISidebarConversationArchiveSheet: View {
                         messages: messages,
                         isDark: isDark,
                         assistantReplyFontSize: assistantReplyFontSize,
-                        conversationLineSpacing: conversationLineSpacing
+                        conversationLineSpacing: conversationLineSpacing,
+                        onOpenResponseCanvas: { presentation in
+                            presentedResponseCanvas = presentation
+                        }
                     )
                 }
                 .padding(16)
@@ -1123,6 +1161,9 @@ private struct AISidebarConversationArchiveSheet: View {
                 }
             }
         }
+        .fullScreenCover(item: $presentedResponseCanvas) { presentation in
+            AIResponseCanvas(presentation: presentation)
+        }
     }
 }
 
@@ -1131,6 +1172,7 @@ private struct AISidebarConversationHistoryView: View, Equatable {
     let isDark: Bool
     let assistantReplyFontSize: CGFloat
     let conversationLineSpacing: CGFloat
+    let onOpenResponseCanvas: (AIResponseCanvasPresentation) -> Void
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         guard lhs.isDark == rhs.isDark,
@@ -1180,11 +1222,31 @@ private struct AISidebarConversationHistoryView: View, Equatable {
                         .font(.system(size: 14))
                         .foregroundColor(primaryText)
                 } else {
-                    Text(verbatim: assistantDisplayText(for: msg))
-                        .font(.system(size: assistantReplyFontSize))
-                        .lineSpacing(conversationLineSpacing)
-                        .foregroundColor(primaryText)
-                        .fixedSize(horizontal: false, vertical: true)
+                    let responseCanvas = AIResponseCanvasPresentation(message: msg)
+                    VStack(alignment: .leading, spacing: 9) {
+                        if responseCanvas.shouldAutoPresent {
+                            Text(responseCanvas.sidebarSummary)
+                                .font(.system(size: assistantReplyFontSize, weight: .semibold))
+                                .foregroundColor(primaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        } else {
+                            AIResponseSidebarMarkdownView(
+                                text: assistantDisplayText(for: msg),
+                                fontSize: assistantReplyFontSize,
+                                lineSpacing: conversationLineSpacing,
+                                color: primaryText
+                            )
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Button {
+                            onOpenResponseCanvas(responseCanvas)
+                        } label: {
+                            Label("Open Full Reply", systemImage: "rectangle.expand.diagonal")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .browserResponseCanvasButtonStyle()
+                        .accessibilityHint("Opens this model reply in the full-screen canvas")
+                    }
                 }
             }
             .padding(.horizontal, 12)
@@ -1205,327 +1267,4 @@ private struct AISidebarConversationHistoryView: View, Equatable {
         }
         .frame(width: 26, height: 26)
     }
-}
-
-// MARK: - Markdown Text View with Proper Spacing
-struct MarkdownTextView: View {
-    let text: String
-    let primaryColor: Color
-    let secondaryColor: Color
-
-    private static let maxMarkdownParseLength = 8000
-    private static let maxCacheEntries = 256
-    private static var blocksCache: [String: [MarkdownBlock]] = [:]
-    private static var attributedCache: [String: AttributedString] = [:]
-    private let bodyFontSize: CGFloat = 21
-    private let codeFontSize: CGFloat = 18
-    private let bodyLineSpacing: CGFloat = 4
-
-    private var blocks: [MarkdownBlock] {
-        if let cached = Self.blocksCache[text] {
-            return cached
-        }
-        let parsed = parseMarkdown(text)
-        if Self.blocksCache.count > Self.maxCacheEntries {
-            Self.blocksCache.removeAll(keepingCapacity: true)
-        }
-        Self.blocksCache[text] = parsed
-        return parsed
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                renderBlock(block)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func renderBlock(_ block: MarkdownBlock) -> some View {
-        switch block {
-        case .header(let level, let content):
-            Text(attributedText(content))
-                .font(.system(size: headerFontSize(level), weight: .bold))
-                .foregroundColor(primaryColor)
-                .padding(.top, level == 1 ? 4 : 2)
-
-        case .paragraph(let content):
-            Text(attributedText(content))
-                .font(.system(size: bodyFontSize))
-                .lineSpacing(bodyLineSpacing)
-                .foregroundColor(primaryColor)
-                .fixedSize(horizontal: false, vertical: true)
-
-        case .bulletList(let items):
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("•")
-                            .font(.system(size: bodyFontSize, weight: .bold))
-                            .foregroundColor(secondaryColor)
-                        Text(attributedText(item))
-                            .font(.system(size: bodyFontSize))
-                            .lineSpacing(bodyLineSpacing)
-                            .foregroundColor(primaryColor)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-
-        case .numberedList(let items):
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text("\(index + 1).")
-                            .font(.system(size: bodyFontSize, weight: .semibold))
-                            .foregroundColor(secondaryColor)
-                            .frame(minWidth: 20, alignment: .trailing)
-                        Text(attributedText(item))
-                            .font(.system(size: bodyFontSize))
-                            .lineSpacing(bodyLineSpacing)
-                            .foregroundColor(primaryColor)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-
-        case .codeBlock(let code):
-            Text(code)
-                .font(.system(size: codeFontSize, design: .monospaced))
-                .lineSpacing(bodyLineSpacing)
-                .foregroundColor(primaryColor)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.black.opacity(0.2))
-                )
-        }
-    }
-
-    private func headerFontSize(_ level: Int) -> CGFloat {
-        switch level {
-        case 1: return 26
-        case 2: return 24
-        case 3: return 22
-        default: return bodyFontSize
-        }
-    }
-
-    private func attributedText(_ text: String) -> AttributedString {
-        if let cached = Self.attributedCache[text] {
-            return cached
-        }
-        let parsed: AttributedString
-        if text.count > Self.maxMarkdownParseLength {
-            parsed = AttributedString(text)
-        } else {
-            parsed = (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
-        }
-        if Self.attributedCache.count > Self.maxCacheEntries {
-            Self.attributedCache.removeAll(keepingCapacity: true)
-        }
-        Self.attributedCache[text] = parsed
-        return parsed
-    }
-
-    private func parseMarkdown(_ text: String) -> [MarkdownBlock] {
-        var blocks: [MarkdownBlock] = []
-        let lines = text.components(separatedBy: "\n")
-        var currentParagraph: [String] = []
-        var currentBulletList: [String] = []
-        var currentNumberedList: [String] = []
-        var inCodeBlock = false
-        var codeBlockContent: [String] = []
-
-        func flushParagraph() {
-            let content = currentParagraph.joined(separator: " ").trimmingCharacters(in: .whitespaces)
-            if !content.isEmpty {
-                blocks.append(.paragraph(content))
-            }
-            currentParagraph = []
-        }
-
-        func flushBulletList() {
-            if !currentBulletList.isEmpty {
-                blocks.append(.bulletList(currentBulletList))
-                currentBulletList = []
-            }
-        }
-
-        func flushNumberedList() {
-            if !currentNumberedList.isEmpty {
-                blocks.append(.numberedList(currentNumberedList))
-                currentNumberedList = []
-            }
-        }
-
-        for line in lines {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-
-            // Code block handling
-            if trimmed.hasPrefix("```") {
-                if inCodeBlock {
-                    blocks.append(.codeBlock(codeBlockContent.joined(separator: "\n")))
-                    codeBlockContent = []
-                    inCodeBlock = false
-                } else {
-                    flushParagraph()
-                    flushBulletList()
-                    flushNumberedList()
-                    inCodeBlock = true
-                }
-                continue
-            }
-
-            if inCodeBlock {
-                codeBlockContent.append(line)
-                continue
-            }
-
-            // Empty line - flush current paragraph
-            if trimmed.isEmpty {
-                flushParagraph()
-                flushBulletList()
-                flushNumberedList()
-                continue
-            }
-
-            // Headers
-            if trimmed.hasPrefix("###") {
-                flushParagraph()
-                flushBulletList()
-                flushNumberedList()
-                let content = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                blocks.append(.header(3, content))
-                continue
-            }
-            if trimmed.hasPrefix("##") {
-                flushParagraph()
-                flushBulletList()
-                flushNumberedList()
-                let content = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                blocks.append(.header(2, content))
-                continue
-            }
-            if trimmed.hasPrefix("#") {
-                flushParagraph()
-                flushBulletList()
-                flushNumberedList()
-                let content = String(trimmed.dropFirst(1)).trimmingCharacters(in: .whitespaces)
-                blocks.append(.header(1, content))
-                continue
-            }
-
-            // Bullet lists (-, *, •)
-            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") || trimmed.hasPrefix("• ") {
-                flushParagraph()
-                flushNumberedList()
-                let content = String(trimmed.dropFirst(2)).trimmingCharacters(in: .whitespaces)
-                currentBulletList.append(content)
-                continue
-            }
-
-            // Numbered lists
-            if let match = trimmed.range(of: #"^\d+[\.\)]\s+"#, options: .regularExpression) {
-                flushParagraph()
-                flushBulletList()
-                let content = String(trimmed[match.upperBound...]).trimmingCharacters(in: .whitespaces)
-                currentNumberedList.append(content)
-                continue
-            }
-
-            // Regular text - add to current paragraph
-            flushBulletList()
-            flushNumberedList()
-            currentParagraph.append(trimmed)
-        }
-
-        // Flush remaining content
-        flushParagraph()
-        flushBulletList()
-        flushNumberedList()
-        if inCodeBlock && !codeBlockContent.isEmpty {
-            blocks.append(.codeBlock(codeBlockContent.joined(separator: "\n")))
-        }
-
-        return blocks
-    }
-}
-
-private struct GlassEffectCompatModifier<S: InsettableShape>: ViewModifier {
-    let shape: S
-    let material: Material
-    let tint: Color?
-    let strokeOpacity: Double
-
-    func body(content: Content) -> some View {
-        content
-            .background {
-                ZStack {
-                    shape.fill(material)
-                    if let tint {
-                        shape.fill(tint)
-                    }
-                }
-            }
-            .overlay(
-                shape.strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(strokeOpacity),
-                            Color.white.opacity(strokeOpacity * 0.35)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.6
-                )
-            )
-    }
-}
-
-private extension View {
-    @ViewBuilder
-    func glassEffectCompat<S: InsettableShape>(
-        in shape: S,
-        material: Material = .ultraThinMaterial,
-        tint: Color? = nil,
-        strokeOpacity: Double = 0.25,
-        isInteractive: Bool = true
-    ) -> some View {
-        if #available(iOS 26.0, *) {
-            if let tint {
-                if isInteractive {
-                    self.glassEffect(.regular.interactive().tint(tint), in: shape)
-                } else {
-                    self.glassEffect(.regular.tint(tint), in: shape)
-                }
-            } else {
-                if isInteractive {
-                    self.glassEffect(.regular.interactive(), in: shape)
-                } else {
-                    self.glassEffect(.regular, in: shape)
-                }
-            }
-        } else {
-            modifier(
-                GlassEffectCompatModifier(
-                    shape: shape,
-                    material: material,
-                    tint: tint,
-                    strokeOpacity: strokeOpacity
-                )
-            )
-        }
-    }
-}
-
-enum MarkdownBlock {
-    case header(Int, String)
-    case paragraph(String)
-    case bulletList([String])
-    case numberedList([String])
-    case codeBlock(String)
 }
