@@ -2091,10 +2091,10 @@ struct ContentView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 12)
-                        .background(.ultraThinMaterial, in: Capsule())
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                        .glassEffectCompat(
+                            in: Capsule(),
+                            material: .ultraThinMaterial,
+                            strokeOpacity: 0.18
                         )
                         .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 8)
                     }
