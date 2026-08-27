@@ -299,15 +299,16 @@ private final class BrowserWebAISessionManager {
     }
 
     func isLoggedIn(to provider: WebAIProvider, completion: @escaping (Bool) -> Void) {
-        websiteDataStore.httpCookieStore.getAllCookies { cookies in
-            let isLoggedIn = cookies.contains { cookie in
+        websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+            let hasAuthenticatedCookie = cookies.contains { cookie in
                 let domain = cookie.domain.lowercased()
                 let name = cookie.name.lowercased()
 
                 switch provider {
                 case .chatgpt:
                     let isChatGPTDomain = domain.contains("chatgpt.com") || domain.contains("openai.com")
-                    return isChatGPTDomain && name.contains("session-token")
+                    let isSessionCookie = name.contains("session-token") || name.contains("auth-session")
+                    return isChatGPTDomain && isSessionCookie
                 case .gemini:
                     let isGoogleDomain = domain == "google.com" || domain.hasSuffix(".google.com")
                     let authenticatedCookieNames: Set<String> = [
@@ -317,7 +318,89 @@ private final class BrowserWebAISessionManager {
                     return isGoogleDomain && authenticatedCookieNames.contains(name)
                 }
             }
-            completion(isLoggedIn)
+
+            if hasAuthenticatedCookie {
+                completion(true)
+                return
+            }
+
+            Task { @MainActor [weak self] in
+                guard let self else {
+                    completion(false)
+                    return
+                }
+                self.isLoggedInFromLoadedPage(to: provider, completion: completion)
+            }
+        }
+    }
+
+    private func isLoggedInFromLoadedPage(
+        to provider: WebAIProvider,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard let webView = webViews[provider],
+              let host = webView.url?.host?.lowercased() else {
+            completion(false)
+            return
+        }
+
+        let script: String
+        switch provider {
+        case .chatgpt:
+            guard host.contains("chatgpt.com") || host.contains("openai.com") else {
+                completion(false)
+                return
+            }
+            script = """
+            try {
+                const response = await fetch('/api/auth/session', {
+                    credentials: 'include',
+                    cache: 'no-store'
+                });
+                if (response.ok) {
+                    const session = await response.json();
+                    if (session && (session.user || session.accessToken || session.expires)) {
+                        return true;
+                    }
+                }
+            } catch (_) {}
+
+            const accountControl = document.querySelector(
+                '[data-testid*="profile" i], button[aria-label*="profile" i], button[aria-label*="account" i]'
+            );
+            const loginControl = document.querySelector(
+                'a[href*="/auth/login"], button[data-testid*="login" i]'
+            );
+            return Boolean(accountControl) && !loginControl;
+            """
+        case .gemini:
+            guard host == "gemini.google.com" || host.hasSuffix(".google.com") else {
+                completion(false)
+                return
+            }
+            script = """
+            const accountControl = document.querySelector(
+                'a[aria-label*="Google Account" i], button[aria-label*="Google Account" i]'
+            );
+            const signInControl = document.querySelector(
+                'a[href*="accounts.google.com/ServiceLogin"], a[aria-label*="Sign in" i]'
+            );
+            return Boolean(accountControl) && !signInControl;
+            """
+        }
+
+        Task {
+            do {
+                let value = try await webView.callAsyncJavaScript(
+                    script,
+                    arguments: [:],
+                    in: nil,
+                    contentWorld: .page
+                )
+                completion((value as? NSNumber)?.boolValue ?? false)
+            } catch {
+                completion(false)
+            }
         }
     }
 
@@ -3406,6 +3489,9 @@ struct ContentView: View {
                         isSidebarCollapsed = true
                         sidebarDrag = 0
                     }
+                }
+                if !showSettingsMenu {
+                    refreshWebAILoginStates()
                 }
                 showSettingsMenu.toggle()
             }

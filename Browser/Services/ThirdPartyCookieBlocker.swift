@@ -31,6 +31,11 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     private let ruleListIdentifier = "thirdPartyCookieBlocker"
     private var ruleList: WKContentRuleList?
     private var supportsRuleList: Bool = true
+    private static let protectedWebAISessionHosts: Set<String> = [
+        "chatgpt.com",
+        "openai.com",
+        "google.com"
+    ]
 
     override init() {
         self.contentRuleListStore = Self.nativeRuleListsSupported
@@ -196,7 +201,7 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     }
 
     private func allowedHosts(for store: WKHTTPCookieStore) -> Set<String> {
-        var hosts = Set<String>()
+        var hosts = Self.protectedWebAISessionHosts
         for webView in registeredWebViews.allObjects {
             guard webView.configuration.websiteDataStore.httpCookieStore === store else { continue }
             let id = ObjectIdentifier(webView)
