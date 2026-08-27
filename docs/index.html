@@ -35,7 +35,7 @@
         </div>
       </div>
       <figure class="hero-screenshot">
-        <img src="assets/screenshots/ipad-ai-assistant.png" alt="Vortex Browser on iPad with its tab sidebar and local AI Assistant open over a webpage." width="1600" height="1112">
+        <img src="assets/screenshots/ipad-split-view-light-dark.gif" alt="Vortex Browser on iPad cycling through light and dark split views, the Ask Vortex selection menu and the AI Assistant." width="1600" height="1112">
       </figure>
     </section>
 
@@ -63,7 +63,7 @@
         <p>Keep Vortex beside another app in Split View. Research, compare and move between full webpages without falling back to a stretched phone layout.</p>
       </div>
       <figure class="landscape-shot">
-        <img src="assets/screenshots/ipad-split-view.png" alt="Vortex Browser running beside another webpage in iPad Split View." width="1600" height="1112">
+        <img src="assets/screenshots/ipad-feature-tour.gif" alt="Vortex Browser on iPad cycling through settings, content blocking, tabs, drag-to-split and reader mode." width="1600" height="1112">
       </figure>
     </section>
 
@@ -78,17 +78,14 @@
         </ul>
       </div>
       <figure class="landscape-shot">
-        <img src="assets/screenshots/ipad-ai-assistant.png" alt="Vortex Browser AI Assistant summarizing the current webpage using a local model." width="1600" height="1112">
+        <img src="assets/screenshots/ipad-ai-tour-poster.png" data-animated-src="assets/screenshots/ipad-ai-tour.gif" alt="Vortex Browser on iPad cycling through an AI summary, a full conversation and tab controls." width="1600" height="1112">
       </figure>
     </section>
 
     <section class="story-section phone-story">
-      <div class="phone-pair" aria-label="Vortex Browser on iPhone">
+      <div class="phone-pair phone-tour" aria-label="Vortex Browser on iPhone">
         <figure>
-          <img src="assets/screenshots/iphone-browser.png" alt="A webpage open in Vortex Browser on iPhone." width="640" height="1438">
-        </figure>
-        <figure>
-          <img src="assets/screenshots/iphone-ai-assistant.png" alt="The Vortex Browser local AI Assistant open on iPhone." width="640" height="1424">
+          <img src="assets/screenshots/iphone-feature-tour.gif" alt="Vortex Browser on iPhone cycling through browsing, tabs, AI assistance, reading, settings and drag-to-split." width="900" height="1900">
         </figure>
       </div>
       <div class="story-copy">
@@ -99,7 +96,7 @@
 
     <section class="tabs-section">
       <figure class="wide-tabs-shot">
-        <img src="assets/screenshots/ipad-tabs.png" alt="The Vortex Browser tabs and favorites sidebar on iPad." width="1600" height="1112">
+        <img src="assets/screenshots/ipad-tabs-tour.gif" alt="Vortex Browser on iPad alternating between tab management with AI assistance and a full AI reply." width="1600" height="1112">
       </figure>
       <div class="story-copy">
         <h2>Your tabs stay within reach.</h2>
@@ -124,6 +121,18 @@
         <blockquote>
           <p>“I’d like to give it a try!”</p>
           <cite>u/wamplestiltsken</cite>
+        </blockquote>
+        <blockquote>
+          <p>“Or they rejected it because, out of the box, it’s better than 15 years of iPad Safari...”</p>
+          <cite>u/volatilefocus</cite>
+        </blockquote>
+        <blockquote>
+          <p>“Interested!”</p>
+          <cite>u/omong-omong-aja</cite>
+        </blockquote>
+        <blockquote>
+          <p>“Looks great! I’m interested!”</p>
+          <cite>u/Guilty_Commission_79</cite>
         </blockquote>
       </div>
       <a class="reddit-link" href="https://www.reddit.com/r/iosapps/comments/1qezwdi/made_an_ipad_browser_because_safari_wasnt_cutting/">Read the original Reddit discussion</a>
@@ -171,5 +180,28 @@
     <p>Open source under the <a href="https://github.com/Joaov41/Vortex-Browser/blob/main/LICENSE">MIT License</a>.</p>
     <p><a href="privacy/">Privacy</a> · <a href="terms/">Terms</a> · <a href="https://github.com/Joaov41/Vortex-Browser/issues">Support</a></p>
   </footer>
+  <script>
+    const viewAnimatedImages = document.querySelectorAll("[data-animated-src]");
+
+    const startAnimation = (image) => {
+      image.src = image.dataset.animatedSrc;
+      image.removeAttribute("data-animated-src");
+    };
+
+    if ("IntersectionObserver" in window) {
+      const animationObserver = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            startAnimation(entry.target);
+            animationObserver.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.2 });
+
+      viewAnimatedImages.forEach((image) => animationObserver.observe(image));
+    } else {
+      viewAnimatedImages.forEach(startAnimation);
+    }
+  </script>
 </body>
 </html>
