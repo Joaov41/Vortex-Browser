@@ -330,6 +330,14 @@ a:focus-visible {
   transform: translateY(2.5rem);
 }
 
+.phone-pair.phone-tour figure {
+  width: min(76%, 420px);
+}
+
+.phone-pair.phone-tour figure:first-child {
+  transform: none;
+}
+
 .phone-pair img {
   display: block;
   width: 100%;
@@ -380,6 +388,14 @@ a:focus-visible {
 
 .reaction-list blockquote + blockquote {
   border-left: 1px solid var(--line);
+}
+
+.reaction-list blockquote:nth-child(n + 4) {
+  border-top: 1px solid var(--line);
+}
+
+.reaction-list blockquote:nth-child(3n + 1) {
+  border-left: 0;
 }
 
 .reaction-list p {

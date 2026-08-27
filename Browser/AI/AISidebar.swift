@@ -87,6 +87,14 @@ struct AISidebar: View {
 #endif
     }
 
+    private var isPhone: Bool {
+#if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+#else
+        false
+#endif
+    }
+
     private var assistantReplyFontSize: CGFloat {
         isNativeTouchDevice ? scaledAssistantReplyFontSize : 14
     }
@@ -258,9 +266,6 @@ struct AISidebar: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(primaryText)
                 }
-                Text("AI Assistant")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(primaryText)
                 Text(backendLabel)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(secondaryText)
@@ -354,27 +359,78 @@ struct AISidebar: View {
 
     private var backendRow: some View {
         rowContainer {
-            HStack(spacing: 10) {
-                iconContainer {
-                    Image(systemName: "switch.2")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(primaryText)
-                }
-                Text("Model")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(primaryText)
-                Spacer()
-                Picker("Model", selection: $aiService.backend) {
-                    ForEach(userSelectableBackends, id: \.self) { backend in
-                        Text(modelMenuTitle(for: backend))
-                            .tag(backend)
+            if isPhone {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        iconContainer {
+                            Image(systemName: "switch.2")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(primaryText)
+                        }
+                        Text("Model")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(primaryText)
+                    }
+                    Menu {
+                        ForEach(userSelectableBackends, id: \.self) { backend in
+                            Button {
+                                aiService.backend = backend
+                            } label: {
+                                HStack {
+                                    Text(modelMenuTitle(for: backend))
+                                    if aiService.backend == backend {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
                             .disabled(
                                 (backend == .mlxLocal && !mlxAvailable)
                                     || !backend.isAvailableInCurrentEnvironment
                             )
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(modelMenuTitle(for: aiService.backend))
+                                .font(.system(size: 14, weight: .medium))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .allowsTightening(true)
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .foregroundColor(primaryText)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityLabel("Model")
+                    .accessibilityValue(modelMenuTitle(for: aiService.backend))
                 }
-                .pickerStyle(.menu)
+            } else {
+                HStack(spacing: 10) {
+                    iconContainer {
+                        Image(systemName: "switch.2")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(primaryText)
+                    }
+                    Text("Model")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(primaryText)
+                    Spacer()
+                    Picker("Model", selection: $aiService.backend) {
+                        ForEach(userSelectableBackends, id: \.self) { backend in
+                            Text(modelMenuTitle(for: backend))
+                                .tag(backend)
+                                .disabled(
+                                    (backend == .mlxLocal && !mlxAvailable)
+                                        || !backend.isAvailableInCurrentEnvironment
+                                )
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
             }
         }
     }

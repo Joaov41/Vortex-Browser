@@ -213,7 +213,7 @@ final class AIWebView: WKWebView {
         if let items = menu.menuItems, items.contains(where: { $0.action == selector }) {
             return
         }
-        let askItem = UIMenuItem(title: "Ask AI", action: selector)
+        let askItem = UIMenuItem(title: "Ask Vortex", action: selector)
         menu.menuItems = (menu.menuItems ?? []) + [askItem]
     }
 }
@@ -1842,6 +1842,10 @@ struct ContentView: View {
         horizontalSizeClass == .compact
     }
 
+    private var isPhone: Bool {
+        UIDevice.current.userInterfaceIdiom == .phone
+    }
+
     private enum SplitMode {
         case vertical
         case horizontal
@@ -2017,18 +2021,22 @@ struct ContentView: View {
                 let trailingDropInset = showAIPanel
                     ? horizontalInset + aiSidebarBaseWidth + splitSpacing
                     : 0
-                let splitDropRect = CGRect(
-                    x: leadingDropInset,
-                    y: 0,
-                    width: max(0, proxy.size.width - leadingDropInset - trailingDropInset),
-                    height: proxy.size.height
-                )
+                let splitDropRect = isPhone
+                    ? CGRect(origin: .zero, size: proxy.size)
+                    : CGRect(
+                        x: leadingDropInset,
+                        y: 0,
+                        width: max(0, proxy.size.width - leadingDropInset - trailingDropInset),
+                        height: proxy.size.height
+                    )
 
                 ZStack {
                     activeContentPanel
                         .frame(width: proxy.size.width, height: proxy.size.height)
                         .overlay {
-                            splitDropPreviewOverlay(contentRect: splitDropRect)
+                            if !isPhone {
+                                splitDropPreviewOverlay(contentRect: splitDropRect)
+                            }
                         }
                         .simultaneousGesture(
                             TapGesture()
@@ -2070,6 +2078,11 @@ struct ContentView: View {
                     }
 
                     edgeDragDetector
+
+                    if isPhone {
+                        splitDropPreviewOverlay(contentRect: splitDropRect)
+                            .zIndex(90)
+                    }
 
                     if let draggedSidebarTabID,
                        let dragLocation = sidebarTabDragLocation,
@@ -2817,10 +2830,14 @@ struct ContentView: View {
     }
 
     private func splitDropZone(at location: CGPoint, contentRect: CGRect) -> SplitDropZone? {
-        guard !isCompactWidth,
+        guard (!isCompactWidth || isPhone),
               contentRect.width > 0,
               contentRect.height > 0,
               contentRect.contains(location) else { return nil }
+
+        if isPhone {
+            return location.y <= contentRect.midY ? .top : .bottom
+        }
 
         let horizontalZone: (zone: SplitDropZone, distance: CGFloat)
         let distanceToLeft = location.x - contentRect.minX
@@ -2848,7 +2865,7 @@ struct ContentView: View {
     private func sidebarTabDragGesture(for tab: BrowserTab) -> some Gesture {
         DragGesture(minimumDistance: 10, coordinateSpace: .named(splitDragCoordinateSpace))
             .onChanged { value in
-                guard !isCompactWidth, tab.webAIProvider == nil else { return }
+                guard (!isCompactWidth || isPhone), tab.webAIProvider == nil else { return }
                 draggedSidebarTabID = tab.id
                 sidebarTabDragLocation = value.location
                 activeSplitDropZone = splitDropZone(
@@ -2968,7 +2985,7 @@ struct ContentView: View {
 
     private func handleTabDrop(_ draggedTabID: UUID, in zone: SplitDropZone) -> Bool {
         activeSplitDropZone = nil
-        guard !isCompactWidth,
+        guard (!isCompactWidth || isPhone),
               let draggedTab = vm.tabs.first(where: { $0.id == draggedTabID }),
               draggedTab.webAIProvider == nil,
               let selectedID = vm.selectedTabID else {
@@ -3780,14 +3797,21 @@ struct ContentView: View {
                     }
                 }
                 Divider()
-                Button("Open in Split View Vertically") {
-                    openSplitView(with: tab, mode: .vertical)
+                if isPhone {
+                    Button("Open in Split View Vertically") {
+                        openSplitView(with: tab, mode: .horizontal)
+                    }
+                    .disabled(!canSplit)
+                } else {
+                    Button("Open in Split View Vertically") {
+                        openSplitView(with: tab, mode: .vertical)
+                    }
+                    .disabled(!canSplit)
+                    Button("Open in Split View Horizontally") {
+                        openSplitView(with: tab, mode: .horizontal)
+                    }
+                    .disabled(!canSplit)
                 }
-                .disabled(!canSplit)
-                Button("Open in Split View Horizontally") {
-                    openSplitView(with: tab, mode: .horizontal)
-                }
-                .disabled(!canSplit)
                 Divider()
                 Button(role: .destructive) {
                     performClose(tab)
@@ -3823,7 +3847,7 @@ struct ContentView: View {
                 .contentShape(Rectangle())
                 .zIndex(2)
 
-                if canSplit && !isCompactWidth && tab.webAIProvider == nil {
+                if canSplit && (!isCompactWidth || isPhone) && tab.webAIProvider == nil {
                     Image(systemName: "line.3.horizontal")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(sidebarSecondaryText)
@@ -3898,14 +3922,21 @@ struct ContentView: View {
         let material: Material = .ultraThinMaterial
 
         return Menu {
-            Button("Open in Split View Vertically") {
-                openSplitView(with: favorite, mode: .vertical)
+            if isPhone {
+                Button("Open in Split View Vertically") {
+                    openSplitView(with: favorite, mode: .horizontal)
+                }
+                .disabled(!canSplit)
+            } else {
+                Button("Open in Split View Vertically") {
+                    openSplitView(with: favorite, mode: .vertical)
+                }
+                .disabled(!canSplit)
+                Button("Open in Split View Horizontally") {
+                    openSplitView(with: favorite, mode: .horizontal)
+                }
+                .disabled(!canSplit)
             }
-            .disabled(!canSplit)
-            Button("Open in Split View Horizontally") {
-                openSplitView(with: favorite, mode: .horizontal)
-            }
-            .disabled(!canSplit)
             Divider()
             Button(role: .destructive) {
                 vm.removeFromFavorites(favorite)
@@ -4351,7 +4382,7 @@ struct ContentView: View {
                         tab: tab,
                         viewModel: vm,
                         allowEdgeGestures: true,
-                        allowThumbnailCapture: false,
+                        allowThumbnailCapture: true,
                         viewportSize: proxy.size,
                         onScroll: {
                             if !isToolbarCollapsed {
@@ -4419,7 +4450,51 @@ struct ContentView: View {
         }
     }
 
+    @ViewBuilder
     private func toolbarView(for tab: BrowserTab) -> some View {
+        if isPhone {
+            HStack(spacing: 8) {
+                GlassTextField(
+                    text: Binding(
+                        get: { tab.address },
+                        set: { tab.address = $0 }
+                    ),
+                    placeholder: "Search or enter address",
+                    onSubmit: {
+                        vm.submitAddress(tab.address, for: tab)
+                        collapseToolbar()
+                    },
+                    trailingAccessory: AnyView(
+                        Button {
+                            toggleReaderMode(for: tab)
+                        } label: {
+                            Image(systemName: tab.isReaderMode ? "text.book.closed.fill" : "text.book.closed")
+                                .foregroundColor(tab.isReaderMode ? .primary : .secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(tab.isReaderMode ? "Exit reader mode" : "Enter reader mode")
+                        .disabled(tab.currentURL == nil)
+                    )
+                )
+                .focused($omniboxFocused)
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .layoutPriority(1)
+
+                Button {
+                    collapseToolbar()
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .foregroundColor(.secondary)
+                }
+                .browserToolbarControl()
+
+                if splitMode != nil {
+                    exitSplitViewButton
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 8)
+        } else {
         HStack(spacing: 8) {
             Button { tab.activateWebView().goBack() } label: { Image(systemName: "chevron.left") }
                 .browserToolbarControl()
@@ -4491,7 +4566,7 @@ struct ContentView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 8)
-        .background(darkModeService.isDarkMode ? Color.black.opacity(0.9) : Color(UIColor.systemGray6))
+        }
     }
 
     private var edgeDragDetector: some View {
