@@ -48,6 +48,25 @@ struct AISidebar: View {
         MLXLocalService.isAvailable()
     }
 
+    private var userSelectableBackends: [AIModelBackend] {
+        AIModelBackend.allCases.filter { $0 != .applePCCGateway }
+    }
+
+    private func modelMenuTitle(for backend: AIModelBackend) -> String {
+        switch backend {
+        case .localApple:
+            return "Apple Local"
+        case .cloudShortcuts:
+            return "Private Cloud Compute"
+        case .webChatGPT:
+            return "ChatGPT (free account)"
+        case .webGemini:
+            return "Gemini (free account)"
+        default:
+            return backend.displayName
+        }
+    }
+
     private var isDark: Bool {
         colorScheme == .dark
     }
@@ -191,6 +210,9 @@ struct AISidebar: View {
             y: 6
         )
         .onAppear {
+            if aiService.backend == .applePCCGateway {
+                aiService.backend = .localApple
+            }
             syncContextSelection()
             loadCustomPrompts()
         }
@@ -343,12 +365,8 @@ struct AISidebar: View {
                     .foregroundColor(primaryText)
                 Spacer()
                 Picker("Model", selection: $aiService.backend) {
-                    ForEach(AIModelBackend.allCases, id: \.self) { backend in
-                        Text(
-                            backend == .applePCCGateway && !backend.isAvailableInCurrentEnvironment
-                                ? "\(backend.displayName) (iOS 27+)"
-                                : backend.displayName
-                        )
+                    ForEach(userSelectableBackends, id: \.self) { backend in
+                        Text(modelMenuTitle(for: backend))
                             .tag(backend)
                             .disabled(
                                 (backend == .mlxLocal && !mlxAvailable)

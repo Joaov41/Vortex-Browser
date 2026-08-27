@@ -3,8 +3,8 @@ import Combine
 import WebKit
 import SafariServices
 import UIKit
-import UniformTypeIdentifiers
 import UserNotifications
+import UniformTypeIdentifiers
 
 private func browserAIFlowLog(_ message: @autoclosure () -> String) {
     print("🌐 [AIFlow] \(message())")
@@ -1437,6 +1437,11 @@ struct ContentView: View {
     @State private var splitVerticalRatio: CGFloat = 0.5
     @State private var splitHorizontalRatio: CGFloat = 0.5
     @State private var splitDragAxis: SplitAxis? = nil
+    @State private var activeSplitDropZone: SplitDropZone?
+    @State private var draggedSidebarTabID: UUID?
+    @State private var sidebarTabDragLocation: CGPoint?
+    @State private var splitDropContentRect: CGRect = .zero
+    private let splitDragCoordinateSpace = "browserSplitDragSpace"
     private let splitMinRatio: CGFloat = 0.25
     private let splitMaxRatio: CGFloat = 0.75
     private let splitDividerHandleLength: CGFloat = 80
@@ -1664,6 +1669,41 @@ struct ContentView: View {
         .accessibilityLabel(showAIPanel ? "Hide AI sidebar" : "Show AI sidebar")
     }
 
+    private var exitSplitViewButton: some View {
+        Button {
+            withAnimation(.easeOut(duration: 0.2)) {
+                clearSplitView()
+            }
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: splitMode == .horizontal ? "rectangle.split.1x2" : "rectangle.split.2x1")
+                    .font(.system(size: 14, weight: .semibold))
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 8, weight: .bold))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, Color.red)
+                    .offset(x: 5, y: -5)
+            }
+            .foregroundColor(isSidebarDark ? .white.opacity(0.85) : .primary)
+            .padding(.horizontal, 12)
+            .frame(height: toolbarPillHeight)
+            .glassEffectCompat(
+                in: Capsule(),
+                material: .ultraThinMaterial,
+                strokeOpacity: isSidebarDark ? 0.2 : 0.15
+            )
+            .shadow(
+                color: Color.black.opacity(isSidebarDark ? 0.35 : 0.2),
+                radius: 8,
+                x: 0,
+                y: 4
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Exit split view")
+        .accessibilityHint("Keeps both tabs open")
+    }
+
     private func expandToolbar(focusOmnibox: Bool) {
         withAnimation(.easeOut(duration: 0.15)) {
             isToolbarCollapsed = false
@@ -1812,6 +1852,49 @@ struct ContentView: View {
         case horizontal
     }
 
+    private enum SplitDropZone: Equatable {
+        case left
+        case right
+        case top
+        case bottom
+
+        var mode: SplitMode {
+            switch self {
+            case .left, .right:
+                return .vertical
+            case .top, .bottom:
+                return .horizontal
+            }
+        }
+
+        var isLeading: Bool {
+            switch self {
+            case .left, .top:
+                return true
+            case .right, .bottom:
+                return false
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .left: return "Split left"
+            case .right: return "Split right"
+            case .top: return "Split top"
+            case .bottom: return "Split bottom"
+            }
+        }
+
+        var systemImage: String {
+            switch self {
+            case .left: return "arrow.left"
+            case .right: return "arrow.right"
+            case .top: return "arrow.up"
+            case .bottom: return "arrow.down"
+            }
+        }
+    }
+
     private struct AIReplacement {
         let tabID: UUID
         let markerID: String
@@ -1928,10 +2011,25 @@ struct ContentView: View {
             GeometryReader { proxy in
                 let verticalInset = max(24, min(72, proxy.size.height * 0.08))
                 let horizontalInset: CGFloat = 24
+                let leadingDropInset = currentSidebarWidth > 1
+                    ? horizontalInset + currentSidebarWidth + splitSpacing
+                    : 0
+                let trailingDropInset = showAIPanel
+                    ? horizontalInset + aiSidebarBaseWidth + splitSpacing
+                    : 0
+                let splitDropRect = CGRect(
+                    x: leadingDropInset,
+                    y: 0,
+                    width: max(0, proxy.size.width - leadingDropInset - trailingDropInset),
+                    height: proxy.size.height
+                )
 
                 ZStack {
                     activeContentPanel
                         .frame(width: proxy.size.width, height: proxy.size.height)
+                        .overlay {
+                            splitDropPreviewOverlay(contentRect: splitDropRect)
+                        }
                         .simultaneousGesture(
                             TapGesture()
                                 .onEnded {
@@ -1973,8 +2071,23 @@ struct ContentView: View {
 
                     edgeDragDetector
 
+                    if let draggedSidebarTabID,
+                       let dragLocation = sidebarTabDragLocation,
+                       let draggedTab = vm.tabs.first(where: { $0.id == draggedSidebarTabID }) {
+                        sidebarTabDragPreview(draggedTab)
+                            .position(dragLocation)
+                            .allowsHitTesting(false)
+                            .zIndex(100)
+                    }
                 }
                 .frame(width: proxy.size.width, height: proxy.size.height)
+                .coordinateSpace(name: splitDragCoordinateSpace)
+                .onAppear {
+                    splitDropContentRect = splitDropRect
+                }
+                .onChange(of: splitDropRect) { _, newRect in
+                    splitDropContentRect = newRect
+                }
             }
             .ignoresSafeArea(.keyboard)
 
@@ -1986,6 +2099,9 @@ struct ContentView: View {
                             sidebarToggleButton
                         }
                         toolbarCollapsedPill(for: vm.tabs[idx])
+                        if splitMode != nil {
+                            exitSplitViewButton
+                        }
                         aiSidebarToggleButton
                     }
                     .glassEffectContainerCompat(spacing: 12)
@@ -2700,6 +2816,352 @@ struct ContentView: View {
         syncAIContextSelection()
     }
 
+    private func splitDropZone(at location: CGPoint, contentRect: CGRect) -> SplitDropZone? {
+        guard !isCompactWidth,
+              contentRect.width > 0,
+              contentRect.height > 0,
+              contentRect.contains(location) else { return nil }
+
+        let horizontalZone: (zone: SplitDropZone, distance: CGFloat)
+        let distanceToLeft = location.x - contentRect.minX
+        let distanceToRight = contentRect.maxX - location.x
+        if distanceToLeft <= distanceToRight {
+            horizontalZone = (.left, distanceToLeft)
+        } else {
+            horizontalZone = (.right, distanceToRight)
+        }
+
+        let verticalZone: (zone: SplitDropZone, distance: CGFloat)
+        let distanceToTop = location.y - contentRect.minY
+        let distanceToBottom = contentRect.maxY - location.y
+        if distanceToTop <= distanceToBottom {
+            verticalZone = (.top, distanceToTop)
+        } else {
+            verticalZone = (.bottom, distanceToBottom)
+        }
+
+        return horizontalZone.distance <= verticalZone.distance
+            ? horizontalZone.zone
+            : verticalZone.zone
+    }
+
+    private func sidebarTabDragGesture(for tab: BrowserTab) -> some Gesture {
+        DragGesture(minimumDistance: 10, coordinateSpace: .named(splitDragCoordinateSpace))
+            .onChanged { value in
+                guard !isCompactWidth, tab.webAIProvider == nil else { return }
+                draggedSidebarTabID = tab.id
+                sidebarTabDragLocation = value.location
+                activeSplitDropZone = splitDropZone(
+                    at: value.location,
+                    contentRect: splitDropContentRect
+                )
+            }
+            .onEnded { value in
+                guard draggedSidebarTabID == tab.id else {
+                    resetSidebarTabDragState()
+                    return
+                }
+
+                let dropZone = splitDropZone(
+                    at: value.location,
+                    contentRect: splitDropContentRect
+                )
+                resetSidebarTabDragState()
+                if let dropZone {
+                    _ = handleTabDrop(tab.id, in: dropZone)
+                }
+            }
+    }
+
+    private func resetSidebarTabDragState() {
+        draggedSidebarTabID = nil
+        sidebarTabDragLocation = nil
+        activeSplitDropZone = nil
+    }
+
+    private func sidebarTabDragPreview(_ tab: BrowserTab) -> some View {
+        HStack(spacing: 10) {
+            if let favicon = tab.favicon {
+                Image(uiImage: favicon)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 22, height: 22)
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            } else {
+                Image(systemName: tab.isIncognito ? "eye.slash" : "globe")
+                    .font(.system(size: 17, weight: .semibold))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(tab.title.isEmpty ? "New Tab" : tab.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .lineLimit(1)
+                Text(tab.url?.host ?? (tab.isBlank ? "Blank Tab" : tab.address))
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .frame(width: 260)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: Color.black.opacity(0.28), radius: 16, x: 0, y: 8)
+        .scaleEffect(1.03)
+    }
+
+    @ViewBuilder
+    private func splitDropPreviewOverlay(contentRect: CGRect) -> some View {
+        if let activeSplitDropZone {
+            splitDropPreview(activeSplitDropZone, contentRect: contentRect)
+        }
+    }
+
+    private func splitDropPreview(_ zone: SplitDropZone, contentRect: CGRect) -> some View {
+        let inset: CGFloat = 10
+        let width = zone.mode == .vertical
+            ? max(0, contentRect.width / 2 - inset * 1.5)
+            : max(0, contentRect.width - inset * 2)
+        let height = zone.mode == .horizontal
+            ? max(0, contentRect.height / 2 - inset * 1.5)
+            : max(0, contentRect.height - inset * 2)
+        let x = zone == .left
+            ? contentRect.minX + contentRect.width / 4
+            : zone == .right
+                ? contentRect.minX + contentRect.width * 3 / 4
+                : contentRect.midX
+        let y = zone == .top
+            ? contentRect.minY + contentRect.height / 4
+            : zone == .bottom
+                ? contentRect.minY + contentRect.height * 3 / 4
+                : contentRect.midY
+
+        return ZStack {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(Color.accentColor.opacity(0.12))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1.5)
+                )
+
+            Label(zone.title, systemImage: zone.systemImage)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.primary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(.ultraThinMaterial, in: Capsule())
+        }
+        .frame(width: width, height: height)
+        .position(x: x, y: y)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+
+    private func handleTabDrop(_ draggedTabID: UUID, in zone: SplitDropZone) -> Bool {
+        activeSplitDropZone = nil
+        guard !isCompactWidth,
+              let draggedTab = vm.tabs.first(where: { $0.id == draggedTabID }),
+              draggedTab.webAIProvider == nil,
+              let selectedID = vm.selectedTabID else {
+            return false
+        }
+
+        if splitMode != nil,
+           let primary = splitPrimaryTab,
+           let secondary = splitSecondaryTab {
+            return updateExistingSplit(
+                draggedTab: draggedTab,
+                primary: primary,
+                secondary: secondary,
+                zone: zone
+            )
+        }
+
+        guard let selectedTab = vm.tabs.first(where: { $0.id == selectedID }) else {
+            return false
+        }
+
+        if selectedTab.id == draggedTab.id {
+            guard let selectedIndex = vm.tabs.firstIndex(where: { $0.id == selectedTab.id }) else {
+                return false
+            }
+            let adjacentIndex: Int?
+            if selectedIndex + 1 < vm.tabs.count {
+                adjacentIndex = selectedIndex + 1
+            } else if selectedIndex > 0 {
+                adjacentIndex = selectedIndex - 1
+            } else {
+                adjacentIndex = nil
+            }
+            guard let adjacentIndex,
+                  vm.tabs.indices.contains(adjacentIndex) else {
+                return false
+            }
+            let adjacentTab = vm.tabs[adjacentIndex]
+            if zone.isLeading {
+                return setRegularTabSplit(
+                    primary: draggedTab,
+                    secondary: adjacentTab,
+                    mode: zone.mode,
+                    selectionFallbackID: draggedTab.id
+                )
+            } else {
+                return setRegularTabSplit(
+                    primary: adjacentTab,
+                    secondary: draggedTab,
+                    mode: zone.mode,
+                    selectionFallbackID: draggedTab.id
+                )
+            }
+        }
+
+        if zone.isLeading {
+            return setRegularTabSplit(
+                primary: draggedTab,
+                secondary: selectedTab,
+                mode: zone.mode,
+                selectionFallbackID: draggedTab.id
+            )
+        } else {
+            return setRegularTabSplit(
+                primary: selectedTab,
+                secondary: draggedTab,
+                mode: zone.mode,
+                selectionFallbackID: draggedTab.id
+            )
+        }
+    }
+
+    private func updateExistingSplit(
+        draggedTab: BrowserTab,
+        primary: BrowserTab,
+        secondary: BrowserTab,
+        zone: SplitDropZone
+    ) -> Bool {
+        let target = zone.isLeading ? primary : secondary
+        if draggedTab.id == target.id {
+            return true
+        }
+
+        if draggedTab.id == primary.id {
+            if zone.isLeading {
+                return true
+            }
+            if splitSecondaryExternalTab != nil {
+                guard let replacement = vm.tabs.first(where: { $0.id != draggedTab.id }) else {
+                    clearSplitView()
+                    return true
+                }
+                return setRegularTabSplit(
+                    primary: replacement,
+                    secondary: draggedTab,
+                    mode: zone.mode,
+                    selectionFallbackID: draggedTab.id
+                )
+            }
+            return setRegularTabSplit(
+                primary: secondary,
+                secondary: draggedTab,
+                mode: zone.mode,
+                selectionFallbackID: draggedTab.id
+            )
+        }
+
+        if draggedTab.id == secondary.id {
+            if zone.isLeading {
+                return setRegularTabSplit(
+                    primary: draggedTab,
+                    secondary: primary,
+                    mode: zone.mode,
+                    selectionFallbackID: draggedTab.id
+                )
+            }
+            return true
+        }
+
+        if zone.isLeading {
+            if let external = splitSecondaryExternalTab {
+                return setExternalSecondarySplit(
+                    primary: draggedTab,
+                    external: external,
+                    mode: zone.mode,
+                    selectionFallbackID: draggedTab.id
+                )
+            }
+            return setRegularTabSplit(
+                primary: draggedTab,
+                secondary: secondary,
+                mode: zone.mode,
+                selectionFallbackID: draggedTab.id
+            )
+        }
+
+        return setRegularTabSplit(
+            primary: primary,
+            secondary: draggedTab,
+            mode: zone.mode,
+            selectionFallbackID: draggedTab.id
+        )
+    }
+
+    @discardableResult
+    private func setRegularTabSplit(
+        primary: BrowserTab,
+        secondary: BrowserTab,
+        mode: SplitMode,
+        selectionFallbackID: UUID?
+    ) -> Bool {
+        guard primary.id != secondary.id else { return false }
+        vm.captureTabThumbnail(for: primary)
+        vm.captureTabThumbnail(for: secondary)
+        splitPrimaryID = primary.id
+        splitSecondaryID = secondary.id
+        splitSecondaryExternalTab = nil
+        splitMode = mode
+        vm.isSplitViewActive = true
+        if let selectedID = vm.selectedTabID,
+           selectedID != primary.id,
+           selectedID != secondary.id {
+            vm.selectedTabID = selectionFallbackID ?? primary.id
+        }
+        refreshHibernationProtection()
+        syncAIContextSelection()
+        return true
+    }
+
+    @discardableResult
+    private func setExternalSecondarySplit(
+        primary: BrowserTab,
+        external: BrowserTab,
+        mode: SplitMode,
+        selectionFallbackID: UUID?
+    ) -> Bool {
+        vm.captureTabThumbnail(for: primary)
+        vm.captureTabThumbnail(for: external)
+        splitPrimaryID = primary.id
+        splitSecondaryID = nil
+        splitSecondaryExternalTab = external
+        splitMode = mode
+        vm.isSplitViewActive = true
+        if let selectedID = vm.selectedTabID,
+           selectedID != primary.id,
+           selectedID != external.id {
+            vm.selectedTabID = selectionFallbackID ?? primary.id
+        }
+        refreshHibernationProtection()
+        syncAIContextSelection()
+        return true
+    }
+
     private func scheduleSplitThumbnailRefresh() {
         guard splitMode == nil else { return }
         scheduleThumbnailRefresh(for: [splitPrimaryTab, splitSecondaryTab].compactMap { $0 })
@@ -2794,6 +3256,7 @@ struct ContentView: View {
     }
 
     private func clearSplitView() {
+        activeSplitDropZone = nil
         let tabsToRefresh = [splitPrimaryTab, splitSecondaryTab].compactMap { $0 }
         splitMode = nil
         splitPrimaryID = nil
@@ -3341,6 +3804,7 @@ struct ContentView: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .simultaneousGesture(sidebarTabDragGesture(for: tab))
 
             VStack(spacing: 4) {
                 // Close button
@@ -4004,6 +4468,10 @@ struct ContentView: View {
                 .help("Save password?")
             }
 
+            if splitMode != nil {
+                exitSplitViewButton
+            }
+
             Spacer(minLength: 0)
         }
         .padding(.horizontal)
@@ -4169,67 +4637,6 @@ struct ContentView: View {
 
                 Divider()
 
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Apple PCC Gateway")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Text(
-                        AIModelBackend.applePCCGateway.isAvailableInCurrentEnvironment
-                            ? "Run scripts/start-fm-pcc-gateway.command on your Mac, then use this Mac IP from iPhone/iPad."
-                            : "Requires iOS 27 or later in TestFlight."
-                    )
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    TextField("Mac host/IP", text: $aiService.pccGatewayHost)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                        .textFieldStyle(.roundedBorder)
-
-                    Stepper(value: $aiService.pccGatewayPort, in: 1...65535, step: 1) {
-                        Text("Gateway port: \(aiService.pccGatewayPort)")
-                    }
-
-                    TextField("Model", text: $aiService.pccGatewayModel)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                        .textFieldStyle(.roundedBorder)
-
-                    SecureField("Gateway token", text: $aiService.pccGatewayToken)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                        .textFieldStyle(.roundedBorder)
-
-                    Button {
-                        testPCCGatewayConnection()
-                    } label: {
-                        HStack(spacing: 8) {
-                            if isTestingPCCGateway {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "waveform.path.ecg")
-                            }
-                            Text("Test PCC Gateway")
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(
-                        isTestingPCCGateway
-                            || !AIModelBackend.applePCCGateway.isAvailableInCurrentEnvironment
-                    )
-
-                    if let pccGatewayStatusMessage, !pccGatewayStatusMessage.isEmpty {
-                        Text(pccGatewayStatusMessage)
-                            .font(.caption)
-                            .foregroundStyle(pccGatewayStatusMessage.lowercased().contains("failed") ? .red : .secondary)
-                    }
-                }
-                .disabled(!AIModelBackend.applePCCGateway.isAvailableInCurrentEnvironment)
-
-                Divider()
-
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Image(systemName: "textformat.size")
@@ -4260,7 +4667,7 @@ struct ContentView: View {
                 Divider()
 
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("MLX Settings")
+                    Text("MLX Settings (paste any MLX Hugging Face model ID)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
