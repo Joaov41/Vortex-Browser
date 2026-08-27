@@ -3804,7 +3804,6 @@ struct ContentView: View {
             .menuStyle(.button)
             .buttonStyle(.plain)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            .simultaneousGesture(sidebarTabDragGesture(for: tab))
 
             VStack(spacing: 4) {
                 // Close button
@@ -3823,6 +3822,22 @@ struct ContentView: View {
                 .frame(width: controlHitSize, height: controlHitSize)
                 .contentShape(Rectangle())
                 .zIndex(2)
+
+                if canSplit && !isCompactWidth && tab.webAIProvider == nil {
+                    Image(systemName: "line.3.horizontal")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(sidebarSecondaryText)
+                        .padding(6)
+                        .background(
+                            Circle().fill(sidebarIconBackground)
+                        )
+                        .frame(width: controlHitSize, height: controlHitSize)
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(sidebarTabDragGesture(for: tab))
+                        .accessibilityLabel("Drag tab to split view")
+                        .accessibilityHint("Drag toward an edge of the page")
+                        .zIndex(2)
+                }
 
                 // More options menu (only for tabs with content)
                 if !tab.isBlank && tab.url != nil {
