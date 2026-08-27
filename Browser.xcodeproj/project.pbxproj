@@ -504,7 +504,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser/Browser.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Browser/BrowserMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -539,7 +539,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser/Browser.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Browser/BrowserMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -571,7 +571,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BrowserShare/BrowserShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BrowserShare/Info.plist;
@@ -600,7 +600,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BrowserShare/BrowserShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 12;
+				CURRENT_PROJECT_VERSION = 13;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BrowserShare/Info.plist;
