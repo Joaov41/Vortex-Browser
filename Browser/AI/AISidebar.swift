@@ -96,10 +96,6 @@ struct AISidebar: View {
         isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.1)
     }
 
-    private var panelFill: Color {
-        isDark ? Color(red: 0.11, green: 0.12, blue: 0.14) : Color(red: 0.96, green: 0.97, blue: 0.98)
-    }
-
     private var backendLabel: String {
         if aiService.backend == .mlxLocal && !mlxAvailable {
             return "\(aiService.backend.displayName) (Unavailable)"
@@ -181,19 +177,12 @@ struct AISidebar: View {
             inputRow
         }
         .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
-                .fill(panelFill)
-        )
         .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(isDark ? 0.12 : 0.6), lineWidth: 0.8)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: panelCornerRadius - 1, style: .continuous)
-                .strokeBorder(Color.black.opacity(isDark ? 0.2 : 0.06), lineWidth: 0.6)
-                .padding(1)
+        .glassEffectCompat(
+            in: RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous),
+            material: .ultraThinMaterial,
+            strokeOpacity: isDark ? 0.2 : 0.35,
+            isInteractive: false
         )
         .shadow(
             color: Color.black.opacity(isDark ? 0.35 : 0.2),
@@ -737,8 +726,11 @@ struct AISidebar: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(primaryText)
                 .frame(width: 30, height: 30)
-                .background(
-                    Circle().fill(iconBackground)
+                .glassEffectCompat(
+                    in: Circle(),
+                    material: .ultraThinMaterial,
+                    strokeOpacity: isDark ? 0.16 : 0.3,
+                    isInteractive: false
                 )
 
             TextField("Ask AI...", text: $input)
@@ -754,11 +746,10 @@ struct AISidebar: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity)
-                .background(
-                    Capsule().fill(rowBackground)
-                )
-                .overlay(
-                    Capsule().strokeBorder(Color.white.opacity(isDark ? 0.12 : 0.35), lineWidth: 0.6)
+                .glassEffectCompat(
+                    in: Capsule(),
+                    material: .ultraThinMaterial,
+                    strokeOpacity: isDark ? 0.16 : 0.35
                 )
 
             if !input.isEmpty {
@@ -769,8 +760,10 @@ struct AISidebar: View {
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(primaryText)
                         .frame(width: 44, height: 44)
-                        .background(
-                            Circle().fill(iconBackground)
+                        .glassEffectCompat(
+                            in: Circle(),
+                            material: .ultraThinMaterial,
+                            strokeOpacity: isDark ? 0.16 : 0.3
                         )
                 }
                 .buttonStyle(.plain)
@@ -778,6 +771,7 @@ struct AISidebar: View {
                 .accessibilityLabel("Send message")
             }
         }
+        .glassEffectContainerCompat(spacing: 10)
     }
 
     private func rowContainer<Content: View>(

@@ -144,7 +144,9 @@ private extension View {
         frame(width: 44, height: 44)
             .contentShape(Rectangle())
     }
+}
 
+extension View {
     @ViewBuilder
     func glassEffectCompat<S: InsettableShape>(
         in shape: S,
@@ -176,6 +178,17 @@ private extension View {
                     strokeOpacity: strokeOpacity
                 )
             )
+        }
+    }
+
+    @ViewBuilder
+    func glassEffectContainerCompat(spacing: CGFloat) -> some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) {
+                self
+            }
+        } else {
+            self
         }
     }
 }
@@ -282,6 +295,29 @@ private final class BrowserWebAISessionManager {
             self.websiteDataStore.removeData(ofTypes: dataTypes, for: matching) {
                 completion("\(provider.displayName) session reset.")
             }
+        }
+    }
+
+    func isLoggedIn(to provider: WebAIProvider, completion: @escaping (Bool) -> Void) {
+        websiteDataStore.httpCookieStore.getAllCookies { cookies in
+            let isLoggedIn = cookies.contains { cookie in
+                let domain = cookie.domain.lowercased()
+                let name = cookie.name.lowercased()
+
+                switch provider {
+                case .chatgpt:
+                    let isChatGPTDomain = domain.contains("chatgpt.com") || domain.contains("openai.com")
+                    return isChatGPTDomain && name.contains("session-token")
+                case .gemini:
+                    let isGoogleDomain = domain == "google.com" || domain.hasSuffix(".google.com")
+                    let authenticatedCookieNames: Set<String> = [
+                        "sid", "hsid", "ssid", "apisid", "sapisid",
+                        "__secure-1psid", "__secure-3psid"
+                    ]
+                    return isGoogleDomain && authenticatedCookieNames.contains(name)
+                }
+            }
+            completion(isLoggedIn)
         }
     }
 
@@ -1358,6 +1394,8 @@ struct ContentView: View {
     @State private var webAIDidInject = false
     @State private var webAIFallbackMessage: String?
     @State private var webAISettingsStatusMessage: String?
+    @State private var isChatGPTLoggedIn = false
+    @State private var isGeminiLoggedIn = false
     @State private var isTestingPCCGateway = false
     @State private var pccGatewayStatusMessage: String?
     
@@ -1495,12 +1533,10 @@ struct ContentView: View {
                 .foregroundColor(sidebarToggleForeground)
                 .padding(.horizontal, 12)
                 .frame(height: toolbarPillHeight)
-                .background(
-                    Capsule().fill(.ultraThinMaterial)
-                )
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(isSidebarDark ? 0.2 : 0.15), lineWidth: 1)
+                .glassEffectCompat(
+                    in: Capsule(),
+                    material: .ultraThinMaterial,
+                    strokeOpacity: isSidebarDark ? 0.2 : 0.15
                 )
                 .shadow(
                     color: Color.black.opacity(isSidebarDark ? 0.35 : 0.2),
@@ -1529,12 +1565,10 @@ struct ContentView: View {
                 .foregroundColor(isSidebarDark ? .white.opacity(0.85) : .primary)
                 .padding(.horizontal, 12)
                 .frame(height: toolbarPillHeight)
-                .background(
-                    Capsule().fill(.ultraThinMaterial)
-                )
-                .overlay(
-                    Capsule()
-                        .strokeBorder(Color.white.opacity(isSidebarDark ? 0.2 : 0.15), lineWidth: 1)
+                .glassEffectCompat(
+                    in: Capsule(),
+                    material: .ultraThinMaterial,
+                    strokeOpacity: isSidebarDark ? 0.2 : 0.15
                 )
                 .shadow(
                     color: Color.black.opacity(isSidebarDark ? 0.35 : 0.2),
@@ -1594,10 +1628,10 @@ struct ContentView: View {
         .foregroundColor(darkModeService.isDarkMode ? .white : .primary)
         .padding(.horizontal, 12)
         .frame(height: toolbarPillHeight)
-        .background(.ultraThinMaterial)
-        .clipShape(Capsule())
-        .overlay(
-            Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+        .glassEffectCompat(
+            in: Capsule(),
+            material: .ultraThinMaterial,
+            strokeOpacity: 0.18
         )
         .shadow(radius: 8, y: 4)
         .contentShape(Capsule())
@@ -1871,6 +1905,7 @@ struct ContentView: View {
                         toolbarCollapsedPill(for: vm.tabs[idx])
                         aiSidebarToggleButton
                     }
+                    .glassEffectContainerCompat(spacing: 12)
                     .padding(.bottom, 24)
                     .opacity(isScrolling ? 0 : 1)
                 } else {
@@ -2290,10 +2325,29 @@ struct ContentView: View {
     private func resetWebAISession(for provider: WebAIProvider) {
         BrowserWebAISessionManager.shared.resetSession(for: provider) { message in
             DispatchQueue.main.async {
+                switch provider {
+                case .chatgpt:
+                    self.isChatGPTLoggedIn = false
+                case .gemini:
+                    self.isGeminiLoggedIn = false
+                }
                 self.webAISettingsStatusMessage = message
                 if self.activeWebAIRequest?.provider == provider {
                     self.dismissWebAIOverlay(userCancelled: false)
                 }
+            }
+        }
+    }
+
+    private func refreshWebAILoginStates() {
+        BrowserWebAISessionManager.shared.isLoggedIn(to: .chatgpt) { isLoggedIn in
+            DispatchQueue.main.async {
+                self.isChatGPTLoggedIn = isLoggedIn
+            }
+        }
+        BrowserWebAISessionManager.shared.isLoggedIn(to: .gemini) { isLoggedIn in
+            DispatchQueue.main.async {
+                self.isGeminiLoggedIn = isLoggedIn
             }
         }
     }
@@ -3997,7 +4051,7 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
 
                     HStack(spacing: 10) {
-                        Button("Log In to ChatGPT") {
+                        Button(isChatGPTLoggedIn ? "Logged in" : "Log In to ChatGPT") {
                             openWebAILoginSession(for: .chatgpt)
                         }
                         .buttonStyle(.bordered)
@@ -4009,7 +4063,7 @@ struct ContentView: View {
                     }
 
                     HStack(spacing: 10) {
-                        Button("Log In to Gemini") {
+                        Button(isGeminiLoggedIn ? "Logged in" : "Log In to Gemini") {
                             openWebAILoginSession(for: .gemini)
                         }
                         .buttonStyle(.bordered)
@@ -4214,6 +4268,9 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(20)
+            .onAppear {
+                refreshWebAILoginStates()
+            }
         }
     }
 
