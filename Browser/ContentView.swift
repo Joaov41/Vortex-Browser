@@ -14,6 +14,19 @@ private func browserAIWebLog(_ message: @autoclosure () -> String) {
     print("🕸️ [AIWeb] \(message())")
 }
 
+enum BrowserSiteViewportPolicy {
+    static let redditIPadTopContentInset: CGFloat = 12
+
+    static func topContentInset(for url: URL?, idiom: UIUserInterfaceIdiom) -> CGFloat {
+        guard idiom == .pad,
+              let host = url?.host?.lowercased(),
+              host == "reddit.com" || host.hasSuffix(".reddit.com") else {
+            return 0
+        }
+        return redditIPadTopContentInset
+    }
+}
+
 // MARK: - Darwin Notification Observer (for Share Extension IPC)
 class DarwinNotificationObserver: ObservableObject {
     static let notificationName = "com.browser.sharedURL" as CFString
@@ -5440,6 +5453,7 @@ struct ContentView: View {
             webView.scrollView.delegate = context.coordinator
             webView.scrollView.alwaysBounceVertical = true
             webView.scrollView.refreshControl = context.coordinator.refreshControl
+            Self.applySiteSpecificTopInset(to: webView, url: webView.url ?? tab.url)
             if let aiWebView = webView as? AIWebView {
                 aiWebView.onAskAI = onAskAI
                 AIWebView.installAskAIMenu()
@@ -5459,6 +5473,7 @@ struct ContentView: View {
             webView.navigationDelegate = context.coordinator
             webView.uiDelegate = context.coordinator
             webView.scrollView.delegate = context.coordinator
+            Self.applySiteSpecificTopInset(to: webView, url: webView.url ?? tab.url)
             context.coordinator.installWebProviderMessageHandler(on: webView)
             context.coordinator.installGestures(on: webView)
             if webView.url == nil, let url = tab.url, !webView.isLoading {
@@ -5507,6 +5522,37 @@ struct ContentView: View {
                         }
                     }
                 }
+            }
+        }
+
+        /// Reddit's desktop header sits directly beneath iPadOS's scroll-edge
+        /// glass when the browser extends under the top safe area. A small
+        /// content inset makes its top controls reliably tappable at rest while
+        /// leaving the WebView itself underlapping the glass during scrolling.
+        private static func applySiteSpecificTopInset(to webView: WKWebView, url: URL?) {
+            let scrollView = webView.scrollView
+            let desiredTop = BrowserSiteViewportPolicy.topContentInset(
+                for: url,
+                idiom: UIDevice.current.userInterfaceIdiom
+            )
+            let oldTop = scrollView.contentInset.top
+            guard abs(oldTop - desiredTop) > 0.5 else { return }
+
+            let wasAtTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1
+            var contentInset = scrollView.contentInset
+            contentInset.top = desiredTop
+            scrollView.contentInset = contentInset
+
+            var indicatorInset = scrollView.verticalScrollIndicatorInsets
+            indicatorInset.top = desiredTop
+            scrollView.verticalScrollIndicatorInsets = indicatorInset
+
+            if wasAtTop {
+                scrollView.layoutIfNeeded()
+                scrollView.setContentOffset(
+                    CGPoint(x: scrollView.contentOffset.x, y: -scrollView.adjustedContentInset.top),
+                    animated: false
+                )
             }
         }
 
@@ -6028,6 +6074,7 @@ struct ContentView: View {
             func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
                 Task { @MainActor in
                     self.tab.isReaderMode = false
+                    WebViewHost.applySiteSpecificTopInset(to: webView, url: webView.url ?? self.tab.url)
                 }
             }
 
@@ -6055,6 +6102,7 @@ struct ContentView: View {
                     if let u = webView.url {
                         self.tab.url = u
                         self.tab.address = u.absoluteString
+                        WebViewHost.applySiteSpecificTopInset(to: webView, url: u)
 
                         ThirdPartyCookieBlocker.shared.updateHost(for: webView, url: u)
                         SitePrivacyStore.shared.applyPolicies(to: webView, url: u, reloadIfChanged: true)

@@ -143,6 +143,37 @@ final class AIResponseCanvasTests: XCTestCase {
         XCTAssertEqual(components.queryItems?.first(where: { $0.name == "q" })?.value, "browser news")
     }
 
+    func testRedditTopContentInsetIsLimitedToIPadRedditPages() {
+        XCTAssertEqual(
+            BrowserSiteViewportPolicy.topContentInset(
+                for: URL(string: "https://www.reddit.com/r/AppleWatch/comments/example"),
+                idiom: .pad
+            ),
+            BrowserSiteViewportPolicy.redditIPadTopContentInset
+        )
+        XCTAssertEqual(
+            BrowserSiteViewportPolicy.topContentInset(
+                for: URL(string: "https://old.reddit.com/r/AppleWatch"),
+                idiom: .pad
+            ),
+            BrowserSiteViewportPolicy.redditIPadTopContentInset
+        )
+        XCTAssertEqual(
+            BrowserSiteViewportPolicy.topContentInset(
+                for: URL(string: "https://www.reddit.com/r/AppleWatch"),
+                idiom: .phone
+            ),
+            0
+        )
+        XCTAssertEqual(
+            BrowserSiteViewportPolicy.topContentInset(
+                for: URL(string: "https://example.com"),
+                idiom: .pad
+            ),
+            0
+        )
+    }
+
     func testRedditRetryPolicyRetriesOnlyTransientFailures() {
         XCTAssertTrue(RedditExtractionRetryPolicy.shouldRetry(RedditExtractionError.timedOut))
         XCTAssertTrue(RedditExtractionRetryPolicy.shouldRetry(URLError(.networkConnectionLost)))
