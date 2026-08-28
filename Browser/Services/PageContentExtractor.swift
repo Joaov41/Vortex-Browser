@@ -8,18 +8,19 @@ enum PageContentExtractor {
         let title: String?
         let body: String
         let redditCommentCount: Int?
+        let redditCoverage: RedditCoverageMetadata?
 
         var formattedForAIContext: String {
+            let coveragePrefix = redditCoverage.map { "\($0.contextDescription)\n\n" } ?? ""
             if let title, !title.isEmpty {
-                return "Title: \(title)\n\nBody:\n\(body)"
+                return "Title: \(title)\n\nBody:\n\(coveragePrefix)\(body)"
             }
-            return "Body:\n\(body)"
+            return "Body:\n\(coveragePrefix)\(body)"
         }
     }
 
-    private enum ExtractionTimeoutError: Error {
-        case timedOut
-    }
+    private static let redditSummaryTimeout: TimeInterval = 30
+    private static let redditFastQueryTimeout: TimeInterval = 20
 
     private static let articleExtractionScript: String = {
         """
@@ -89,17 +90,39 @@ enum PageContentExtractor {
                 // Reddit QA is only useful if the model sees the thread, not just
                 // the post body. Keep comment extraction enabled even on the
                 // "fast" path so Ask AI can answer about replies again.
-                let redditTimeout = preferFast ? 6.0 : 8.0
+                let redditTimeout = preferFast ? redditFastQueryTimeout : redditSummaryTimeout
                 let includeAllComments = true
-                let result = try await withTimeout(seconds: redditTimeout) {
-                    try await RedditAPI().getContent(from: url, includeAllComments: includeAllComments)
+                var result: RedditContentResult?
+                var lastError: Error?
+                for attempt in 0..<2 {
+                    do {
+                        result = try await withTimeout(seconds: redditTimeout) {
+                            try await RedditAPI().getContentResult(from: url, includeAllComments: includeAllComments)
+                        }
+                        lastError = nil
+                        break
+                    } catch {
+                        lastError = error
+                        let canRetry = attempt == 0 && RedditExtractionRetryPolicy.shouldRetry(error)
+                        browserAIExtractLog(
+                            "REDDIT attempt=\(attempt + 1) failed retryable=\(canRetry) error=\(error.localizedDescription)"
+                        )
+                        guard canRetry else { break }
+                    }
                 }
+                if let lastError, result == nil {
+                    throw lastError
+                }
+                guard let result else { return nil }
                 if let extracted = buildExtractedContent(
                     title: nil,
                     body: result.content,
-                    redditCommentCount: result.commentCount
+                    redditCommentCount: result.commentCount,
+                    redditCoverage: result.coverage
                 ) {
-                    browserAIExtractLog("REDDIT success bodyChars=\(extracted.body.count)")
+                    browserAIExtractLog(
+                        "REDDIT success bodyChars=\(extracted.body.count) comments=\(result.coverage.accessibleCommentCount) complete=\(result.coverage.extractionComplete)"
+                    )
                     return extracted
                 }
             } catch {
@@ -173,10 +196,13 @@ enum PageContentExtractor {
     private static func buildExtractedContent(
         title: String?,
         body: String?,
-        redditCommentCount: Int? = nil
+        redditCommentCount: Int? = nil,
+        redditCoverage: RedditCoverageMetadata? = nil
     ) -> ExtractedPageContent? {
         let sanitizedTitle = sanitizeExtractedText(title ?? "")
-        let sanitizedBody = sanitizeExtractedText(body ?? "")
+        let sanitizedBody = redditCoverage == nil && redditCommentCount == nil
+            ? sanitizeExtractedText(body ?? "")
+            : sanitizeRedditText(body ?? "")
         guard !sanitizedBody.isEmpty else { return nil }
 
         let cappedTitle: String? = {
@@ -185,6 +211,9 @@ enum PageContentExtractor {
             return String(sanitizedTitle.prefix(300))
         }()
         let cappedBody: String = {
+            if redditCoverage != nil || redditCommentCount != nil {
+                return sanitizedBody
+            }
             if sanitizedBody.count <= 60_000 { return sanitizedBody }
             return String(sanitizedBody.prefix(60_000))
         }()
@@ -192,7 +221,8 @@ enum PageContentExtractor {
         return ExtractedPageContent(
             title: cappedTitle,
             body: cappedBody,
-            redditCommentCount: redditCommentCount
+            redditCommentCount: redditCommentCount,
+            redditCoverage: redditCoverage
         )
     }
 
@@ -222,6 +252,40 @@ enum PageContentExtractor {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Reddit comment records are newline-delimited by RedditAPI. Preserve
+    /// those boundaries while still removing markup and excess spaces so the
+    /// summarizer can account for every comment independently.
+    private static func sanitizeRedditText(_ text: String) -> String {
+        let withoutScripts = text.replacingOccurrences(
+            of: #"(?is)<(script|style)[^>]*>.*?</\1>"#,
+            with: " ",
+            options: .regularExpression
+        )
+        let withoutTags = withoutScripts.replacingOccurrences(
+            of: #"(?is)</?[a-zA-Z][^>]*>"#,
+            with: " ",
+            options: .regularExpression
+        )
+        let decoded = withoutTags
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+
+        return decoded
+            .components(separatedBy: .newlines)
+            .map { line in
+                line.components(separatedBy: CharacterSet.whitespaces)
+                    .filter { !$0.isEmpty }
+                    .joined(separator: " ")
+            }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func withTimeout<T>(
         seconds: Double,
         operation: @escaping @Sendable () async throws -> T
@@ -232,11 +296,11 @@ enum PageContentExtractor {
             }
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                throw ExtractionTimeoutError.timedOut
+                throw RedditExtractionError.timedOut
             }
 
             guard let first = try await group.next() else {
-                throw ExtractionTimeoutError.timedOut
+                throw RedditExtractionError.timedOut
             }
             group.cancelAll()
             return first

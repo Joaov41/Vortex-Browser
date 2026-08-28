@@ -1498,6 +1498,12 @@ struct ContentView: View {
     @State private var showDownloadLocationPicker: Bool = false
     @State private var mlxWarmupTask: Task<Void, Never>? = nil
     private let webProviderContextMaxChars = 80000
+    private var redditWebProviderContextMaxChars: Int {
+        min(
+            webProviderContextMaxChars,
+            RedditSummaryPlanner.characterBudget(for: .webChatGPT)
+        )
+    }
 
     private struct AICachedPageContent {
         let urlKey: String
@@ -1819,6 +1825,9 @@ struct ContentView: View {
               PageContentExtractor.isRedditURL(url),
               let entry = cachedAIPageContentEntry(for: tab) else { return nil }
 
+        if let coverage = entry.content.redditCoverage {
+            return coverage.statusText
+        }
         if let commentCount = entry.content.redditCommentCount {
             let commentLabel = commentCount == 1 ? "comment" : "comments"
             return "Reddit thread context loaded: post + \(commentCount) \(commentLabel)"
@@ -2406,13 +2415,24 @@ struct ContentView: View {
         }
 
         if let cached = cachedAIPageContent(for: sourceTab) {
-            let composed = "\(cached)\n\nUser prompt:\n\(trimmedPrompt)"
+            let context = RedditSummaryPlanner.isRedditContext(cached)
+                ? RedditSummaryPlanner.webSafeContext(
+                    content: cached,
+                    maxCharacters: redditWebProviderContextMaxChars
+                )
+                : cached
+            let composed = "\(context)\n\nUser prompt:\n\(trimmedPrompt)"
             startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed)
             return
         }
 
         if let sourceContext = aiService.sourcePageContextText {
-            let condensed = Self.condenseText(sourceContext, maxChars: webProviderContextMaxChars)
+            let condensed = RedditSummaryPlanner.isRedditContext(sourceContext)
+                ? RedditSummaryPlanner.webSafeContext(
+                    content: sourceContext,
+                    maxCharacters: redditWebProviderContextMaxChars
+                )
+                : Self.condenseText(sourceContext, maxChars: webProviderContextMaxChars)
             let composed = condensed.isEmpty ? trimmedPrompt : "\(condensed)\n\nUser prompt:\n\(trimmedPrompt)"
             browserAIWebLog("sendCaptured reusing sourcePageContext chars=\(sourceContext.count)")
             startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed)
@@ -2426,7 +2446,12 @@ struct ContentView: View {
         Task {
             let extracted = await PageContentExtractor.extractContent(from: sourceWebView, url: contextURL, preferFast: true)
             let pageText = extracted?.formattedForAIContext ?? ""
-            let condensed = Self.condenseText(pageText, maxChars: webProviderContextMaxChars)
+            let condensed = RedditSummaryPlanner.isRedditContext(pageText)
+                ? RedditSummaryPlanner.webSafeContext(
+                    content: pageText,
+                    maxCharacters: redditWebProviderContextMaxChars
+                )
+                : Self.condenseText(pageText, maxChars: webProviderContextMaxChars)
             let composed = condensed.isEmpty ? trimmedPrompt : "\(condensed)\n\nUser prompt:\n\(trimmedPrompt)"
             await MainActor.run {
                 guard webProviderContextTabID == sourceTabID,
@@ -5203,13 +5228,24 @@ struct ContentView: View {
         }
 
         if let cached = cachedAIPageContent(for: sourceTab) {
-            let composed = "\(cached)\n\nUser prompt:\n\(trimmedPrompt)"
+            let context = RedditSummaryPlanner.isRedditContext(cached)
+                ? RedditSummaryPlanner.webSafeContext(
+                    content: cached,
+                    maxCharacters: redditWebProviderContextMaxChars
+                )
+                : cached
+            let composed = "\(context)\n\nUser prompt:\n\(trimmedPrompt)"
             sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: webProviderTabID(for: webView))
             return
         }
 
         if let sourceContext = aiService.sourcePageContextText {
-            let condensed = Self.condenseText(sourceContext, maxChars: webProviderContextMaxChars)
+            let condensed = RedditSummaryPlanner.isRedditContext(sourceContext)
+                ? RedditSummaryPlanner.webSafeContext(
+                    content: sourceContext,
+                    maxCharacters: redditWebProviderContextMaxChars
+                )
+                : Self.condenseText(sourceContext, maxChars: webProviderContextMaxChars)
             let composed = condensed.isEmpty ? trimmedPrompt : "\(condensed)\n\nUser prompt:\n\(trimmedPrompt)"
             browserAIWebLog("handleWebProviderPrompt reusing sourcePageContext chars=\(sourceContext.count)")
             sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: webProviderTabID(for: webView))
@@ -5221,7 +5257,12 @@ struct ContentView: View {
         Task {
             let extracted = await PageContentExtractor.extractContent(from: sourceWebView, url: contextURL, preferFast: true)
             let pageText = extracted?.formattedForAIContext ?? ""
-            let condensed = Self.condenseText(pageText, maxChars: webProviderContextMaxChars)
+            let condensed = RedditSummaryPlanner.isRedditContext(pageText)
+                ? RedditSummaryPlanner.webSafeContext(
+                    content: pageText,
+                    maxCharacters: redditWebProviderContextMaxChars
+                )
+                : Self.condenseText(pageText, maxChars: webProviderContextMaxChars)
             let composed: String
             if condensed.isEmpty {
                 composed = trimmedPrompt

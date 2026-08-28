@@ -1082,6 +1082,10 @@ class SimpleAIService: ObservableObject {
     private var warmedUpAppleLocal = false
     private let requestTimeoutNanoseconds: UInt64 = 90_000_000_000
     private let pccGatewayRequestTimeoutNanoseconds: UInt64 = 300_000_000_000
+    // A full Reddit map/reduce pass can legitimately require many small local
+    // generations. Keep the app cancellable while allowing that pass to finish
+    // instead of firing the ordinary single-request watchdog after 90 seconds.
+    private let redditProcessingTimeoutNanoseconds: UInt64 = 1_800_000_000_000
     private let maxRetainedMessagesForWebProviders = 2
     private let maxRetainedMessagesForAppBackends = 4
     private let appleLocalQueryContextCharacterLimit = 1_200
@@ -1347,9 +1351,22 @@ class SimpleAIService: ObservableObject {
         requestTimeoutTask?.cancel()
         requestTimeoutTask = Task { [weak self] in
             guard let self else { return }
-            let timeoutNanoseconds = selectedBackend == .applePCCGateway
-                ? self.pccGatewayRequestTimeoutNanoseconds
-                : self.requestTimeoutNanoseconds
+            let isRedditRequest: Bool = {
+                switch request {
+                case .summary(let content, _):
+                    return RedditSummaryPlanner.isRedditContext(content)
+                case .query(_, let pageContent):
+                    return pageContent.map(RedditSummaryPlanner.isRedditContext) ?? false
+                }
+            }()
+            let timeoutNanoseconds: UInt64
+            if isRedditRequest {
+                timeoutNanoseconds = self.redditProcessingTimeoutNanoseconds
+            } else if selectedBackend == .applePCCGateway {
+                timeoutNanoseconds = self.pccGatewayRequestTimeoutNanoseconds
+            } else {
+                timeoutNanoseconds = self.requestTimeoutNanoseconds
+            }
             try? await Task.sleep(nanoseconds: timeoutNanoseconds)
             await MainActor.run {
                 guard self.isRequestActive(requestID) else { return }
@@ -1381,10 +1398,12 @@ class SimpleAIService: ObservableObject {
                     if !trimmedProvided.isEmpty {
                         let shouldPromote = sourcePageContext == nil || Self.shouldPromoteToSourceContext(trimmedProvided)
                         if shouldPromote {
-                            sourcePageContext = Self.truncatePreservingStructure(
-                                trimmedProvided,
-                                maxChars: appleLocalSummaryContextCharacterLimit
-                            )
+                            sourcePageContext = RedditSummaryPlanner.isRedditContext(trimmedProvided)
+                                ? trimmedProvided
+                                : Self.truncatePreservingStructure(
+                                    trimmedProvided,
+                                    maxChars: appleLocalSummaryContextCharacterLimit
+                                )
                         }
                     }
                 }
@@ -1399,10 +1418,14 @@ class SimpleAIService: ObservableObject {
                 let shouldPromoteProvidedContext =
                     sourcePageContext == nil || (providedPageContent.map(Self.shouldPromoteToSourceContext) ?? false)
                 if shouldPromoteProvidedContext, let providedPageContent {
-                    let contextCap = selectedBackend == .applePCCGateway
-                        ? pccGatewayInputCharacterLimit
-                        : mlxInputCharacterLimit
-                    sourcePageContext = Self.truncatePreservingStructure(providedPageContent, maxChars: contextCap)
+                    if RedditSummaryPlanner.isRedditContext(providedPageContent) {
+                        sourcePageContext = providedPageContent
+                    } else {
+                        let contextCap = selectedBackend == .applePCCGateway
+                            ? pccGatewayInputCharacterLimit
+                            : mlxInputCharacterLimit
+                        sourcePageContext = Self.truncatePreservingStructure(providedPageContent, maxChars: contextCap)
+                    }
                 }
                 resolvedPageContent = {
                     guard let providedPageContent else { return sourcePageContext }
@@ -1439,20 +1462,26 @@ class SimpleAIService: ObservableObject {
             let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmedContent.isEmpty,
                sourcePageContext == nil || Self.shouldPromoteToSourceContext(trimmedContent) {
-                let contextCap: Int
-                switch selectedBackend {
-                case .localApple:
-                    contextCap = length == .short
-                        ? appleLocalShortSummaryContextCharacterLimit
-                        : appleLocalSummaryContextCharacterLimit
-                case .applePCCGateway:
-                    contextCap = pccGatewayInputCharacterLimit
-                default:
-                    contextCap = mlxInputCharacterLimit
+                if RedditSummaryPlanner.isRedditContext(trimmedContent) {
+                    // Keep the complete structured Reddit context for the map
+                    // pass and for later follow-up questions.
+                    sourcePageContext = trimmedContent
+                } else {
+                    let contextCap: Int
+                    switch selectedBackend {
+                    case .localApple:
+                        contextCap = length == .short
+                            ? appleLocalShortSummaryContextCharacterLimit
+                            : appleLocalSummaryContextCharacterLimit
+                    case .applePCCGateway:
+                        contextCap = pccGatewayInputCharacterLimit
+                    default:
+                        contextCap = mlxInputCharacterLimit
+                    }
+                    // Preserve newline structure so follow-up queries can still
+                    // parse "Title:" / "Body:" markers from the stored context.
+                    sourcePageContext = Self.truncatePreservingStructure(content, maxChars: contextCap)
                 }
-                // Preserve newline structure so follow-up queries can still
-                // parse "Title:" / "Body:" markers from the stored context.
-                sourcePageContext = Self.truncatePreservingStructure(content, maxChars: contextCap)
             }
             if selectedBackend == .localApple {
                 appleLocalFollowUpLog(
@@ -1532,6 +1561,34 @@ class SimpleAIService: ObservableObject {
         let sourceContext = pageContent ?? ""
 
         do {
+            if RedditSummaryPlanner.isRedditContext(sourceContext),
+               !backend.isWebProvider {
+                let counter = AIThroughputCounter()
+                await MainActor.run {
+                    self.beginThroughputSession(sessionID: requestID, backend: backend)
+                }
+                let responseText = try await runRedditQuery(
+                    query: query,
+                    content: sourceContext,
+                    length: shouldUseConciseAnswer(for: query) ? .short : .long,
+                    backend: backend,
+                    requestID: requestID,
+                    counter: counter
+                )
+                await MainActor.run {
+                    self.completeRequest(with: responseText, requestID: requestID)
+                }
+                await finishThroughputSessionIfNeeded(
+                    requestID: requestID,
+                    backend: backend,
+                    counter: counter,
+                    fallbackText: responseText
+                )
+                if backend == .mlxLocal {
+                    await MLXLocalService.shared.clearTransientCache()
+                }
+                return
+            }
             switch backend {
             case .cloudShortcuts:
                 let condensed = Self.condense(sourceContext, maxChars: 6000)
@@ -1905,6 +1962,365 @@ class SimpleAIService: ObservableObject {
         return wordCount >= 90
     }
 
+    private enum RedditGenerationPhase {
+        case map
+        case reduction
+        case final
+    }
+
+    private func runRedditSummary(
+        content: String,
+        length: SummaryLength,
+        backend: AIModelBackend,
+        requestID: UUID,
+        counter: AIThroughputCounter
+    ) async throws -> String {
+        let plan = RedditSummaryPlanner.plan(content: content, backend: backend)
+        guard !plan.chunks.isEmpty else {
+            throw NSError(
+                domain: "SimpleAIService.Reddit",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Reddit thread did not contain any summarizable content."]
+            )
+        }
+        print(
+            "🧵 [Reddit Summary] backend=\(backend.rawValue) chunks=\(plan.chunkCount) comments=\(plan.totalCommentCount) budget=\(plan.characterBudget)"
+        )
+
+        var partials: [String] = []
+        partials.reserveCapacity(plan.chunks.count)
+        for chunk in plan.chunks {
+            try Task.checkCancellation()
+            let prompt = buildRedditMapPrompt(
+                chunk: chunk,
+                totalChunks: plan.chunkCount,
+                requestedLength: length
+            )
+            let partial = try await generateRedditResponse(
+                prompt: prompt,
+                backend: backend,
+                length: length,
+                phase: .map,
+                requestID: requestID,
+                counter: counter
+            )
+            let trimmed = partial.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw NSError(
+                    domain: "SimpleAIService.Reddit",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "The selected model returned an empty Reddit partial summary."]
+                )
+            }
+            partials.append(trimmed)
+        }
+
+        let finalInstruction = buildRedditFinalSummaryPrompt(length: length)
+        let synthesis = try await reduceRedditPartials(
+            partials,
+            backend: backend,
+            length: length,
+            finalInstruction: finalInstruction,
+            requestID: requestID,
+            counter: counter
+        )
+        let coverageLine = "Reddit summary coverage: summarized \(plan.totalCommentCount) accessible comments across \(plan.chunkCount) parts."
+        let partialNotice = content.contains("(partial extraction)")
+            ? " Extraction was partial; the source did not expose every accessible comment."
+            : ""
+        return "\(coverageLine)\(partialNotice)\n\n\(synthesis)"
+    }
+
+    private func runRedditQuery(
+        query: String,
+        content: String,
+        length: SummaryLength,
+        backend: AIModelBackend,
+        requestID: UUID,
+        counter: AIThroughputCounter
+    ) async throws -> String {
+        let plan = RedditSummaryPlanner.plan(content: content, backend: backend)
+        guard !plan.chunks.isEmpty else {
+            throw NSError(
+                domain: "SimpleAIService.Reddit",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Reddit thread did not contain any searchable content."]
+            )
+        }
+        print(
+            "🧵 [Reddit Query] backend=\(backend.rawValue) chunks=\(plan.chunkCount) comments=\(plan.totalCommentCount) budget=\(plan.characterBudget)"
+        )
+
+        var partials: [String] = []
+        partials.reserveCapacity(plan.chunks.count)
+        for chunk in plan.chunks {
+            try Task.checkCancellation()
+            let prompt = buildRedditMapQueryPrompt(
+                question: query,
+                chunk: chunk,
+                totalChunks: plan.chunkCount
+            )
+            let partial = try await generateRedditResponse(
+                prompt: prompt,
+                backend: backend,
+                length: length,
+                phase: .map,
+                requestID: requestID,
+                counter: counter
+            )
+            let trimmed = partial.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            partials.append(trimmed)
+        }
+        guard !partials.isEmpty else {
+            return "I couldn't find an answer in the accessible Reddit comments."
+        }
+
+        let finalInstruction = buildRedditFinalQueryPrompt(question: query, length: length)
+        let synthesis = try await reduceRedditPartials(
+            partials,
+            backend: backend,
+            length: length,
+            finalInstruction: finalInstruction,
+            requestID: requestID,
+            counter: counter
+        )
+        let coverageLine = "Reddit query coverage: checked \(plan.totalCommentCount) accessible comments across \(plan.chunkCount) parts."
+        let partialNotice = content.contains("(partial extraction)")
+            ? " The source extraction was partial."
+            : ""
+        return "\(coverageLine)\(partialNotice)\n\n\(synthesis)"
+    }
+
+    private func reduceRedditPartials(
+        _ partials: [String],
+        backend: AIModelBackend,
+        length: SummaryLength,
+        finalInstruction: String,
+        requestID: UUID,
+        counter: AIThroughputCounter
+    ) async throws -> String {
+        var current = partials
+        var pass = 0
+        while current.count > 1 {
+            try Task.checkCancellation()
+            pass += 1
+            let groups = RedditSummaryPlanner.reductionGroups(current, backend: backend)
+            guard !groups.isEmpty else { break }
+            var reduced: [String] = []
+            reduced.reserveCapacity(groups.count)
+            for group in groups {
+                try Task.checkCancellation()
+                let prompt = buildRedditReductionPrompt(
+                    partials: group.joined(separator: "\n\n"),
+                    pass: pass,
+                    requestedLength: length
+                )
+                let result = try await generateRedditResponse(
+                    prompt: prompt,
+                    backend: backend,
+                    length: length,
+                    phase: .reduction,
+                    requestID: requestID,
+                    counter: counter
+                )
+                let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { reduced.append(trimmed) }
+            }
+            guard !reduced.isEmpty else { break }
+            // A provider that returns an unusually long partial can make every
+            // reduction record exceed its budget. Preserve all generated parts
+            // as the honest fallback instead of silently dropping a suffix.
+            if reduced.count >= current.count {
+                return reduced.joined(separator: "\n\n")
+            }
+            current = reduced
+        }
+
+        let source = current.joined(separator: "\n\n")
+        let finalPrompt = "\(finalInstruction)\n\nPartial synthesis:\n\(source)"
+        return try await generateRedditResponse(
+            prompt: finalPrompt,
+            backend: backend,
+            length: length,
+            phase: .final,
+            requestID: requestID,
+            counter: counter
+        )
+    }
+
+    private func generateRedditResponse(
+        prompt: String,
+        backend: AIModelBackend,
+        length: SummaryLength,
+        phase: RedditGenerationPhase,
+        requestID: UUID,
+        counter: AIThroughputCounter
+    ) async throws -> String {
+        try Task.checkCancellation()
+        switch backend {
+        case .localApple:
+            let outputTokens: Int = {
+                switch phase {
+                case .final:
+                    return cappedAppleLocalSummaryOutputTokens(length: length)
+                default:
+                    return min(appleLocalRetryMaxOutputTokens, 160)
+                }
+            }()
+            #if canImport(FoundationModels)
+            guard #available(iOS 18.2, macOS 15.2, *) else {
+                throw NSError(
+                    domain: "SimpleAIService.Reddit",
+                    code: 4,
+                    userInfo: [NSLocalizedDescriptionKey: "Apple local model requires iOS 18.2+ or macOS 15.2+."]
+                )
+            }
+            let preparedPrompt = optimizedPromptForAppleLocal(prompt)
+            let retryPrompt = optimizedPromptForAppleLocal(
+                "Use only the supplied Reddit material. Return a compact, faithful synthesis.\n\n\(prompt)"
+            )
+            return try await runAppleLocalDirectWithRetry(
+                primaryPrompt: preparedPrompt,
+                primaryMaxOutputTokens: outputTokens,
+                retryPrompt: retryPrompt,
+                requestID: requestID,
+                counter: counter
+            )
+            #else
+            let context = PageContext(url: nil, title: nil, selection: nil, summary: prompt)
+            let agent = AIAgent(backend: .appleIntelligenceLocal)
+            return await agent.ask(prompt, context: context)
+            #endif
+
+        case .mlxLocal:
+            guard MLXLocalService.isAvailable() else {
+                throw NSError(
+                    domain: "SimpleAIService.Reddit",
+                    code: 5,
+                    userInfo: [NSLocalizedDescriptionKey: "MLX Local is not available on this device/build."]
+                )
+            }
+            let settings = MLXLocalSettings.load()
+            let preparedPrompt = settings.truncatePromptToFitContext(optimizedPromptForMLX(prompt))
+            let configuredOutput = cappedMLXOutputTokens(settings.maxOutputTokens)
+            let outputTokens = phase == .final ? configuredOutput : min(configuredOutput, 256)
+            let metrics = try await withTimeout(seconds: mlxGenerationTimeoutSeconds) {
+                try await MLXLocalService.shared.generateTextWithMetrics(
+                    prompt: preparedPrompt,
+                    modelID: settings.modelID,
+                    maxOutputTokens: outputTokens,
+                    maxContextTokens: self.cappedMLXContextTokens(settings.maxContextTokens),
+                    onToken: nil
+                )
+            }
+            counter.add(units: metrics.tokenCount)
+            return metrics.text
+
+        case .applePCCGateway:
+            return try await makePCCGatewayClient().complete(prompt: prompt)
+
+        case .cloudShortcuts:
+            if let response = try await runPrivateCloudComputeIfAvailable(prompt: prompt) {
+                return response
+            }
+            return try await runCloudShortcutResponse(prompt: prompt)
+
+        case .webChatGPT, .webGemini:
+            throw NSError(
+                domain: "SimpleAIService.Reddit",
+                code: 6,
+                userInfo: [NSLocalizedDescriptionKey: "Web Reddit summaries are handled by the provider session."]
+            )
+        }
+    }
+
+    private func runCloudShortcutResponse(prompt: String) async throws -> String {
+        try await withCheckedThrowingContinuation { continuation in
+            Task { @MainActor in
+                self.cloudService.shortcutName = self.shortcutName
+                self.cloudService.launchCloudRequest(for: prompt, type: .summary) { output in
+                    continuation.resume(returning: output)
+                }
+            }
+        }
+    }
+
+    private func buildRedditMapPrompt(
+        chunk: RedditSummaryChunk,
+        totalChunks: Int,
+        requestedLength: SummaryLength
+    ) -> String {
+        let detail = requestedLength == .short
+            ? "Capture every distinct important point in a compact set of notes; the final answer will be short."
+            : "Capture themes, evidence, disagreements, minority views, and useful high-scored insights."
+        return """
+        Summarize this part of a Reddit thread for a later synthesis. This is part \(chunk.index + 1) of \(totalChunks) and contains \(chunk.commentCount) comment records.
+        \(detail)
+        Do not invent facts or claim this part represents comments it does not contain. Keep concrete names, claims, and disagreements. Return only faithful notes.
+
+        Reddit material:
+        \(chunk.text)
+        """
+    }
+
+    private func buildRedditMapQueryPrompt(
+        question: String,
+        chunk: RedditSummaryChunk,
+        totalChunks: Int
+    ) -> String {
+        """
+        Find evidence relevant to the user's question in this part of a Reddit thread. This is part \(chunk.index + 1) of \(totalChunks).
+        List relevant claims, disagreements, and supporting details faithfully. If this part has no relevant evidence, say exactly: No relevant evidence in this part. Do not infer from missing parts.
+
+        User question:
+        \(question)
+
+        Reddit material:
+        \(chunk.text)
+        """
+    }
+
+    private func buildRedditReductionPrompt(
+        partials: String,
+        pass: Int,
+        requestedLength: SummaryLength
+    ) -> String {
+        let detail = requestedLength == .short
+            ? "Keep the synthesis compact while retaining every distinct important point."
+            : "Retain distinct themes, disagreements, minority opinions, and concrete supporting details."
+        return """
+        Combine these partial Reddit notes in reduction pass \(pass) into one faithful synthesis.
+        \(detail)
+        Do not add facts, erase disagreement, or mention internal passes. Every supplied partial must influence the result.
+
+        \(partials)
+        """
+    }
+
+    private func buildRedditFinalSummaryPrompt(length: SummaryLength) -> String {
+        if length == .short {
+            return """
+            Write a short but complete Reddit thread summary in at most two concise paragraphs. State the main topic and outcome, then the most important supporting points and notable disagreement. Use only the partial synthesis below.
+            """
+        }
+        return """
+        Write a detailed but clear summary of the Reddit thread from the partial synthesis below. Cover the main topic, recurring themes, evidence, important high-scored or minority perspectives, and disagreements. Do not invent details or claim certainty the source does not support.
+        """
+    }
+
+    private func buildRedditFinalQueryPrompt(question: String, length: SummaryLength) -> String {
+        let style = length == .short
+            ? "Answer briefly in one or two concise paragraphs."
+            : "Answer clearly and in detail, distinguishing consensus from disagreement."
+        return """
+        Answer the user's Reddit question using only the partial synthesis below. \(style) If the evidence is insufficient, say so. Do not mention internal synthesis passes.
+
+        User question:
+        \(question)
+        """
+    }
+
     private func runSummary(
         _ content: String,
         length: SummaryLength = .long,
@@ -1912,6 +2328,37 @@ class SimpleAIService: ObservableObject {
         requestID: UUID
     ) async {
         do {
+            if RedditSummaryPlanner.isRedditContext(content),
+               !backend.isWebProvider {
+                let counter = AIThroughputCounter()
+                await MainActor.run {
+                    self.beginThroughputSession(sessionID: requestID, backend: backend)
+                }
+                let responseText = try await runRedditSummary(
+                    content: content,
+                    length: length,
+                    backend: backend,
+                    requestID: requestID,
+                    counter: counter
+                )
+                await MainActor.run {
+                    if backend == .localApple {
+                        self.shouldResetAppleLocalAfterSummaryWhenIdle = true
+                        self.pendingAppleLocalPostSummaryFollowUp = true
+                    }
+                    self.completeRequest(with: responseText, requestID: requestID)
+                }
+                await finishThroughputSessionIfNeeded(
+                    requestID: requestID,
+                    backend: backend,
+                    counter: counter,
+                    fallbackText: responseText
+                )
+                if backend == .mlxLocal {
+                    await MLXLocalService.shared.clearTransientCache()
+                }
+                return
+            }
             switch backend {
             case .cloudShortcuts:
                 let prompt: String

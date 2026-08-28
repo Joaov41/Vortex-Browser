@@ -1,5 +1,131 @@
 import Foundation
 
+/// Errors used by the Reddit extraction timeout wrapper. Keeping the timeout
+/// value typed lets the retry policy distinguish an interrupted Reddit fetch
+/// from a permanent content error.
+enum RedditExtractionError: Error, Equatable {
+    case timedOut
+}
+
+/// The extraction limits are deliberately generous. They protect the app from
+/// pathological threads without making the provider's much smaller context
+/// window decide how many comments Reddit can contribute.
+struct RedditExtractionLimits: Sendable, Equatable {
+    let maxContentCharacters: Int
+    let maxCommentCount: Int
+    let maxMoreRequests: Int
+
+    static let `default` = RedditExtractionLimits(
+        maxContentCharacters: 1_500_000,
+        maxCommentCount: 5_000,
+        maxMoreRequests: 500
+    )
+}
+
+struct RedditCoverageMetadata: Sendable, Equatable {
+    let expectedCommentCount: Int?
+    let accessibleCommentCount: Int
+    let discoveredMoreCommentIDs: Int
+    let moreRequestsAttempted: Int
+    let extractionComplete: Bool
+    let hitSafetyLimit: Bool
+    let hitMoreRequestLimit: Bool
+    let hadFetchFailures: Bool
+
+    var statusText: String {
+        let accessible = "\(accessibleCommentCount) accessible \(accessibleCommentCount == 1 ? "comment" : "comments")"
+        if extractionComplete {
+            return "Reddit thread: \(accessible) extracted"
+        }
+
+        if let expectedCommentCount {
+            return "Reddit thread: \(accessible) extracted of \(expectedCommentCount) reported (partial)"
+        }
+        return "Reddit thread: \(accessible) extracted (partial)"
+    }
+
+    var contextDescription: String {
+        let expected = expectedCommentCount.map(String.init) ?? "unknown"
+        let state = extractionComplete ? "complete" : "partial"
+        return "Reddit coverage: extracted \(accessibleCommentCount) accessible comments (reported \(expected); \(state) extraction)"
+    }
+}
+
+struct RedditContentResult: Sendable {
+    let content: String
+    let commentCount: Int
+    let coverage: RedditCoverageMetadata
+}
+
+/// Stable formatting/identity helpers shared by the extractor and focused
+/// tests. Reply depth is explicit because whitespace indentation is removed
+/// later when Reddit text is sanitized for model context.
+enum RedditCommentFormatting {
+    static func depthMarker(for depth: Int) -> String {
+        depth > 0 ? "[reply depth \(depth)] " : ""
+    }
+
+    static func stableIdentifier(from data: [String: Any]) -> String? {
+        for key in ["name", "id"] {
+            if let value = data[key] as? String, !value.isEmpty {
+                return value
+            }
+        }
+        return nil
+    }
+}
+
+/// Reddit extraction is safe to retry once for transient failures. Permanent
+/// access/content errors must fall through immediately so a deleted or private
+/// post does not trigger a second request.
+enum RedditExtractionRetryPolicy {
+    static func shouldRetry(_ error: Error) -> Bool {
+        if error is CancellationError {
+            return false
+        }
+        if error is RedditExtractionError {
+            return true
+        }
+
+        if let redditError = error as? RedditAPIError {
+            switch redditError {
+            case .networkError(let underlying):
+                return shouldRetry(underlying)
+            case .rateLimited, .apiQuotaExceeded:
+                return true
+            case .httpError(let statusCode, _):
+                return statusCode == 408 || statusCode == 425 || (500...599).contains(statusCode)
+            default:
+                return false
+            }
+        }
+
+        if let urlError = error as? URLError {
+            return [
+                .timedOut,
+                .networkConnectionLost,
+                .notConnectedToInternet,
+                .cannotConnectToHost,
+                .cannotFindHost,
+                .dnsLookupFailed,
+                .resourceUnavailable
+            ].contains(urlError.code)
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == NSURLErrorDomain {
+            let urlCode = URLError.Code(rawValue: nsError.code)
+            return shouldRetry(URLError(urlCode))
+        }
+
+        let description = error.localizedDescription.lowercased()
+        return description.contains("429")
+            || description.contains("rate limit")
+            || description.contains("timed out")
+            || description.contains("network")
+    }
+}
+
 // MARK: - Reddit API Error Types
 enum RedditAPIError: LocalizedError {
     case invalidURL
@@ -127,11 +253,27 @@ class RedditAPI {
     /// Maximum number of retry attempts for fetching "more" items
     private let maxRetryCount = 5
     
-    /// Maximum number of "more" requests to prevent infinite loops
-    private let maxMoreRequests = 50
+    /// Maximum number of "more" requests to prevent infinite loops. This is
+    /// higher than the old 50-request cap; the content and comment ceilings
+    /// remain the final resource guardrails.
+    private let maxMoreRequests = RedditExtractionLimits.default.maxMoreRequests
+
+    /// Generous extraction ceiling. Provider-specific summarizers consume the
+    /// result in smaller chunks later, so this is not a model-context cap.
+    private let extractionLimits = RedditExtractionLimits.default
     
     /// Track the number of "more" requests made
     private var moreRequestCount = 0
+
+    /// Per-extraction coverage bookkeeping.
+    private var processedMoreIDs = Set<String>()
+    private var processedCommentIDs = Set<String>()
+    private var extractedCommentCount = 0
+    private var extractedContentCharacters = 0
+    private var didHitSafetyLimit = false
+    private var didHitMoreRequestLimit = false
+    private var hadCommentFetchFailures = false
+    private var discoveredMoreCommentIDs = 0
     
     /// Delay factor for exponential backoff (in seconds)
     private let backoffFactor: Double = 2.0
@@ -148,6 +290,13 @@ class RedditAPI {
     ///   - includeAllComments: Flag to include all comments in the extraction.
     /// - Returns: A tuple containing the formatted string and an optional comment count (nil for non-post pages).
     func getContent(from url: URL, includeAllComments: Bool = true) async throws -> (content: String, commentCount: Int?) {
+        let result = try await getContentResult(from: url, includeAllComments: includeAllComments)
+        return (result.content, result.commentCount)
+    }
+
+    /// Fetches a Reddit page together with enough metadata for callers to
+    /// report whether the complete accessible comment tree was obtained.
+    func getContentResult(from url: URL, includeAllComments: Bool = true) async throws -> RedditContentResult {
         var components = URLComponents(url: url, resolvingAgainstBaseURL: true)!
         components.scheme = "https"
         components.host = "www.reddit.com"
@@ -246,8 +395,7 @@ class RedditAPI {
                let commentListing = jsonArray[1] as? [String: Any],
                commentListing["kind"] as? String == "Listing" { // Check if second element is comments (Listing)
                 
-                let (content, count) = try await extractPostContent(from: data, includeAllComments: includeAllComments)
-                return (content, count) // Return content and count for posts
+                return try await extractPostContent(from: data, includeAllComments: includeAllComments)
             } else {
                 // Check if the response indicates deleted content
                 if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -258,7 +406,20 @@ class RedditAPI {
                 
                 // Assume it's a subreddit or other listing type
                 let (content, _) = try extractSubredditContent(from: data) // Ignore nil count
-                return (content, nil) // Return nil count for non-posts
+                return RedditContentResult(
+                    content: content,
+                    commentCount: 0,
+                    coverage: RedditCoverageMetadata(
+                        expectedCommentCount: nil,
+                        accessibleCommentCount: 0,
+                        discoveredMoreCommentIDs: 0,
+                        moreRequestsAttempted: 0,
+                        extractionComplete: true,
+                        hitSafetyLimit: false,
+                        hitMoreRequestLimit: false,
+                        hadFetchFailures: false
+                    )
+                )
             }
         } catch let error as RedditAPIError {
             // Re-throw Reddit API errors
@@ -288,8 +449,8 @@ class RedditAPI {
     /// - Parameters:
     ///   - data: The raw data fetched from Reddit API.
     ///   - includeAllComments: Flag to include all comments in the extraction.
-    /// - Returns: A tuple containing the formatted string and comment count.
-    private func extractPostContent(from data: Data, includeAllComments: Bool) async throws -> (content: String, commentCount: Int) {
+    /// - Returns: The formatted string, accessible comment count, and coverage metadata.
+    private func extractPostContent(from data: Data, includeAllComments: Bool) async throws -> RedditContentResult {
         guard let jsonArray = try JSONSerialization.jsonObject(with: data) as? [Any],
               jsonArray.count >= 2 else {
             throw RedditAPIError.parseError(reason: "Invalid Reddit API response structure")
@@ -308,22 +469,40 @@ class RedditAPI {
             throw RedditAPIError.contentDeleted
         }
         
-        // Set link_id for future use and reset counter
+        // Set link_id for future use and reset per-extraction bookkeeping.
         self.linkId = "t3_\(postId)"
         self.moreRequestCount = 0
+        self.processedMoreIDs.removeAll(keepingCapacity: true)
+        self.processedCommentIDs.removeAll(keepingCapacity: true)
+        self.extractedCommentCount = 0
+        self.extractedContentCharacters = 0
+        self.didHitSafetyLimit = false
+        self.didHitMoreRequestLimit = false
+        self.hadCommentFetchFailures = false
+        self.discoveredMoreCommentIDs = 0
         print("🔗 Link ID set to: \(self.linkId!)")
         
         // Build post metadata
         var content = buildPostMetadata(from: post)
-        
+        extractedContentCharacters = content.joined(separator: "\n").count
+
         // Add post content (selftext)
         if let selftext = post["selftext"] as? String, !selftext.isEmpty {
-            content.append("\n\(selftext)")
+            let separatorCost = content.isEmpty ? 0 : 1
+            let remainingCharacters = max(
+                0,
+                extractionLimits.maxContentCharacters - extractedContentCharacters - separatorCost
+            )
+            let boundedSelftext = String(selftext.prefix(remainingCharacters))
+            if boundedSelftext.count < selftext.count {
+                didHitSafetyLimit = true
+            }
+            content.append("\n\(boundedSelftext)")
+            extractedContentCharacters += separatorCost + boundedSelftext.count
         }
         
         var allComments: [String] = []
         var allMoreItems: [(ids: [String], depth: Int)] = []
-        var totalCommentCount = 0 // Initialize total count
 
         if includeAllComments {
             guard let commentListing = jsonArray[1] as? [String: Any],
@@ -335,41 +514,39 @@ class RedditAPI {
             
             // Process initial batch of comments
             var initialQueue: [(children: [[String: Any]], depth: Int)] = [(initialChildren, 0)]
-            var processedMoreIds = Set<String>()
             
             while !initialQueue.isEmpty {
                 let batch = initialQueue.removeFirst()
-                let (batchComments, batchMoreItems, batchCount) = try await processCommentBatch(children: batch.children, depth: batch.depth)
-                allComments.append(contentsOf: batchComments)
-                totalCommentCount += batchCount // Add count from initial batch
+                let (batchComments, batchMoreItems, _) = try await processCommentBatch(children: batch.children, depth: batch.depth)
+                appendCommentsWithinSafetyCeiling(batchComments, to: &allComments)
                 
                 // Track unique "more" items
                 for more in batchMoreItems {
-                    let uniqueIds = more.ids.filter { !processedMoreIds.contains($0) }
-                    if !uniqueIds.isEmpty {
-                        allMoreItems.append((ids: uniqueIds, depth: more.depth))
-                        processedMoreIds.formUnion(uniqueIds)
+                    if !more.ids.isEmpty {
+                        allMoreItems.append((ids: more.ids, depth: more.depth))
                     }
                 }
             }
 
             // Fetch "more" comments if necessary
-            if !allMoreItems.isEmpty {
+            if !allMoreItems.isEmpty, !didHitSafetyLimit {
                 print("⏳ Fetching \(allMoreItems.reduce(0) { $0 + $1.ids.count }) more comment items...")
-                do {
-                    let moreResults = try await allMoreItems.asyncMap { (ids, depth) in
-                        try await self.fetchMoreComments(ids: ids, depth: depth)
+                // Keep this sequential. The request counter, safety ceiling,
+                // and de-duplication set are shared mutable extraction state.
+                for more in allMoreItems {
+                    guard !didHitSafetyLimit else { break }
+                    let uniqueIDs = claimMoreIDs(more.ids)
+                    guard !uniqueIDs.isEmpty else { continue }
+                    do {
+                        let (moreComments, _) = try await fetchMoreComments(ids: uniqueIDs, depth: more.depth)
+                        appendCommentsWithinSafetyCeiling(moreComments, to: &allComments)
+                    } catch let error as RedditAPIError {
+                        hadCommentFetchFailures = true
+                        print("⚠️ Could not fetch additional comments: \(error.localizedDescription)")
+                    } catch {
+                        hadCommentFetchFailures = true
+                        print("⚠️ Unexpected error fetching more comments: \(error)")
                     }
-                    for (moreComments, moreCount) in moreResults {
-                        allComments.append(contentsOf: moreComments)
-                        totalCommentCount += moreCount // Add count from fetched 'more' comments
-                    }
-                } catch let error as RedditAPIError {
-                    // If there's a Reddit API error while fetching more comments, 
-                    // continue with what we have rather than failing completely
-                    print("⚠️ Could not fetch additional comments: \(error.localizedDescription)")
-                } catch {
-                    print("⚠️ Unexpected error fetching more comments: \(error)")
                 }
             }
         }
@@ -378,8 +555,54 @@ class RedditAPI {
         content.append("\n\n--- Comments ---")
         content.append(contentsOf: allComments)
         
-        print("✅ Extracted post and \(totalCommentCount) comments.")
-        return (content.joined(separator: "\n"), totalCommentCount) // Return total count
+        let expectedCommentCount = post["num_comments"] as? Int
+        let coverage = RedditCoverageMetadata(
+            expectedCommentCount: expectedCommentCount,
+            accessibleCommentCount: extractedCommentCount,
+            discoveredMoreCommentIDs: discoveredMoreCommentIDs,
+            moreRequestsAttempted: moreRequestCount,
+            extractionComplete: !didHitSafetyLimit && !didHitMoreRequestLimit && !hadCommentFetchFailures,
+            hitSafetyLimit: didHitSafetyLimit,
+            hitMoreRequestLimit: didHitMoreRequestLimit,
+            hadFetchFailures: hadCommentFetchFailures
+        )
+        print("✅ Extracted post and \(extractedCommentCount) comments (\(coverage.extractionComplete ? "complete" : "partial")).")
+        return RedditContentResult(
+            content: content.joined(separator: "\n"),
+            commentCount: extractedCommentCount,
+            coverage: coverage
+        )
+    }
+
+    /// Claims IDs before a /morechildren request so nested placeholders cannot
+    /// cause duplicate requests or duplicate comments.
+    private func claimMoreIDs(_ ids: [String]) -> [String] {
+        let unique = ids.filter { !$0.isEmpty && !processedMoreIDs.contains($0) }
+        processedMoreIDs.formUnion(unique)
+        discoveredMoreCommentIDs += unique.count
+        return unique
+    }
+
+    /// Appends complete formatted comment records until the generous safety
+    /// ceiling is reached. A record is never silently replaced by a prefix of
+    /// itself, which keeps downstream chunk planning comment-aware.
+    @discardableResult
+    private func appendCommentsWithinSafetyCeiling(_ comments: [String], to destination: inout [String]) -> Int {
+        var appended = 0
+        for comment in comments {
+            guard !didHitSafetyLimit else { break }
+            let cost = comment.count + (destination.isEmpty ? 0 : 1)
+            guard extractedCommentCount < extractionLimits.maxCommentCount,
+                  extractedContentCharacters + cost <= extractionLimits.maxContentCharacters else {
+                didHitSafetyLimit = true
+                break
+            }
+            destination.append(comment)
+            extractedCommentCount += 1
+            extractedContentCharacters += cost
+            appended += 1
+        }
+        return appended
     }
     
     // MARK: - Build Post Metadata
@@ -590,6 +813,7 @@ class RedditAPI {
             
             guard let url = components.url else {
                 print("❌ Failed to construct URL for chunk \(index + 1)")
+                hadCommentFetchFailures = true
                 continue
             }
             
@@ -602,6 +826,7 @@ class RedditAPI {
                 
                 guard let httpResponse = response as? HTTPURLResponse else {
                     print("❌ Invalid response type for chunk \(index + 1)")
+                    hadCommentFetchFailures = true
                     continue
                 }
                 
@@ -624,6 +849,7 @@ class RedditAPI {
                       let dataDict = jsonData["data"] as? [String: Any],
                       let things = dataDict["things"] as? [[String: Any]] else {
                     print("❌ Failed to parse JSON structure for chunk \(index + 1)")
+                    hadCommentFetchFailures = true
                     continue
                 }
                 
@@ -657,16 +883,16 @@ class RedditAPI {
     ///   - depth: The current depth of comment nesting.
     /// - Returns: A formatted comment string.
     private func formatComment(data: [String: Any], depth: Int) -> String {
-        var comment = String(repeating: "  ", count: depth)
+        var comment = RedditCommentFormatting.depthMarker(for: depth)
         
         if let author = data["author"] as? String {
             comment += "👤 u/\(author): "
         }
         
         if let body = data["body"] as? String {
-            comment += body
+            comment += normalizedCommentBody(body)
         } else if let contentText = data["contentText"] as? String {
-            comment += contentText
+            comment += normalizedCommentBody(contentText)
         }
         
         if let score = data["score"] as? Int {
@@ -674,6 +900,13 @@ class RedditAPI {
         }
         
         return comment
+    }
+
+    private func normalizedCommentBody(_ body: String) -> String {
+        body
+            .components(separatedBy: CharacterSet.whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
     }
     
     // MARK: - Extract Subreddit Content
@@ -750,11 +983,19 @@ class RedditAPI {
         var currentBatchCommentCount = 0 // Initialize count for this batch
         
         for child in children {
+            if didHitSafetyLimit {
+                break
+            }
             guard let kind = child["kind"] as? String else { continue }
             
             switch kind {
             case "t1": // Regular comment
                 if let data = child["data"] as? [String: Any] {
+                    if let identifier = RedditCommentFormatting.stableIdentifier(from: data) {
+                        guard processedCommentIDs.insert(identifier).inserted else {
+                            continue
+                        }
+                    }
                     let comment = formatComment(data: data, depth: depth)
                     comments.append(comment)
                     currentBatchCommentCount += 1 // Increment count for t1 comment
@@ -783,6 +1024,27 @@ class RedditAPI {
         
         return (comments, moreItems, currentBatchCommentCount) // Return count
     }
+
+    private func fetchNestedMoreItems(
+        _ moreItems: [(ids: [String], depth: Int)]
+    ) async -> (comments: [String], commentCount: Int) {
+        var comments: [String] = []
+        var count = 0
+        for more in moreItems {
+            guard !didHitSafetyLimit else { break }
+            let uniqueIDs = claimMoreIDs(more.ids)
+            guard !uniqueIDs.isEmpty else { continue }
+            do {
+                let result = try await fetchMoreComments(ids: uniqueIDs, depth: more.depth)
+                comments.append(contentsOf: result.comments)
+                count += result.commentCount
+            } catch {
+                hadCommentFetchFailures = true
+                print("⚠️ Failed to fetch nested comments: \(error.localizedDescription)")
+            }
+        }
+        return (comments, count)
+    }
     
     // MARK: - Fetch More Comments
     
@@ -797,6 +1059,7 @@ class RedditAPI {
         // Check if we've exceeded the maximum number of "more" requests
         if moreRequestCount >= maxMoreRequests {
             print("🛑 Reached maximum number of 'more' requests (\(maxMoreRequests)). Stopping to prevent infinite loop.")
+            didHitMoreRequestLimit = true
             return ([], 0)
         }
         
@@ -862,17 +1125,21 @@ class RedditAPI {
                     continue
                 case 404:
                     print("⚠️ Some comments in chunk \(index + 1) were not found (likely deleted)")
+                    hadCommentFetchFailures = true
                     continue // Skip this chunk but continue with others
                 case 403:
                     print("⚠️ Access denied to some comments in chunk \(index + 1)")
+                    hadCommentFetchFailures = true
                     continue // Skip this chunk but continue with others
                 default:
                     print("❌ HTTP error \(httpResponse.statusCode) for chunk \(index + 1)")
+                    hadCommentFetchFailures = true
                     continue // Skip this chunk but continue with others
                 }
                 
                 guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                     print("⚠️ Could not parse JSON response for chunk \(index + 1)")
+                    hadCommentFetchFailures = true
                     if let responseString = String(data: data, encoding: .utf8) {
                         print("🔍 Raw response: \(responseString.prefix(200))...")
                     }
@@ -883,6 +1150,7 @@ class RedditAPI {
                 if let jsonContent = json["json"] as? [String: Any],
                    let errors = jsonContent["errors"] as? [[String]], !errors.isEmpty {
                     print("⚠️ Reddit API returned errors for chunk \(index + 1): \(errors)")
+                    hadCommentFetchFailures = true
                     continue
                 }
                 
@@ -902,17 +1170,9 @@ class RedditAPI {
                         // Handle nested 'more' items if any
                         if !moreItems.isEmpty {
                             print("🧩 Found nested 'more' items (count: \(moreItems.count))")
-                            do {
-                                let nestedResults = try await moreItems.asyncMap { (nestedIds, nestedDepth) in
-                                    try await self.fetchMoreComments(ids: nestedIds, depth: nestedDepth)
-                                }
-                                for (nestedComments, nestedCount) in nestedResults {
-                                    comments.append(contentsOf: nestedComments)
-                                    totalCommentCount += nestedCount
-                                }
-                            } catch {
-                                print("⚠️ Failed to fetch some nested comments: \(error.localizedDescription)")
-                            }
+                            let nestedResult = await fetchNestedMoreItems(moreItems)
+                            comments.append(contentsOf: nestedResult.comments)
+                            totalCommentCount += nestedResult.commentCount
                         }
                     }
                     continue
@@ -921,6 +1181,7 @@ class RedditAPI {
                 // Try alternative JSON structure (array format)
                 guard let jsonArray = json["json"] as? [Any] else {
                     consecutiveParseFailures += 1
+                    hadCommentFetchFailures = true
                     print("⚠️ Could not parse 'more' comments response structure for chunk \(index + 1) (consecutive failures: \(consecutiveParseFailures))")
                     print("🔍 Available keys in json: \(json.keys)")
                     if let jsonContent = json["json"] {
@@ -943,6 +1204,7 @@ class RedditAPI {
                           let data = listing["data"] as? [String: Any],
                           let children = data["children"] as? [[String: Any]] else {
                         print("⚠️ Could not parse 'more' comments response item.")
+                        hadCommentFetchFailures = true
                         continue
                     }
                     
@@ -955,18 +1217,9 @@ class RedditAPI {
                     // Handle nested 'more' items if any
                     if !moreItems.isEmpty {
                         print("🧩 Found nested 'more' items (count: \(moreItems.count))")
-                        do {
-                            let nestedResults = try await moreItems.asyncMap { (nestedIds, nestedDepth) in
-                                try await self.fetchMoreComments(ids: nestedIds, depth: nestedDepth)
-                            }
-                            for (nestedComments, nestedCount) in nestedResults {
-                                comments.append(contentsOf: nestedComments)
-                                totalCommentCount += nestedCount // Add nested count
-                            }
-                        } catch {
-                            print("⚠️ Failed to fetch some nested comments: \(error.localizedDescription)")
-                            // Continue processing even if some nested comments fail
-                        }
+                        let nestedResult = await fetchNestedMoreItems(moreItems)
+                        comments.append(contentsOf: nestedResult.comments)
+                        totalCommentCount += nestedResult.commentCount
                     }
                 }
                 
@@ -1000,10 +1253,12 @@ class RedditAPI {
                         totalCommentCount += retryComments.commentCount
                     } else {
                         print("❌ Non-retryable error for chunk \(index + 1): \(error.localizedDescription)")
+                        hadCommentFetchFailures = true
                         continue // Skip this chunk but continue with others
                     }
                 } else {
                     print("❌ Failed to fetch more comments after \(retryCount) retries.")
+                    hadCommentFetchFailures = true
                     continue // Skip this chunk but continue with others
                 }
             }
