@@ -1,0 +1,24 @@
+{
+  "name": "browser-launch-film",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "studio": "remotion studio src/index.tsx",
+    "render": "remotion render src/index.tsx BrowserLaunchFilm output/browser-launch-film.mp4 --codec=h264 --crf=18",
+    "still": "remotion still src/index.tsx BrowserLaunchFilm output/browser-launch-film-cover.png --frame=70"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.513",
+    "@remotion/media": "4.0.513",
+    "@remotion/transitions": "4.0.513",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "remotion": "4.0.513",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "typescript": "5.9.2"
+  }
+}

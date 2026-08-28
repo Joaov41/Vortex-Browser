@@ -807,7 +807,7 @@ struct AISidebar: View {
                     isInteractive: false
                 )
 
-            TextField("Ask AI...", text: $input)
+            TextField("Ask Vortex...", text: $input)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .keyboardType(.asciiCapable)
