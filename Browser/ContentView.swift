@@ -164,6 +164,17 @@ private extension View {
         frame(width: 44, height: 44)
             .contentShape(Rectangle())
     }
+
+    @ViewBuilder
+    func ios26ButtonHitTargetCompat() -> some View {
+        if #available(iOS 27.0, *) {
+            self
+        } else {
+            self
+                .frame(width: 44, height: 44)
+                .contentShape(.interaction, Rectangle())
+        }
+    }
 }
 
 extension View {
@@ -1662,6 +1673,7 @@ struct ContentView: View {
                 )
         }
         .buttonStyle(.plain)
+        .ios26ButtonHitTargetCompat()
         .accessibilityLabel(isSidebarCollapsed ? "Show sidebar" : "Hide sidebar")
     }
 
@@ -1695,6 +1707,7 @@ struct ContentView: View {
                 )
         }
         .buttonStyle(.plain)
+        .ios26ButtonHitTargetCompat()
         .accessibilityLabel(showAIPanel ? "Hide AI sidebar" : "Show AI sidebar")
     }
 
