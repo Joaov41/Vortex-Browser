@@ -27,6 +27,12 @@ enum BrowserSiteViewportPolicy {
     }
 }
 
+enum AIPanelDismissalPolicy {
+    static func allowsDismissal(isProcessing: Bool, isExplicitCancellation: Bool) -> Bool {
+        isExplicitCancellation || !isProcessing
+    }
+}
+
 // MARK: - Darwin Notification Observer (for Share Extension IPC)
 class DarwinNotificationObserver: ObservableObject {
     static let notificationName = "com.browser.sharedURL" as CFString
@@ -1660,13 +1666,14 @@ struct ContentView: View {
 
     private var aiSidebarToggleButton: some View {
         Button {
-            let isOpening = !showAIPanel
-            if isOpening {
+            if showAIPanel {
+                dismissAIPanel()
+            } else {
                 syncAIContextSelection(forceVisibleTab: true)
                 prepareAIContext()
-            }
-            withAnimation(.easeOut(duration: 0.2)) {
-                showAIPanel = isOpening
+                withAnimation(.easeOut(duration: 0.2)) {
+                    showAIPanel = true
+                }
             }
         } label: {
             Image(systemName: "sparkles")
@@ -2970,7 +2977,14 @@ struct ContentView: View {
         vm.navigate(to: url, in: newTab)
     }
 
-    private func dismissAIPanel() {
+    private func dismissAIPanel(isExplicitCancellation: Bool = false) {
+        guard AIPanelDismissalPolicy.allowsDismissal(
+            isProcessing: aiService.isProcessing,
+            isExplicitCancellation: isExplicitCancellation
+        ) else {
+            return
+        }
+
         withAnimation(.easeOut(duration: 0.2)) {
             showAIPanel = false
         }
@@ -2989,7 +3003,7 @@ struct ContentView: View {
                 }
             },
             onDismiss: {
-                dismissAIPanel()
+                dismissAIPanel(isExplicitCancellation: true)
             },
             contextOptions: aiContextOptions,
             selectedContextID: $aiContextTabID,

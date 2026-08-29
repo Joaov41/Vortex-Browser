@@ -325,7 +325,7 @@ struct AISidebar: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 44, height: 44)
-                .accessibilityLabel("Close AI assistant")
+                .accessibilityLabel(aiService.isProcessing ? "Cancel AI task and close" : "Close AI assistant")
             }
         }
     }

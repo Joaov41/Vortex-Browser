@@ -2,6 +2,27 @@ import XCTest
 @testable import Browser
 
 final class AIResponseCanvasTests: XCTestCase {
+    func testAIPanelIncidentalDismissalIsBlockedOnlyWhileProcessing() {
+        XCTAssertTrue(
+            AIPanelDismissalPolicy.allowsDismissal(
+                isProcessing: false,
+                isExplicitCancellation: false
+            )
+        )
+        XCTAssertFalse(
+            AIPanelDismissalPolicy.allowsDismissal(
+                isProcessing: true,
+                isExplicitCancellation: false
+            )
+        )
+        XCTAssertTrue(
+            AIPanelDismissalPolicy.allowsDismissal(
+                isProcessing: true,
+                isExplicitCancellation: true
+            )
+        )
+    }
+
     func testParsesMarkdownTableWithAlignmentAndEscapedPipe() {
         let document = AIResponseDocumentParser.parse(
             """
