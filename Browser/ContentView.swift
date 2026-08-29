@@ -1477,6 +1477,7 @@ struct ContentView: View {
     @StateObject private var darkModeService = DarkModeService.shared
     @StateObject private var fontSizeService = FontSizeService.shared
     @StateObject private var thirdPartyCookieBlocker = ThirdPartyCookieBlocker.shared
+    @StateObject private var downloadManager = BrowserDownloadManager()
     @State private var showFontSizeSettings = false
     @State private var showSettingsMenu = false
     @State private var showFilterListSettings = false
@@ -2082,6 +2083,11 @@ struct ContentView: View {
             .sheet(isPresented: $showRecentlyClosedTabs) {
                 RecentlyClosedTabsSheet(viewModel: vm)
             }
+            .sheet(item: $downloadManager.presentedExport) { export in
+                BrowserDocumentExportSheet(fileURL: export.fileURL) { exported in
+                    downloadManager.finishExport(id: export.id, exported: exported)
+                }
+            }
             .sheet(isPresented: $showTabGroupManager) {
                 TabGroupManagerSheet(viewModel: vm)
             }
@@ -2428,6 +2434,11 @@ struct ContentView: View {
                 largeRedditThreadOverlay(for: pendingRedditPreflight)
                     .transition(.opacity)
                     .zIndex(200)
+            }
+
+            if downloadManager.hasVisibleStatus {
+                BrowserDownloadStatusOverlay(manager: downloadManager)
+                    .zIndex(150)
             }
         }
         .onChange(of: vm.tabs.count) { _ in
@@ -4525,6 +4536,7 @@ struct ContentView: View {
                         WebViewHost(
                             tab: tab,
                             viewModel: vm,
+                            downloadManager: downloadManager,
                             allowEdgeGestures: true,
                             allowThumbnailCapture: true,
                             viewportSize: proxy.size,
@@ -4712,6 +4724,7 @@ struct ContentView: View {
                     WebViewHost(
                         tab: tab,
                         viewModel: vm,
+                        downloadManager: downloadManager,
                         allowEdgeGestures: true,
                         allowThumbnailCapture: true,
                         viewportSize: proxy.size,
@@ -5701,6 +5714,7 @@ struct ContentView: View {
     struct WebViewHost: UIViewRepresentable {
         let tab: BrowserTab
         @ObservedObject var viewModel: BrowserViewModel
+        let downloadManager: BrowserDownloadManager
         var allowEdgeGestures: Bool = true
         var allowThumbnailCapture: Bool = true
         var viewportSize: CGSize = .zero
@@ -5716,6 +5730,7 @@ struct ContentView: View {
             Coordinator(
                 tab: tab,
                 viewModel: viewModel,
+                downloadManager: downloadManager,
                 onScroll: onScroll,
                 onScrollEnd: onScrollEnd,
                 onUserInteraction: onUserInteraction,
@@ -5865,6 +5880,7 @@ struct ContentView: View {
             private static let webProviderHandlerName = "webProviderPrompt"
             private let tab: BrowserTab
             private let viewModel: BrowserViewModel
+            private let downloadManager: BrowserDownloadManager
             private let onScroll: (() -> Void)?
             private let onScrollEnd: (() -> Void)?
             private let onUserInteraction: (() -> Void)?
@@ -5882,6 +5898,7 @@ struct ContentView: View {
             init(
                 tab: BrowserTab,
                 viewModel: BrowserViewModel,
+                downloadManager: BrowserDownloadManager,
                 onScroll: (() -> Void)?,
                 onScrollEnd: (() -> Void)?,
                 onUserInteraction: (() -> Void)?,
@@ -5891,6 +5908,7 @@ struct ContentView: View {
             ) {
                 self.tab = tab
                 self.viewModel = viewModel
+                self.downloadManager = downloadManager
                 self.onScroll = onScroll
                 self.onScrollEnd = onScrollEnd
                 self.onUserInteraction = onUserInteraction
@@ -6308,6 +6326,22 @@ struct ContentView: View {
             func webView(_ webView: WKWebView,
                          decidePolicyFor navigationAction: WKNavigationAction,
                          decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                let downloadDecision = BrowserDownloadPolicy.navigationActionDecision(
+                    shouldPerformDownload: navigationAction.shouldPerformDownload,
+                    scheme: navigationAction.request.url?.scheme,
+                    isIncognito: tab.isIncognito
+                )
+                switch downloadDecision {
+                case .download:
+                    decisionHandler(.download)
+                    return
+                case .cancel:
+                    decisionHandler(.cancel)
+                    return
+                case .allow:
+                    break
+                }
+
                 if let url = navigationAction.request.url {
                     // For incognito tabs, be very strict about navigation
                     if tab.isIncognito {
@@ -6350,6 +6384,19 @@ struct ContentView: View {
                 decisionHandler(.allow)
             }
 
+            func webView(_ webView: WKWebView,
+                         navigationAction: WKNavigationAction,
+                         didBecome download: WKDownload) {
+                // WKDownload.delegate is weak. Assign it before any other routing work so the
+                // manager receives the destination callback even when WebKit calls it immediately.
+                download.delegate = downloadManager
+                downloadManager.register(
+                    download,
+                    sourceURL: navigationAction.request.url,
+                    isIncognito: tab.isIncognito
+                )
+            }
+
             func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
                 Task { @MainActor in
                     self.tab.isReaderMode = false
@@ -6360,6 +6407,24 @@ struct ContentView: View {
             func webView(_ webView: WKWebView,
                          decidePolicyFor navigationResponse: WKNavigationResponse,
                          decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+                let responseURL = navigationResponse.response.url
+                let downloadDecision = BrowserDownloadPolicy.navigationResponseDecision(
+                    canShowMIMEType: navigationResponse.canShowMIMEType,
+                    contentDisposition: BrowserDownloadPolicy.contentDispositionHeader(from: navigationResponse.response),
+                    scheme: responseURL?.scheme,
+                    isIncognito: tab.isIncognito
+                )
+                switch downloadDecision {
+                case .download:
+                    decisionHandler(.download)
+                    return
+                case .cancel:
+                    decisionHandler(.cancel)
+                    return
+                case .allow:
+                    break
+                }
+
                 // For incognito, block any response that might trigger an app
                 if tab.isIncognito {
                     if let url = navigationResponse.response.url {
@@ -6372,6 +6437,19 @@ struct ContentView: View {
                     }
                 }
                 decisionHandler(.allow)
+            }
+
+            func webView(_ webView: WKWebView,
+                         navigationResponse: WKNavigationResponse,
+                         didBecome download: WKDownload) {
+                // See the action callback above. Keep this assignment in the callback itself so
+                // every download path is routed even if a coordinator is recreated later.
+                download.delegate = downloadManager
+                downloadManager.register(
+                    download,
+                    sourceURL: navigationResponse.response.url,
+                    isIncognito: tab.isIncognito
+                )
             }
             
             func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
