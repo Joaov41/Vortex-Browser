@@ -63,6 +63,23 @@ final class AIResponseCanvasTests: XCTestCase {
         XCTAssertFalse(presentation.shouldAutoPresent)
     }
 
+    func testRedditReplyNeverAutomaticallyUsesCanvas() {
+        let message = ChatMessage(
+            role: .assistant,
+            text: """
+            Reddit summary coverage: summarized 46 accessible comments across 12 parts.
+
+            | Theme | Consensus |
+            | --- | --- |
+            | Reliability | The comments contain a long, richly formatted synthesis. |
+            """ + String(repeating: " Additional Reddit detail.", count: 80)
+        )
+
+        let presentation = AIResponseCanvasPresentation(message: message)
+        XCTAssertTrue(presentation.isRedditReply)
+        XCTAssertFalse(presentation.shouldAutoPresent)
+    }
+
     func testInlineMarkdownRemovesSyntaxWhilePreservingContent() {
         let rendered = AIResponseMarkdown.inline("**Ready** with *Markdown* and `code`.")
         XCTAssertEqual(String(rendered.characters), "Ready with Markdown and code.")
@@ -198,13 +215,13 @@ final class AIResponseCanvasTests: XCTestCase {
         XCTAssertNil(RedditCommentFormatting.stableIdentifier(from: ["author": "user"]))
     }
 
-    func testRedditPlannerUsesProviderBudgetsAndKeepsEveryComment() {
-        let comments = (0..<7).map { index in
-            "u/user\(index): comment-\(index)-\(String(repeating: "x", count: 380))"
+    func testRedditPlannerUsesAppleLocalSevenThousandTokenWindow() {
+        let comments = (0..<50).map { index in
+            "u/user\(index): comment-\(index)-evidence"
         }
         let content = """
         Body:
-        Reddit coverage: extracted 7 accessible comments (reported 7; complete extraction)
+        Reddit coverage: extracted 50 accessible comments (reported 50; complete extraction)
         📌 A thread
 
         --- Comments ---
@@ -212,16 +229,75 @@ final class AIResponseCanvasTests: XCTestCase {
         """
 
         let localPlan = RedditSummaryPlanner.plan(content: content, backend: .localApple)
-        XCTAssertEqual(localPlan.characterBudget, 1_100)
+        XCTAssertEqual(localPlan.characterBudget, 18_750)
+        XCTAssertEqual(RedditSummaryPlanner.reductionCharacterBudget(for: .localApple), 18_750)
         XCTAssertEqual(localPlan.totalCommentCount, comments.count)
-        XCTAssertGreaterThan(localPlan.chunks.count, 1)
+        XCTAssertEqual(localPlan.chunks.count, 1)
+        XCTAssertTrue(RedditSummaryPlanner.shouldUseSingleGeneration(plan: localPlan, backend: .localApple))
+        XCTAssertFalse(RedditSummaryPlanner.shouldUseSingleGeneration(plan: localPlan, backend: .mlxLocal))
+        XCTAssertFalse(
+            RedditSummaryPlanner.requiresAppleLocalMultiPassPreflight(
+                content: content,
+                backend: .localApple
+            )
+        )
+        XCTAssertFalse(
+            RedditSummaryPlanner.requiresAppleLocalMultiPassPreflight(
+                content: content,
+                backend: .mlxLocal
+            )
+        )
+        XCTAssertFalse(
+            RedditSummaryPlanner.requiresAppleLocalMultiPassPreflight(
+                content: "An ordinary article without Reddit comment records.",
+                backend: .localApple
+            )
+        )
         let reconstructed = localPlan.chunks.map(\.text).joined(separator: "\n")
         for comment in comments {
             XCTAssertTrue(reconstructed.contains(comment), "Missing comment: \(comment.prefix(24))")
         }
+    }
+
+    func testRedditPlannerKeepsProviderBudgetsAndAllOversizedCommentRecords() {
+        let oversizedComments = (0..<4).map { index in
+            "u/oversized\(index): unique-marker-\(index) \(String(repeating: "evidence-\(index) ", count: 1_000))"
+        }
+        let content = """
+        Body:
+        Reddit coverage: extracted 4 accessible comments (reported 4; complete extraction)
+
+        --- Comments ---
+        \(oversizedComments.joined(separator: "\n"))
+        """
+
+        let localPlan = RedditSummaryPlanner.plan(content: content, backend: .localApple)
+        XCTAssertGreaterThan(localPlan.chunks.count, 1)
+        XCTAssertFalse(RedditSummaryPlanner.shouldUseSingleGeneration(plan: localPlan, backend: .localApple))
+        XCTAssertTrue(
+            RedditSummaryPlanner.requiresAppleLocalMultiPassPreflight(
+                content: content,
+                backend: .localApple
+            )
+        )
+        XCTAssertFalse(
+            RedditSummaryPlanner.requiresAppleLocalMultiPassPreflight(
+                content: content,
+                backend: .mlxLocal
+            )
+        )
+        XCTAssertEqual(localPlan.totalCommentCount, oversizedComments.count)
+        let reconstructed = localPlan.chunks.map(\.text).joined(separator: "\n")
+        for index in oversizedComments.indices {
+            XCTAssertTrue(reconstructed.contains("unique-marker-\(index)"), "Missing comment marker: \(index)")
+        }
+
+        XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .localApple), 18_750)
         XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .mlxLocal), 8_000)
         XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .applePCCGateway), 80_000)
         XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .webChatGPT), 76_000)
+        XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .webGemini), 76_000)
+        XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .cloudShortcuts), 60_000)
     }
 
     func testRedditReductionGroupsRetainAllPartialSummaries() {
@@ -235,7 +311,75 @@ final class AIResponseCanvasTests: XCTestCase {
         for partial in partials {
             XCTAssertTrue(all.contains(partial), "Missing partial: \(partial)")
         }
-        XCTAssertEqual(RedditSummaryPlanner.reductionCharacterBudget(for: .localApple), 8_000)
+        XCTAssertEqual(RedditSummaryPlanner.reductionCharacterBudget(for: .localApple), 18_750)
+    }
+
+    func testAppleLocalPreflightCatchesDenseLargeRedditThreadBeforeGeneration() {
+        let comments = (0..<159).map { index in
+            "👤 u/u\(index): ok [1 points]"
+        }
+        let content = """
+        Body:
+        Reddit coverage: extracted 159 accessible comments (reported 159; complete extraction)
+        📌 A busy Reddit thread
+
+        --- Comments ---
+        \(comments.joined(separator: "\n"))
+        """
+
+        let plan = RedditSummaryPlanner.plan(content: content, backend: .localApple)
+
+        XCTAssertEqual(plan.totalCommentCount, 159)
+        XCTAssertLessThan(content.count, RedditSummaryPlanner.appleLocalRedditSourceCharacterBudget)
+        XCTAssertGreaterThan(plan.chunkCount, 1)
+        XCTAssertTrue(
+            RedditSummaryPlanner.requiresAppleLocalMultiPassPreflight(
+                content: content,
+                backend: .localApple
+            )
+        )
+        XCTAssertFalse(RedditSummaryPlanner.shouldUseSingleGeneration(plan: plan, backend: .localApple))
+    }
+
+    func testSlowRedditProcessingNoticeIsProviderAndContextScoped() {
+        XCTAssertTrue(
+            SimpleAIService.shouldShowSlowRedditProcessingNotice(
+                isRedditContext: true,
+                backend: .localApple
+            )
+        )
+        XCTAssertTrue(
+            SimpleAIService.shouldShowSlowRedditProcessingNotice(
+                isRedditContext: true,
+                backend: .mlxLocal
+            )
+        )
+
+        for backend in [
+            AIModelBackend.cloudShortcuts,
+            .applePCCGateway,
+            .webChatGPT,
+            .webGemini
+        ] {
+            XCTAssertFalse(
+                SimpleAIService.shouldShowSlowRedditProcessingNotice(
+                    isRedditContext: true,
+                    backend: backend
+                )
+            )
+        }
+        XCTAssertFalse(
+            SimpleAIService.shouldShowSlowRedditProcessingNotice(
+                isRedditContext: false,
+                backend: .localApple
+            )
+        )
+        XCTAssertFalse(
+            SimpleAIService.shouldShowSlowRedditProcessingNotice(
+                isRedditContext: false,
+                backend: .mlxLocal
+            )
+        )
     }
 
     func testRedditWebCompactionSamplesFirstMiddleAndFinalComments() {

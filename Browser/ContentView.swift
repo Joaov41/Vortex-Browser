@@ -76,7 +76,7 @@ class DarwinNotificationObserver: ObservableObject {
 
 // MARK: - Glass TextField Component
 struct GlassTextField: View {
-    @Binding var text: String
+    @ObservedObject var tab: BrowserTab
     var placeholder: String = "Search or enter address"
     var onSubmit: (() -> Void)?
     var showClearButton: Bool = true
@@ -88,7 +88,7 @@ struct GlassTextField: View {
                 .font(.body)
                 .foregroundStyle(.secondary)
             
-            TextField(placeholder, text: $text)
+            TextField(placeholder, text: $tab.address)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .keyboardType(.webSearch)
@@ -99,14 +99,15 @@ struct GlassTextField: View {
                 trailingAccessory
             }
 
-            if showClearButton && !text.isEmpty {
+            if showClearButton && !tab.address.isEmpty {
                 Button {
-                    text = ""
+                    tab.address = ""
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Clear text")
             }
         }
         .padding(.horizontal, 12)
@@ -1481,6 +1482,7 @@ struct ContentView: View {
     @State private var pendingWebProviderProvider: WebAIProvider?
     @State private var pendingWebProviderTargetID: UUID?
     @State private var pendingWebProviderContextOverride: String?
+    @State private var pendingRedditPreflight: PendingRedditPreflightTask?
     @State private var lastPrimaryURLString: String?
     @State private var webProviderContextTabID: UUID?
     @State private var webProviderContextURLString: String?
@@ -1747,11 +1749,10 @@ struct ContentView: View {
             .browserToolbarControl()
             .disabled(!tab.canGoBack)
 
-            Button { tab.activateWebView().goForward() } label: {
+            Button { tab.navigateForward() } label: {
                 Image(systemName: "chevron.right")
             }
             .browserToolbarControl()
-            .disabled(!tab.canGoForward)
 
             SitePrivacyShieldButton(
                 url: tab.currentURL,
@@ -1776,10 +1777,6 @@ struct ContentView: View {
             strokeOpacity: 0.18
         )
         .shadow(radius: 8, y: 4)
-        .contentShape(Capsule())
-        .onTapGesture {
-            expandToolbar(focusOmnibox: true)
-        }
     }
 
     private var splitPrimaryTab: BrowserTab? {
@@ -1937,6 +1934,133 @@ struct ContentView: View {
         let text: String
     }
 
+    private enum PendingRedditTask {
+        case summary(content: String, length: SummaryLength, sourceTab: BrowserTab)
+        case query(prompt: String, content: String, sourceTab: BrowserTab)
+    }
+
+    private struct PendingRedditPreflightTask: Identifiable {
+        let id = UUID()
+        let task: PendingRedditTask
+        let chunkCount: Int
+    }
+
+    private enum RedditPreflightChoice: CaseIterable, Hashable {
+        case cloud
+        case chatGPT
+        case gemini
+        case local
+
+        var title: String {
+            switch self {
+            case .cloud:
+                return "Private Cloud Compute"
+            case .chatGPT:
+                return "ChatGPT (free account)"
+            case .gemini:
+                return "Gemini (free account)"
+            case .local:
+                return "Continue with Apple Local"
+            }
+        }
+
+        var backend: AIModelBackend {
+            switch self {
+            case .cloud:
+                return .cloudShortcuts
+            case .chatGPT:
+                return .webChatGPT
+            case .gemini:
+                return .webGemini
+            case .local:
+                return .localApple
+            }
+        }
+    }
+
+    private struct LargeRedditThreadOverlay: View {
+        let chunkCount: Int
+        let onChoice: (RedditPreflightChoice) -> Void
+
+        @Environment(\.colorScheme) private var colorScheme
+
+        private var isDark: Bool {
+            colorScheme == .dark
+        }
+
+        var body: some View {
+            GeometryReader { proxy in
+                let availableWidth = max(0, proxy.size.width - 32)
+                let panelWidth = min(500, availableWidth)
+
+                ZStack {
+                    Color.black
+                        .opacity(isDark ? 0.42 : 0.24)
+                        .ignoresSafeArea()
+
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 18) {
+                            Text("Large Reddit Thread")
+                                .font(.title2.weight(.bold))
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text("This thread exceeds Apple Local’s single-pass 7K-token window, requires approximately \(chunkCount) processing parts, and may be slow.")
+                                .font(.body)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            VStack(spacing: 10) {
+                                ForEach(RedditPreflightChoice.allCases, id: \.self) { choice in
+                                    Button {
+                                        onChoice(choice)
+                                    } label: {
+                                        HStack(spacing: 10) {
+                                            Text(choice.title)
+                                                .font(.body.weight(.semibold))
+                                                .multilineTextAlignment(.leading)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                            Spacer(minLength: 8)
+                                            Image(systemName: "chevron.right")
+                                                .font(.caption.weight(.semibold))
+                                                .accessibilityHidden(true)
+                                        }
+                                        .foregroundStyle(.primary)
+                                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                        .glassEffectCompat(
+                                            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                                            material: .ultraThinMaterial,
+                                            strokeOpacity: isDark ? 0.16 : 0.28,
+                                            isInteractive: true
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityLabel(choice.title)
+                                }
+                            }
+                            .glassEffectContainerCompat(spacing: 10)
+                        }
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassEffectCompat(
+                            in: RoundedRectangle(cornerRadius: 24, style: .continuous),
+                            material: .regularMaterial,
+                            strokeOpacity: isDark ? 0.18 : 0.32,
+                            isInteractive: false
+                        )
+                    }
+                    .frame(width: panelWidth)
+                    .frame(maxHeight: proxy.size.height - 32)
+                    .scrollIndicators(.hidden)
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            .ignoresSafeArea()
+            .accessibilityAddTraits(.isModal)
+        }
+    }
+
     private var hibernationProtectedTabIDs: Set<UUID> {
         Set([vm.selectedTabID, splitPrimaryID, splitSecondaryID, aiContextTabID].compactMap { $0 })
     }
@@ -2016,7 +2140,7 @@ struct ContentView: View {
             .keyboardShortcut("[", modifiers: .command)
 
             Button("Go Forward") {
-                selectedTab?.activateWebView().goForward()
+                selectedTab?.navigateForward()
             }
             .keyboardShortcut("]", modifiers: .command)
         }
@@ -2024,6 +2148,135 @@ struct ContentView: View {
         .opacity(0.001)
         .accessibilityHidden(true)
         .allowsHitTesting(false)
+    }
+
+    private func largeRedditThreadOverlay(for pending: PendingRedditPreflightTask) -> some View {
+        LargeRedditThreadOverlay(chunkCount: pending.chunkCount) { choice in
+            handleRedditPreflightChoice(choice)
+        }
+    }
+
+    @MainActor
+    private func makeRedditPreflightTask(
+        _ task: PendingRedditTask
+    ) -> PendingRedditPreflightTask? {
+        guard aiService.backend == .localApple else { return nil }
+
+        let content: String
+        switch task {
+        case .summary(let summaryContent, _, _):
+            content = summaryContent
+        case .query(_, let queryContent, _):
+            content = queryContent
+        }
+
+        guard RedditSummaryPlanner.requiresAppleLocalMultiPassPreflight(
+            content: content,
+            backend: aiService.backend
+        ) else {
+            return nil
+        }
+
+        let plan = RedditSummaryPlanner.plan(content: content, backend: aiService.backend)
+        return PendingRedditPreflightTask(task: task, chunkCount: plan.chunkCount)
+    }
+
+    /// Dispatches a fully resolved summary. The callback from AISidebar calls
+    /// this before enqueuing so an oversized Apple Local Reddit source can ask
+    /// for a provider choice without extracting the page a second time.
+    @MainActor
+    @discardableResult
+    private func dispatchResolvedSummary(
+        content: String,
+        length: SummaryLength,
+        sourceTab: BrowserTab
+    ) -> Bool {
+        let task = PendingRedditTask.summary(content: content, length: length, sourceTab: sourceTab)
+        if let pending = makeRedditPreflightTask(task) {
+            pendingRedditPreflight = pending
+            return true
+        }
+        aiService.enqueueSummary(content, length: length)
+        return true
+    }
+
+    @MainActor
+    private func dispatchResolvedQuery(
+        prompt: String,
+        content: String?,
+        sourceTab: BrowserTab,
+        reusingStoredSourceContext: Bool = false
+    ) {
+        if let content {
+            if reusingStoredSourceContext && !RedditSummaryPlanner.isRedditContext(content) {
+                aiService.enqueueQuery(prompt, pageContent: nil)
+                return
+            }
+            let task = PendingRedditTask.query(prompt: prompt, content: content, sourceTab: sourceTab)
+            if let pending = makeRedditPreflightTask(task) {
+                pendingRedditPreflight = pending
+                return
+            }
+            aiService.enqueueQuery(prompt, pageContent: content)
+            return
+        }
+
+        // A nil context intentionally preserves the existing follow-up path,
+        // where SimpleAIService reuses its stored source context.
+        aiService.enqueueQuery(prompt, pageContent: nil)
+    }
+
+    @MainActor
+    private func handleRedditPreflightChoice(_ choice: RedditPreflightChoice) {
+        guard let pending = pendingRedditPreflight else { return }
+        pendingRedditPreflight = nil
+        aiService.backend = choice.backend
+        dispatchPendingRedditTask(pending, backend: choice.backend)
+    }
+
+    @MainActor
+    private func dispatchPendingRedditTask(
+        _ pending: PendingRedditPreflightTask,
+        backend: AIModelBackend
+    ) {
+        switch pending.task {
+        case .summary(let content, let length, let sourceTab):
+            guard backend == .webChatGPT || backend == .webGemini else {
+                aiService.enqueueSummary(content, length: length)
+                return
+            }
+            let prompt = length == .short
+                ? "Provide a brief 2-paragraph summary of the following text. First paragraph: main topic. Second paragraph: key points. Be concise:"
+                : "Summarize the following text clearly, highlighting key themes and points. Provide a detailed analysis:"
+            let safeContent = RedditSummaryPlanner.webSafeContext(
+                content: content,
+                maxCharacters: redditWebProviderContextMaxChars
+            )
+            let composedPrompt = "\(safeContent)\n\nUser prompt:\n\(prompt)"
+            startCapturedWebAIRequest(
+                provider: backend == .webChatGPT ? .chatgpt : .gemini,
+                userPrompt: prompt,
+                composedPrompt: composedPrompt,
+                sourceTab: sourceTab
+            )
+
+        case .query(let prompt, let content, let sourceTab):
+            guard backend == .webChatGPT || backend == .webGemini else {
+                aiService.enqueueQuery(prompt, pageContent: content)
+                return
+            }
+            let safeContent = RedditSummaryPlanner.webSafeContext(
+                content: content,
+                maxCharacters: redditWebProviderContextMaxChars
+            )
+            let composedPrompt = "\(safeContent)\n\nUser prompt:\n\(prompt)"
+            startCapturedWebAIRequest(
+                provider: backend == .webChatGPT ? .chatgpt : .gemini,
+                userPrompt: prompt,
+                composedPrompt: composedPrompt,
+                sourceTab: sourceTab
+            )
+        }
     }
 
     private var selectedTab: BrowserTab? {
@@ -2162,6 +2415,12 @@ struct ContentView: View {
 
             if showFilterListSettings {
                 filterListOverlay
+            }
+
+            if let pendingRedditPreflight {
+                largeRedditThreadOverlay(for: pendingRedditPreflight)
+                    .transition(.opacity)
+                    .zIndex(200)
             }
         }
         .onChange(of: vm.tabs.count) { _ in
@@ -2376,8 +2635,18 @@ struct ContentView: View {
     }
 
     @MainActor
-    private func startCapturedWebAIRequest(provider: WebAIProvider, userPrompt: String, composedPrompt: String) {
-        aiService.prepareForNewContext(webProviderContextSourceTab()?.currentURL)
+    private func startCapturedWebAIRequest(
+        provider: WebAIProvider,
+        userPrompt: String,
+        composedPrompt: String,
+        sourceTab: BrowserTab? = nil
+    ) {
+        let contextSourceTab = sourceTab ?? webProviderContextSourceTab()
+        if let sourceTab {
+            webProviderContextTabID = sourceTab.id
+            webProviderContextURLString = sourceTab.currentURL.map { normalizedContextURL($0) }
+        }
+        aiService.prepareForNewContext(contextSourceTab?.currentURL)
         browserAIWebLog("startCapturedWebAIRequest prepare userChars=\(userPrompt.count) promptChars=\(composedPrompt.count) sourceContextChars=\(aiService.sourcePageContextText?.count ?? 0)")
         guard let requestID = aiService.beginExternalWebRequest(userMessage: userPrompt) else { return }
         browserAIWebLog("startCaptured request=\(requestID.uuidString.prefix(8)) provider=\(provider.displayName) userChars=\(userPrompt.count) promptChars=\(composedPrompt.count)")
@@ -2726,16 +2995,26 @@ struct ContentView: View {
             selectedContextID: $aiContextTabID,
             selectionText: activeAISelectionText,
             contextStatusText: activeAIContextStatusText,
-            onSummaryExtraction: { extractedContent in
+            onSummaryExtraction: { extractedContent, length in
                 if let tab = activeAIContextTab {
                     storeAIPageContent(extractedContent, for: tab)
+                    return dispatchResolvedSummary(
+                        content: extractedContent.formattedForAIContext,
+                        length: length,
+                        sourceTab: tab
+                    )
                 }
+                return false
             },
             onContextSelected: { id in
                 if let tab = vm.tabs.first(where: { $0.id == id }) {
                     _ = tab.activateWebView()
                     refreshHibernationProtection()
                 }
+            },
+            onClearConversation: {
+                pendingRedditPreflight = nil
+                aiService.reset()
             }
         )
         .frame(width: aiSidebarBaseWidth)
@@ -4493,10 +4772,7 @@ struct ContentView: View {
         if isPhone {
             HStack(spacing: 8) {
                 GlassTextField(
-                    text: Binding(
-                        get: { tab.address },
-                        set: { tab.address = $0 }
-                    ),
+                    tab: tab,
                     placeholder: "Search or enter address",
                     onSubmit: {
                         vm.submitAddress(tab.address, for: tab)
@@ -4525,6 +4801,7 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
                 }
                 .browserToolbarControl()
+                .accessibilityLabel("Close search")
 
                 if splitMode != nil {
                     exitSplitViewButton
@@ -4534,28 +4811,8 @@ struct ContentView: View {
             .padding(.vertical, 8)
         } else {
         HStack(spacing: 8) {
-            Button { tab.activateWebView().goBack() } label: { Image(systemName: "chevron.left") }
-                .browserToolbarControl()
-                .disabled(!tab.canGoBack)
-
-            Button { tab.activateWebView().goForward() } label: { Image(systemName: "chevron.right") }
-                .browserToolbarControl()
-                .disabled(!tab.canGoForward)
-
-            Button { tab.activateWebView().reload() } label: { Image(systemName: "arrow.clockwise") }
-                .browserToolbarControl()
-
-            SitePrivacyShieldButton(
-                url: tab.currentURL,
-                webView: tab.activateWebView(),
-                onOpenAdBlockSettings: { showFilterListSettings = true }
-            )
-
             GlassTextField(
-                text: Binding(
-                    get: { tab.address },
-                    set: { tab.address = $0 }
-                ),
+                tab: tab,
                 placeholder: "Search or enter address",
                 onSubmit: {
                     vm.submitAddress(tab.address, for: tab)
@@ -4582,6 +4839,7 @@ struct ContentView: View {
                     .foregroundColor(.secondary)
             }
             .browserToolbarControl()
+            .accessibilityLabel("Close search")
 
             if passwordManager.showPasswordPrompt {
                 Button(action: {
@@ -5145,17 +5403,22 @@ struct ContentView: View {
         // already have usable context. This runs for all backends.
         if let selectionText {
             browserAIFlowLog("sendAIQuery fast-path selection context chars=\(selectionText.count)")
-            aiService.enqueueQuery(query, pageContent: selectionText)
+            dispatchResolvedQuery(prompt: query, content: selectionText, sourceTab: tab)
             return
         }
         if let cached = cachedAIPageContent(for: tab) {
             browserAIFlowLog("sendAIQuery fast-path cached page context chars=\(cached.count)")
-            aiService.enqueueQuery(query, pageContent: cached)
+            dispatchResolvedQuery(prompt: query, content: cached, sourceTab: tab)
             return
         }
         if canReuseSourcePageContext {
             browserAIFlowLog("sendAIQuery fast-path sourcePageContext reuse")
-            aiService.enqueueQuery(query, pageContent: nil)
+            dispatchResolvedQuery(
+                prompt: query,
+                content: aiService.sourcePageContextText,
+                sourceTab: tab,
+                reusingStoredSourceContext: true
+            )
             return
         }
 
@@ -5200,7 +5463,9 @@ struct ContentView: View {
                 return
             }
             browserAIFlowLog("sendAIQuery enqueue token=\(queryToken.uuidString.prefix(8)) pageContentChars=\(contentText?.count ?? 0)")
-            aiService.enqueueQuery(query, pageContent: contentText)
+            await MainActor.run {
+                self.dispatchResolvedQuery(prompt: query, content: contentText, sourceTab: tab)
+            }
             if pendingAIQueryToken == queryToken {
                 pendingAIQueryTask = nil
                 browserAIFlowLog("sendAIQuery task END token=\(queryToken.uuidString.prefix(8))")
@@ -6314,8 +6579,7 @@ struct ContentView: View {
 
             @objc private func handleRightEdge(_ g: UIScreenEdgePanGestureRecognizer) {
                 if g.state == .ended || g.state == .recognized {
-                    let webView = tab.activateWebView()
-                    if webView.canGoForward { webView.goForward() }
+                    tab.navigateForward()
                 }
             }
 
@@ -6324,7 +6588,7 @@ struct ContentView: View {
             }
 
             @objc private func handleSwipeLeft(_ g: UISwipeGestureRecognizer) {
-                if g.state == .ended { let webView = tab.activateWebView(); if webView.canGoForward { webView.goForward() } }
+                if g.state == .ended { tab.navigateForward() }
             }
 
             @objc private func handleInteractionTap(_ g: UITapGestureRecognizer) {

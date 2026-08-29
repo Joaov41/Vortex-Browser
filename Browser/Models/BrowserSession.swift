@@ -36,6 +36,7 @@ final class BrowserTab: ObservableObject, Identifiable {
 
     private var canGoBackObserver: NSKeyValueObservation?
     private var canGoForwardObserver: NSKeyValueObservation?
+    private var pendingForwardNavigationTask: Task<Void, Never>?
     private var useDesktopUserAgent: Bool
     private var pendingScrollRestoration = false
 
@@ -107,6 +108,30 @@ final class BrowserTab: ObservableObject, Identifiable {
         pendingScrollRestoration = true
         touch()
         return created
+    }
+
+    func navigateForward() {
+        pendingForwardNavigationTask?.cancel()
+        pendingForwardNavigationTask = nil
+        let webView = activateWebView()
+        if webView.canGoForward {
+            webView.goForward()
+            return
+        }
+
+        // During an interactive swipe-back transition, WebKit can update its real back-forward
+        // list just after SwiftUI has rendered the toolbar. Retry once against the live WebView so
+        // a prompt forward tap is not lost to that short state handoff.
+        pendingForwardNavigationTask = Task { @MainActor [weak self, weak webView] in
+            try? await Task.sleep(nanoseconds: 180_000_000)
+            guard !Task.isCancelled, let self else { return }
+            defer { self.pendingForwardNavigationTask = nil }
+            guard
+                  let webView,
+                  self.liveWebView === webView,
+                  webView.canGoForward else { return }
+            webView.goForward()
+        }
     }
 
     func setUserAgentPreference(_ useDesktop: Bool) {
@@ -199,6 +224,8 @@ final class BrowserTab: ObservableObject, Identifiable {
               !(await refreshMediaPlaybackState()) else { return false }
         canGoBackObserver?.invalidate()
         canGoForwardObserver?.invalidate()
+        pendingForwardNavigationTask?.cancel()
+        pendingForwardNavigationTask = nil
         canGoBackObserver = nil
         canGoForwardObserver = nil
         webView.stopLoading()
@@ -348,6 +375,43 @@ private struct BrowserSessionSnapshot: Codable {
     let selectedTabID: UUID?
 }
 
+private struct BrowserTabThumbnailStore {
+    let directoryURL: URL
+
+    static func defaultDirectory(fileManager: FileManager = .default) -> URL {
+        let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? fileManager.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? fileManager.temporaryDirectory
+        return baseURL
+            .appendingPathComponent("VortexBrowser", isDirectory: true)
+            .appendingPathComponent("TabPreviews", isDirectory: true)
+    }
+
+    func loadThumbnail(for id: UUID) -> UIImage? {
+        UIImage(contentsOfFile: fileURL(for: id).path)
+    }
+
+    @discardableResult
+    func saveThumbnail(_ image: UIImage, for id: UUID) -> Bool {
+        guard let data = image.jpegData(compressionQuality: 0.72) ?? image.pngData() else { return false }
+        do {
+            try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            try data.write(to: fileURL(for: id), options: .atomic)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    func removeThumbnail(for id: UUID) {
+        try? FileManager.default.removeItem(at: fileURL(for: id))
+    }
+
+    private func fileURL(for id: UUID) -> URL {
+        directoryURL.appendingPathComponent(id.uuidString).appendingPathExtension("jpg")
+    }
+}
+
 @MainActor
 final class BrowserViewModel: ObservableObject {
     /// iPad has a relatively small WebContent-process budget when many pages are open. Eight live
@@ -375,6 +439,8 @@ final class BrowserViewModel: ObservableObject {
     private let recentlyClosedKey = "browser_recently_closed_v1"
     private let sessionKey = "browser_session_v1"
     private let defaults: UserDefaults
+    private let thumbnailStore: BrowserTabThumbnailStore
+    private var persistedThumbnailObjects: [UUID: ObjectIdentifier] = [:]
     private var protectedTabIDs = Set<UUID>()
     private var enforcementTask: Task<Void, Never>?
     private var memoryWarningObserver: NSObjectProtocol?
@@ -385,8 +451,11 @@ final class BrowserViewModel: ObservableObject {
         didSet { enforceWebViewBudget() }
     }
 
-    init(userDefaults: UserDefaults = .standard) {
+    init(userDefaults: UserDefaults = .standard, thumbnailDirectory: URL? = nil) {
         defaults = userDefaults
+        thumbnailStore = BrowserTabThumbnailStore(
+            directoryURL: thumbnailDirectory ?? BrowserTabThumbnailStore.defaultDirectory()
+        )
         defaultSearchEngine = BrowserSearchEngine(
             rawValue: userDefaults.string(forKey: BrowserSearchEngine.defaultsKey) ?? ""
         ) ?? .google
@@ -489,7 +558,10 @@ final class BrowserViewModel: ObservableObject {
                         && !tab.isIncognito
                         && tab.webAIProvider == nil
                         && tab.liveWebView?.isLoading != true
-                }) { liveCount -= 1 }
+                }) {
+                    persistThumbnail(for: tab)
+                    liveCount -= 1
+                }
             }
         }
     }
@@ -565,6 +637,8 @@ final class BrowserViewModel: ObservableObject {
 
         tabs.remove(at: index)
         protectedTabIDs.remove(tab.id)
+        persistedThumbnailObjects.removeValue(forKey: tab.id)
+        thumbnailStore.removeThumbnail(for: tab.id)
         if tabs.isEmpty {
             addTabBlank()
         } else {
@@ -687,7 +761,19 @@ final class BrowserViewModel: ObservableObject {
             Task { @MainActor in
                 tab.lastThumbnailSize = effectiveSize
                 tab.thumbnail = output
+                self.persistThumbnail(for: tab)
             }
+        }
+    }
+
+    private func persistThumbnail(for tab: BrowserTab) {
+        guard !tab.isIncognito,
+              tab.webAIProvider == nil,
+              let thumbnail = tab.thumbnail else { return }
+        let objectID = ObjectIdentifier(thumbnail)
+        guard persistedThumbnailObjects[tab.id] != objectID else { return }
+        if thumbnailStore.saveThumbnail(thumbnail, for: tab.id) {
+            persistedThumbnailObjects[tab.id] = objectID
         }
     }
 
@@ -719,6 +805,7 @@ final class BrowserViewModel: ObservableObject {
     }
 
     func saveSession() {
+        tabs.forEach(persistThumbnail)
         let persistentTabs = tabs.compactMap { tab -> BrowserSessionSnapshot.Tab? in
             guard !tab.isIncognito, tab.webAIProvider == nil, let url = tab.currentURL else { return nil }
             return .init(id: tab.id, title: tab.title, url: url, groupID: tab.groupID)
@@ -748,7 +835,7 @@ final class BrowserViewModel: ObservableObject {
               let snapshot = try? JSONDecoder().decode(BrowserSessionSnapshot.self, from: data),
               !snapshot.tabs.isEmpty else { return false }
         tabs = snapshot.tabs.map { saved in
-            BrowserTab(
+            let tab = BrowserTab(
                 id: saved.id,
                 title: saved.title,
                 url: saved.url,
@@ -756,6 +843,11 @@ final class BrowserViewModel: ObservableObject {
                 groupID: tabGroups.contains(where: { $0.id == saved.groupID }) ? saved.groupID : nil,
                 isRestoredSessionTab: true
             )
+            if let thumbnail = thumbnailStore.loadThumbnail(for: saved.id) {
+                tab.thumbnail = thumbnail
+                persistedThumbnailObjects[saved.id] = ObjectIdentifier(thumbnail)
+            }
+            return tab
         }
         selectedTabID = tabs.contains(where: { $0.id == snapshot.selectedTabID }) ? snapshot.selectedTabID : tabs.first?.id
         if let selectedTabID { protectedTabIDs.insert(selectedTabID) }

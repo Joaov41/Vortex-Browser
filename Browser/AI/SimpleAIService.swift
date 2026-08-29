@@ -261,6 +261,7 @@ private actor AppleLocalGenerationService {
     // explicit reset).  The recovery gap gives the previous session's cleanup
     // time to finish before the new one starts.
     private var lastSessionReleasedAt: Date? = nil
+    private var lastIsolatedGenerationCompletedAt: Date? = nil
     private let sessionRecoveryGapSeconds: TimeInterval = 1.5
     private let streamChunkFlushInterval: TimeInterval = 0.05
     private let streamChunkFlushCharacterCount = 160
@@ -566,6 +567,7 @@ private actor AppleLocalGenerationService {
     func streamResponse(
         to prompt: String,
         maxOutputTokens: Int,
+        isolatesSession: Bool = false,
         onChunk: @Sendable @escaping (String) async -> Void,
         shouldContinue: (@Sendable () async -> Bool)? = nil,
         onStreamEvent: (@Sendable (AppleLocalStreamEvent) async -> Void)? = nil
@@ -598,7 +600,34 @@ private actor AppleLocalGenerationService {
         if let onStreamEvent {
             Task { await onStreamEvent(.sessionAcquireStarted(Date())) }
         }
-        let acquisition = await acquireSessionForRequest()
+        let acquisition: (
+            session: LanguageModelSession,
+            usedStandby: Bool,
+            coldStart: Bool,
+            warmupTimeoutFallback: Bool
+        )
+        if isolatesSession {
+            // Reddit map/reduction passes are independent jobs. Never reuse a
+            // stateful transcript across them, because each prompt/response is
+            // retained by LanguageModelSession and eventually exhausts or
+            // slows the local model context.
+            clearStandbySessionState()
+            if let completed = lastIsolatedGenerationCompletedAt {
+                let elapsed = -completed.timeIntervalSinceNow
+                if elapsed < sessionRecoveryGapSeconds {
+                    let remainingNs = UInt64((sessionRecoveryGapSeconds - elapsed) * 1_000_000_000)
+                    try? await Task.sleep(nanoseconds: remainingNs)
+                }
+            }
+            acquisition = (
+                session: makeSession(),
+                usedStandby: false,
+                coldStart: true,
+                warmupTimeoutFallback: false
+            )
+        } else {
+            acquisition = await acquireSessionForRequest()
+        }
         if acquisition.usedStandby, let onStreamEvent {
             Task { await onStreamEvent(.standbyReady(Date())) }
         }
@@ -620,6 +649,9 @@ private actor AppleLocalGenerationService {
         defer {
             activeSession = nil
             isGenerating = false
+            if isolatesSession {
+                lastIsolatedGenerationCompletedAt = Date()
+            }
             signalIdle()
             // Do NOT start standby warmup here — a queued request may start
             // immediately and the warmup's session.respond() would race it
@@ -1026,7 +1058,13 @@ class SimpleAIService: ObservableObject {
         }
     }
 
+    static let slowRedditProcessingNotice = "This can take a while depending on the size of the comments."
+
     @Published var isProcessing = false
+    /// Captured when an app-backend Reddit request starts. The notice must not
+    /// follow a picker change while that request is still running.
+    @Published private(set) var activeRedditRequestBackend: AIModelBackend? = nil
+    @Published private(set) var activeRequestIsReddit = false
     @Published var messages: [ChatMessage] = []
     @Published var archiveMessages: [ChatMessage] = []
     @Published var queuedCount: Int = 0
@@ -1061,6 +1099,21 @@ class SimpleAIService: ObservableObject {
         }
     }
     let streamState = AIStreamState()
+
+    static func shouldShowSlowRedditProcessingNotice(
+        isRedditContext: Bool,
+        backend: AIModelBackend?
+    ) -> Bool {
+        guard isRedditContext else { return false }
+        return backend == .localApple || backend == .mlxLocal
+    }
+
+    var isSlowRedditProcessingNoticeVisible: Bool {
+        isProcessing && Self.shouldShowSlowRedditProcessingNotice(
+            isRedditContext: activeRequestIsReddit,
+            backend: activeRedditRequestBackend
+        )
+    }
 
     private let cloudService = CloudModelService()
     private var lastContextURL: String? = nil
@@ -1107,6 +1160,8 @@ class SimpleAIService: ObservableObject {
     private let appleLocalRetryMaxOutputTokens = 160
     private let appleLocalFirstSnapshotSoftWarningNanoseconds: UInt64 = 3_000_000_000
     private let appleLocalFirstSnapshotHardTimeoutNanoseconds: UInt64 = 8_000_000_000
+    private let appleLocalRedditFirstSnapshotSoftWarningNanoseconds: UInt64 = 8_000_000_000
+    private let appleLocalRedditFirstSnapshotHardTimeoutNanoseconds: UInt64 = 30_000_000_000
     private static let inlineContextMinChars = 800
     private static let inlineContextMinNewlines = 4
     private static let inlineContextMinParagraphs = 2
@@ -1213,6 +1268,8 @@ class SimpleAIService: ObservableObject {
         trimRetainedMessages(for: .webProvider)
         let requestID = UUID()
         activeMessageChannel = .webProvider
+        activeRedditRequestBackend = nil
+        activeRequestIsReddit = false
         requestTimeoutTask?.cancel()
         requestTimeoutTask = nil
         activeRequestID = requestID
@@ -1344,6 +1401,16 @@ class SimpleAIService: ObservableObject {
         let requestID = UUID()
         activeRequestID = requestID
         let selectedBackend = backend
+        let isRedditRequest: Bool = {
+            switch request {
+            case .summary(let content, _):
+                return RedditSummaryPlanner.isRedditContext(content)
+            case .query(_, let pageContent):
+                return pageContent.map(RedditSummaryPlanner.isRedditContext) ?? false
+            }
+        }()
+        activeRequestIsReddit = isRedditRequest
+        activeRedditRequestBackend = isRedditRequest ? selectedBackend : nil
         if backend == .localApple {
             beginAppleLocalDiagnostics(requestID: requestID, enqueuedAt: enqueuedAt)
         }
@@ -1513,6 +1580,8 @@ class SimpleAIService: ObservableObject {
         activeRequestID = nil
         activeAppleLocalStreamSessionID = nil
         isProcessing = false
+        activeRedditRequestBackend = nil
+        activeRequestIsReddit = false
         if !requestQueue.isEmpty {
             let next = requestQueue.removeFirst()
             queuedCount = requestQueue.count
@@ -1987,6 +2056,34 @@ class SimpleAIService: ObservableObject {
             "🧵 [Reddit Summary] backend=\(backend.rawValue) chunks=\(plan.chunkCount) comments=\(plan.totalCommentCount) budget=\(plan.characterBudget)"
         )
 
+        if RedditSummaryPlanner.shouldUseSingleGeneration(plan: plan, backend: backend) {
+            let prompt = buildRedditDirectSummaryPrompt(
+                chunk: plan.chunks[0],
+                requestedLength: length
+            )
+            let synthesis = try await generateRedditResponse(
+                prompt: prompt,
+                backend: backend,
+                length: length,
+                phase: .final,
+                requestID: requestID,
+                counter: counter
+            )
+            let trimmed = synthesis.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                throw NSError(
+                    domain: "SimpleAIService.Reddit",
+                    code: 2,
+                    userInfo: [NSLocalizedDescriptionKey: "The selected model returned an empty Reddit summary."]
+                )
+            }
+            let coverageLine = "Reddit summary coverage: summarized \(plan.totalCommentCount) accessible comments across \(plan.chunkCount) parts."
+            let partialNotice = content.contains("(partial extraction)")
+                ? " Extraction was partial; the source did not expose every accessible comment."
+                : ""
+            return "\(coverageLine)\(partialNotice)\n\n\(trimmed)"
+        }
+
         var partials: [String] = []
         partials.reserveCapacity(plan.chunks.count)
         for chunk in plan.chunks {
@@ -2050,6 +2147,31 @@ class SimpleAIService: ObservableObject {
         print(
             "🧵 [Reddit Query] backend=\(backend.rawValue) chunks=\(plan.chunkCount) comments=\(plan.totalCommentCount) budget=\(plan.characterBudget)"
         )
+
+        if RedditSummaryPlanner.shouldUseSingleGeneration(plan: plan, backend: backend) {
+            let prompt = buildRedditDirectQueryPrompt(
+                question: query,
+                chunk: plan.chunks[0],
+                requestedLength: length
+            )
+            let answer = try await generateRedditResponse(
+                prompt: prompt,
+                backend: backend,
+                length: length,
+                phase: .final,
+                requestID: requestID,
+                counter: counter
+            )
+            let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else {
+                return "I couldn't find an answer in the accessible Reddit comments."
+            }
+            let coverageLine = "Reddit query coverage: checked \(plan.totalCommentCount) accessible comments across \(plan.chunkCount) parts."
+            let partialNotice = content.contains("(partial extraction)")
+                ? " The source extraction was partial."
+                : ""
+            return "\(coverageLine)\(partialNotice)\n\n\(trimmed)"
+        }
 
         var partials: [String] = []
         partials.reserveCapacity(plan.chunks.count)
@@ -2176,11 +2298,11 @@ class SimpleAIService: ObservableObject {
                     userInfo: [NSLocalizedDescriptionKey: "Apple local model requires iOS 18.2+ or macOS 15.2+."]
                 )
             }
-            let preparedPrompt = optimizedPromptForAppleLocal(prompt)
-            let retryPrompt = optimizedPromptForAppleLocal(
+            let preparedPrompt = optimizedRedditPromptForAppleLocal(prompt)
+            let retryPrompt = optimizedRedditPromptForAppleLocal(
                 "Use only the supplied Reddit material. Return a compact, faithful synthesis.\n\n\(prompt)"
             )
-            return try await runAppleLocalDirectWithRetry(
+            return try await runAppleLocalRedditStreamWithRetry(
                 primaryPrompt: preparedPrompt,
                 primaryMaxOutputTokens: outputTokens,
                 retryPrompt: retryPrompt,
@@ -2244,6 +2366,41 @@ class SimpleAIService: ObservableObject {
                 }
             }
         }
+    }
+
+    private func buildRedditDirectSummaryPrompt(
+        chunk: RedditSummaryChunk,
+        requestedLength: SummaryLength
+    ) -> String {
+        let instruction = requestedLength == .short
+            ? "Write a short but complete Reddit thread summary in at most two concise paragraphs. State the main topic and outcome, then the most important supporting points and notable disagreement."
+            : "Write a detailed but clear summary of the Reddit thread. Cover the main topic, recurring themes, evidence, important high-scored or minority perspectives, and disagreements."
+        return """
+        \(instruction)
+        The Reddit material below is the complete accessible thread for this request, not a partial synthesis. Use only this material. Do not invent details or claim certainty the source does not support.
+
+        Reddit material:
+        \(chunk.text)
+        """
+    }
+
+    private func buildRedditDirectQueryPrompt(
+        question: String,
+        chunk: RedditSummaryChunk,
+        requestedLength: SummaryLength
+    ) -> String {
+        let style = requestedLength == .short
+            ? "Answer briefly in one or two concise paragraphs."
+            : "Answer clearly and in detail, distinguishing consensus from disagreement."
+        return """
+        Answer the user's Reddit question using only the complete accessible Reddit thread below. \(style) If the evidence is insufficient, say so. This is the complete thread for this request, not a partial synthesis. Do not invent details or infer from missing comments.
+
+        User question:
+        \(question)
+
+        Reddit material:
+        \(chunk.text)
+        """
     }
 
     private func buildRedditMapPrompt(
@@ -2820,7 +2977,7 @@ class SimpleAIService: ObservableObject {
         }
     }
 
-    private func runAppleLocalStreamWithRetry(
+    private func runAppleLocalRedditStreamWithRetry(
         primaryPrompt: String,
         primaryMaxOutputTokens: Int,
         retryPrompt: String,
@@ -2828,7 +2985,7 @@ class SimpleAIService: ObservableObject {
         counter: AIThroughputCounter
     ) async throws -> String {
         do {
-            let attempt = try await runAppleLocalStreamAttempt(
+            let attempt = try await runAppleLocalRedditStreamAttempt(
                 prompt: primaryPrompt,
                 maxOutputTokens: primaryMaxOutputTokens,
                 requestID: requestID,
@@ -2842,7 +2999,7 @@ class SimpleAIService: ObservableObject {
                 self.streamState.resetText()
             }
             do {
-                let retryAttempt = try await runAppleLocalStreamAttempt(
+                let retryAttempt = try await runAppleLocalRedditStreamAttempt(
                     prompt: retryPrompt,
                     maxOutputTokens: appleLocalRetryMaxOutputTokens,
                     requestID: requestID,
@@ -2861,39 +3018,24 @@ class SimpleAIService: ObservableObject {
                     code: 3,
                     userInfo: [
                         NSLocalizedDescriptionKey:
-                            "Apple local runtime stalled on this Mac; try system restart/model redownload/use MLX fallback."
+                            "Apple Local did not begin this Reddit pass after two attempts. Please try the summary again."
                     ]
                 )
             }
         }
     }
 
-    private func runAppleLocalStreamAttempt(
+    private func runAppleLocalRedditStreamAttempt(
         prompt: String,
         maxOutputTokens: Int,
         requestID: UUID,
         counter: AIThroughputCounter
     ) async throws -> AppleLocalStreamAttemptResult {
-        let streamSessionID = await MainActor.run {
-            self.beginAppleLocalStreamSession(requestID: requestID)
-        }
-        let streamAccumulator = StreamChunkAccumulator(
-            minimumCharacters: 160,
-            minimumInterval: 0.08
-        ) { [weak self] flushed in
-            guard let self else { return }
-            self.handleAppleLocalChunk(
-                flushed,
-                requestID: requestID,
-                streamSessionID: streamSessionID,
-                counter: counter
-            )
-        }
         let firstSnapshotTracker = AppleLocalFirstSnapshotTracker()
         let attemptStartedAt = Date()
 
-        let softWarningSeconds = Double(appleLocalFirstSnapshotSoftWarningNanoseconds) / 1_000_000_000
-        let hardTimeoutSeconds = Double(appleLocalFirstSnapshotHardTimeoutNanoseconds) / 1_000_000_000
+        let softWarningSeconds = Double(appleLocalRedditFirstSnapshotSoftWarningNanoseconds) / 1_000_000_000
+        let hardTimeoutSeconds = Double(appleLocalRedditFirstSnapshotHardTimeoutNanoseconds) / 1_000_000_000
 
         do {
             let finalText = try await withThrowingTaskGroup(of: String.self) { group in
@@ -2902,10 +3044,8 @@ class SimpleAIService: ObservableObject {
                     return try await AppleLocalGenerationService.shared.streamResponse(
                         to: prompt,
                         maxOutputTokens: maxOutputTokens,
-                        onChunk: { [weak self] chunk in
-                            guard let self else { return }
-                            await streamAccumulator.append(chunk)
-                        },
+                        isolatesSession: true,
+                        onChunk: { _ in },
                         shouldContinue: nil,
                         onStreamEvent: { [weak self] event in
                             guard let self else { return }
@@ -2949,9 +3089,9 @@ class SimpleAIService: ObservableObject {
                 guard let firstCompleted = try await group.next() else {
                     throw AppleLocalFirstSnapshotTimeoutError()
                 }
-                await streamAccumulator.finish()
                 return firstCompleted
             }
+            counter.add(units: Self.approximateAppleTokenCount(from: finalText))
             return AppleLocalStreamAttemptResult(
                 text: finalText,
                 firstSnapshotMs: await firstSnapshotTracker.elapsedMilliseconds(
@@ -3531,6 +3671,29 @@ class SimpleAIService: ObservableObject {
         return false
     }
 
+    /// Reddit map/reduce chunks have their own larger prompt ceiling. Keep the
+    /// ordinary Apple Local optimizer below unchanged so article, selected
+    /// text, and non-Reddit requests retain their 12K-character behavior.
+    private func optimizedRedditPromptForAppleLocal(_ prompt: String) -> String {
+        var normalized = prompt
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !normalized.isEmpty else { return normalized }
+
+        let characterLimit = RedditSummaryPlanner.appleLocalRedditPromptCharacterBudget
+        if normalized.count > characterLimit {
+            let prefixCount = Int(Double(characterLimit) * 0.72)
+            let suffixCount = max(0, characterLimit - prefixCount - 80)
+            let prefix = String(normalized.prefix(prefixCount))
+            let suffix = String(normalized.suffix(suffixCount))
+            normalized = "\(prefix)\n\n[...truncated for local Reddit model context...]\n\n\(suffix)"
+        }
+
+        return normalized
+    }
+
     private func optimizedPromptForAppleLocal(_ prompt: String) -> String {
         var normalized = prompt
             .replacingOccurrences(of: "\r\n", with: "\n")
@@ -3928,6 +4091,8 @@ class SimpleAIService: ObservableObject {
         warmedUpAppleLocal = false
         activeRequestID = nil
         activeAppleLocalStreamSessionID = nil
+        activeRedditRequestBackend = nil
+        activeRequestIsReddit = false
         appleLocalDiagnosticsByRequestID.removeAll()
         latestThroughputSessionID = nil
         streamState.throughput = nil
@@ -3969,6 +4134,8 @@ class SimpleAIService: ObservableObject {
             shouldResetAppleLocalAfterSummaryWhenIdle = false
             pendingAppleLocalPostSummaryFollowUp = false
             activeAppleLocalStreamSessionID = nil
+            activeRedditRequestBackend = nil
+            activeRequestIsReddit = false
             appleLocalDiagnosticsByRequestID.removeAll()
             streamState.resetText()
             streamState.throughput = nil

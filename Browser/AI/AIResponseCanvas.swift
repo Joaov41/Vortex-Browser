@@ -12,8 +12,16 @@ struct AIResponseCanvasPresentation: Identifiable {
         document = AIResponseDocumentParser.parse(message.text)
     }
 
+    var isRedditReply: Bool {
+        text.hasPrefix("Reddit summary coverage:")
+            || text.hasPrefix("Reddit query coverage:")
+    }
+
     var shouldAutoPresent: Bool {
-        document.containsRichContent || text.count >= 1_200 || text.components(separatedBy: .newlines).count >= 18
+        guard !isRedditReply else { return false }
+        return document.containsRichContent
+            || text.count >= 1_200
+            || text.components(separatedBy: .newlines).count >= 18
     }
 
     var sidebarSummary: String {

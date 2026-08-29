@@ -21,8 +21,56 @@ enum RedditSummaryPlanner {
     static let coverageMarker = "Reddit coverage:"
     static let commentsMarker = "--- Comments ---"
 
+    // FoundationModels does not expose its tokenizer. This deterministic
+    // approximation targets a 7K-token prompt/input window. Reddit comments
+    // contain short usernames, punctuation, emoji, and fragmented phrases, so
+    // they tokenize more densely than ordinary prose; use a conservative three
+    // characters per token. Source records reserve 750 tokens for Reddit
+    // instructions, labels, the retry prefix, and framework transcript
+    // overhead. This keeps the complete prompt below the model's 8K context
+    // while retaining room for up to 320 output tokens. These are budgets, not
+    // exact tokenizer measurements.
+    static let appleLocalRedditInputTokenBudget = 7_000
+    static let appleLocalRedditApproximateCharactersPerToken = 3
+    static let appleLocalRedditPromptInstructionTokenReserve = 750
+    static let appleLocalRedditPromptCharacterBudget =
+        appleLocalRedditInputTokenBudget * appleLocalRedditApproximateCharactersPerToken
+    static let appleLocalRedditSourceTokenBudget =
+        appleLocalRedditInputTokenBudget - appleLocalRedditPromptInstructionTokenReserve
+    static let appleLocalRedditSourceCharacterBudget = max(
+        256,
+        appleLocalRedditSourceTokenBudget * appleLocalRedditApproximateCharactersPerToken
+    )
+    // Even very short Reddit replies carry per-comment usernames, scores,
+    // punctuation, and reply-depth metadata. Bound the number of comment
+    // records in one Apple Local pass so a densely fragmented thread cannot
+    // appear character-safe while overflowing the real tokenizer.
+    static let appleLocalRedditMaxCommentsPerChunk = 100
+
     static func isRedditContext(_ text: String) -> Bool {
         text.contains(coverageMarker) && text.range(of: commentsMarker) != nil
+    }
+
+    /// Only Apple Local has the direct one-generation Reddit route. Other
+    /// providers retain their existing map/reduce execution even when a plan
+    /// happens to contain one chunk.
+    static func shouldUseSingleGeneration(
+        plan: RedditSummaryPlan,
+        backend: AIModelBackend
+    ) -> Bool {
+        backend == .localApple && plan.chunkCount == 1
+    }
+
+    /// Returns whether an Apple Local Reddit request needs the guarded
+    /// multi-pass choice before any generation starts. This is deliberately
+    /// limited to structured Reddit context and the Apple Local backend so
+    /// ordinary pages and other providers keep their existing routes.
+    static func requiresAppleLocalMultiPassPreflight(
+        content: String,
+        backend: AIModelBackend
+    ) -> Bool {
+        guard backend == .localApple, isRedditContext(content) else { return false }
+        return plan(content: content, backend: backend).chunkCount > 1
     }
 
     /// Budgets leave room for provider instructions and the generated answer.
@@ -31,7 +79,7 @@ enum RedditSummaryPlanner {
     static func characterBudget(for backend: AIModelBackend) -> Int {
         switch backend {
         case .localApple:
-            return 1_100
+            return appleLocalRedditSourceCharacterBudget
         case .mlxLocal:
             return 8_000
         case .applePCCGateway:
@@ -44,12 +92,14 @@ enum RedditSummaryPlanner {
     }
 
     /// Reduction prompts can safely combine several compact map outputs. Keep
-    /// this budget separate from the small Apple Local map budget so reductions
-    /// actually converge instead of producing one reduction per partial.
-    /// These values remain below the existing local prompt/context ceilings.
+    /// the Apple Local Reddit reduction budget aligned with its input budget so
+    /// reductions retain all map outputs without falling back to the ordinary
+    /// 8K-character Apple Local cap. Other provider values are unchanged.
     static func reductionCharacterBudget(for backend: AIModelBackend) -> Int {
         switch backend {
-        case .localApple, .mlxLocal:
+        case .localApple:
+            return appleLocalRedditSourceCharacterBudget
+        case .mlxLocal:
             return 8_000
         case .applePCCGateway:
             return 80_000
@@ -83,7 +133,11 @@ enum RedditSummaryPlanner {
             .map { (String($0), 1) }
             .filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
 
-        let chunks = pack(records: records, budget: budget)
+        let chunks = pack(
+            records: records,
+            budget: budget,
+            maxCommentsPerChunk: backend == .localApple ? appleLocalRedditMaxCommentsPerChunk : nil
+        )
         return RedditSummaryPlan(
             chunks: chunks,
             characterBudget: budget,
@@ -216,7 +270,8 @@ enum RedditSummaryPlanner {
 
     private static func pack(
         records: [(text: String, commentCount: Int)],
-        budget: Int
+        budget: Int,
+        maxCommentsPerChunk: Int?
     ) -> [RedditSummaryChunk] {
         guard !records.isEmpty else { return [] }
 
@@ -242,6 +297,13 @@ enum RedditSummaryPlanner {
         for record in records {
             let normalized = record.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !normalized.isEmpty else { continue }
+
+            if record.commentCount > 0,
+               let maxCommentsPerChunk,
+               currentCommentCount > 0,
+               currentCommentCount + record.commentCount > maxCommentsPerChunk {
+                flush()
+            }
 
             // A single long post/comment is split at a character boundary only
             // as a last resort. All pieces are retained and the comment count

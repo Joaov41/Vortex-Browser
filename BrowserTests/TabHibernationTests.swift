@@ -103,6 +103,34 @@ final class TabHibernationTests: XCTestCase {
         XCTAssertTrue(restored.tabs.allSatisfy(\.showsHibernationIndicator))
     }
 
+    func testSessionRestorePreservesThumbnailWithoutCreatingWebView() {
+        let suiteName = "BrowserTests.Hibernation.Thumbnail.\(UUID().uuidString)"
+        let thumbnailDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("BrowserTests.Thumbnail.\(UUID().uuidString)", isDirectory: true)
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("Could not create isolated test preferences")
+        }
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: thumbnailDirectory)
+        }
+
+        let writer = BrowserViewModel(userDefaults: defaults, thumbnailDirectory: thumbnailDirectory)
+        guard let tab = writer.tabs.first else {
+            return XCTFail("Expected an initial tab")
+        }
+        tab.thumbnail = UIGraphicsImageRenderer(size: CGSize(width: 280, height: 210)).image { context in
+            UIColor.systemPurple.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 280, height: 210))
+        }
+        writer.saveSession()
+
+        let restored = BrowserViewModel(userDefaults: defaults, thumbnailDirectory: thumbnailDirectory)
+        XCTAssertNotNil(restored.tabs.first?.thumbnail)
+        XCTAssertNil(restored.tabs.first?.liveWebView)
+        XCTAssertTrue(restored.tabs.first?.isHibernated == true)
+    }
+
     func testSavedScrollPositionSurvivesReactivation() {
         let tab = BrowserTab(title: "Article", url: URL(string: "https://example.com/article")!)
         tab.recordScrollPosition(640)

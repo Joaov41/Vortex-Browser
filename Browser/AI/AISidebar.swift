@@ -25,8 +25,11 @@ struct AISidebar: View {
     @Binding var selectedContextID: UUID?
     var selectionText: String? = nil
     var contextStatusText: String? = nil
-    var onSummaryExtraction: ((PageContentExtractor.ExtractedPageContent) -> Void)? = nil
+    /// Returns true when the parent has dispatched the resolved summary. A
+    /// false result preserves the standalone sidebar enqueue behavior.
+    var onSummaryExtraction: ((PageContentExtractor.ExtractedPageContent, SummaryLength) -> Bool)? = nil
     var onContextSelected: ((UUID) -> Void)? = nil
+    var onClearConversation: (() -> Void)? = nil
 
     @State private var input: String = ""
     @AppStorage("customPrompts") private var customPromptsData: String = "[]"
@@ -491,10 +494,12 @@ struct AISidebar: View {
                     if let extractedContent {
                         let content = extractedContent.formattedForAIContext
                         print("📄 Extracted content length: \(content.count) characters")
-                        await MainActor.run {
-                            onSummaryExtraction?(extractedContent)
+                        let handled = await MainActor.run {
+                            onSummaryExtraction?(extractedContent, .short) ?? false
                         }
-                        aiService.enqueueSummary(content, length: .short)
+                        if !handled {
+                            aiService.enqueueSummary(content, length: .short)
+                        }
                     } else {
                         await MainActor.run {
                             aiService.appendAssistantMessage("Could not extract page content. Please try again.")
@@ -536,10 +541,12 @@ struct AISidebar: View {
                     if let extractedContent {
                         let content = extractedContent.formattedForAIContext
                         print("📄 Extracted content length: \(content.count) characters")
-                        await MainActor.run {
-                            onSummaryExtraction?(extractedContent)
+                        let handled = await MainActor.run {
+                            onSummaryExtraction?(extractedContent, .long) ?? false
                         }
-                        aiService.enqueueSummary(content, length: .long)
+                        if !handled {
+                            aiService.enqueueSummary(content, length: .long)
+                        }
                     } else {
                         await MainActor.run {
                             aiService.appendAssistantMessage("Could not extract page content. Please try again.")
@@ -759,8 +766,9 @@ struct AISidebar: View {
             sectionLabelFontSize: sectionLabelFontSize,
             trimmedSelectionText: trimmedSelectionText,
             onClearConversation: {
-                aiService.reset()
+                onClearConversation?() ?? aiService.reset()
             },
+            showsSlowRedditProcessingNotice: aiService.isSlowRedditProcessingNoticeVisible,
             onOpenResponseCanvas: { presentation in
                 presentedResponseCanvas = presentation
             }
@@ -958,6 +966,7 @@ private struct AISidebarMessagesSection: View {
     let sectionLabelFontSize: CGFloat
     let trimmedSelectionText: String?
     let onClearConversation: () -> Void
+    let showsSlowRedditProcessingNotice: Bool
     let onOpenResponseCanvas: (AIResponseCanvasPresentation) -> Void
 
     @State private var renderedStreamingResponse: String = ""
@@ -1020,7 +1029,8 @@ private struct AISidebarMessagesSection: View {
                     streamingAssistantBubble(renderedStreamingResponse)
                 }
 
-                if let throughput = activeThroughput {
+                if let throughput = activeThroughput,
+                   !showsSlowRedditProcessingNotice || throughput.tokens > 0 {
                     rowContainer {
                         Text(throughputInlineText(throughput))
                             .font(.system(size: 12, weight: .semibold))
@@ -1028,7 +1038,18 @@ private struct AISidebarMessagesSection: View {
                     }
                 }
 
-                if isProcessing && pendingStreamingResponse.isEmpty {
+                if isProcessing && showsSlowRedditProcessingNotice {
+                    rowContainer {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                            Text(SimpleAIService.slowRedditProcessingNotice)
+                                .foregroundColor(secondaryText)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+
+                if isProcessing && pendingStreamingResponse.isEmpty && !showsSlowRedditProcessingNotice {
                     rowContainer {
                         HStack(spacing: 8) {
                             ProgressView()
