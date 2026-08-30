@@ -1,4 +1,5 @@
 import Combine
+import QuartzCore
 import SwiftUI
 import UIKit
 import WebKit
@@ -81,7 +82,9 @@ final class BrowserTab: ObservableObject, Identifiable {
         let created = AIWebView(frame: .zero, configuration: configuration)
         created.customUserAgent = useDesktopUserAgent ? Self.desktopUserAgent : Self.mobileUserAgent
         created.allowsLinkPreview = !isIncognito
-        created.allowsBackForwardNavigationGestures = true
+        // Vortex owns back/forward gestures so it can enforce a deliberate
+        // threshold and provide consistent animation and iPhone haptics.
+        created.allowsBackForwardNavigationGestures = false
 
         AdBlockService.shared.configureWebView(created)
         if !isIncognito {
@@ -110,11 +113,21 @@ final class BrowserTab: ObservableObject, Identifiable {
         return created
     }
 
-    func navigateForward() {
+    func navigateBack(animated: Bool = true) {
+        pendingForwardNavigationTask?.cancel()
+        pendingForwardNavigationTask = nil
+        let webView = activateWebView()
+        guard webView.canGoBack else { return }
+        addNavigationTransition(to: webView, direction: .back, animated: animated)
+        webView.goBack()
+    }
+
+    func navigateForward(animated: Bool = true) {
         pendingForwardNavigationTask?.cancel()
         pendingForwardNavigationTask = nil
         let webView = activateWebView()
         if webView.canGoForward {
+            addNavigationTransition(to: webView, direction: .forward, animated: animated)
             webView.goForward()
             return
         }
@@ -130,8 +143,29 @@ final class BrowserTab: ObservableObject, Identifiable {
                   let webView,
                   self.liveWebView === webView,
                   webView.canGoForward else { return }
+            self.addNavigationTransition(to: webView, direction: .forward, animated: animated)
             webView.goForward()
         }
+    }
+
+    private enum NavigationDirection {
+        case back
+        case forward
+    }
+
+    private func addNavigationTransition(
+        to webView: WKWebView,
+        direction: NavigationDirection,
+        animated: Bool
+    ) {
+        guard animated, !UIAccessibility.isReduceMotionEnabled else { return }
+
+        let transition = CATransition()
+        transition.duration = 0.28
+        transition.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        transition.type = .push
+        transition.subtype = direction == .back ? .fromLeft : .fromRight
+        webView.layer.add(transition, forKey: "vortex.backForwardNavigation")
     }
 
     func setUserAgentPreference(_ useDesktop: Bool) {

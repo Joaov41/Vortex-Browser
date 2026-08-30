@@ -1471,6 +1471,15 @@ struct ContentView: View {
     @State private var activeSplitDropZone: SplitDropZone?
     @State private var draggedSidebarTabID: UUID?
     @State private var sidebarTabDragLocation: CGPoint?
+    private enum PhoneSecondaryPanel: Equatable {
+        case none
+        case tabs
+        case ai
+    }
+    @State private var phoneSecondaryPanel: PhoneSecondaryPanel = .none
+    @State private var phonePanelDragOffset: CGFloat = 0
+    @State private var phonePanelHiddenForTabDrag = false
+    @State private var phoneAIPanelExpanded = false
     @State private var splitDropContentRect: CGRect = .zero
     private let splitDragCoordinateSpace = "browserSplitDragSpace"
     private let splitMinRatio: CGFloat = 0.25
@@ -1517,6 +1526,7 @@ struct ContentView: View {
     @State private var webAISettingsStatusMessage: String?
     @State private var isChatGPTLoggedIn = false
     @State private var isGeminiLoggedIn = false
+    @State private var pendingWebAILoginProvider: WebAIProvider?
     @State private var isTestingPCCGateway = false
     @State private var pccGatewayStatusMessage: String?
     
@@ -1650,12 +1660,18 @@ struct ContentView: View {
 
     private var sidebarToggleButton: some View {
         Button {
-            withAnimation(.easeOut(duration: 0.15)) {
-                isSidebarCollapsed.toggle()
-                sidebarDrag = 0
+            if isPhone {
+                togglePhoneSecondaryPanel(.tabs)
+            } else {
+                withAnimation(.easeOut(duration: 0.15)) {
+                    isSidebarCollapsed.toggle()
+                    sidebarDrag = 0
+                }
             }
         } label: {
-            Image(systemName: isSidebarCollapsed ? "chevron.right" : "chevron.left")
+            Image(systemName: isPhone
+                ? (phoneSecondaryPanel == .tabs ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")
+                : (isSidebarCollapsed ? "chevron.right" : "chevron.left"))
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(sidebarToggleForeground)
                 .padding(.horizontal, 12)
@@ -1674,12 +1690,16 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .ios26ButtonHitTargetCompat()
-        .accessibilityLabel(isSidebarCollapsed ? "Show sidebar" : "Hide sidebar")
+        .accessibilityLabel(isPhone
+            ? (phoneSecondaryPanel == .tabs ? "Hide tabs" : "Show tabs")
+            : (isSidebarCollapsed ? "Show sidebar" : "Hide sidebar"))
     }
 
     private var aiSidebarToggleButton: some View {
         Button {
-            if showAIPanel {
+            if isPhone {
+                togglePhoneSecondaryPanel(.ai)
+            } else if showAIPanel {
                 dismissAIPanel()
             } else {
                 syncAIContextSelection(forceVisibleTab: true)
@@ -1708,7 +1728,9 @@ struct ContentView: View {
         }
         .buttonStyle(.plain)
         .ios26ButtonHitTargetCompat()
-        .accessibilityLabel(showAIPanel ? "Hide AI sidebar" : "Show AI sidebar")
+        .accessibilityLabel(isPhone
+            ? (phoneSecondaryPanel == .ai ? "Hide AI assistant" : "Show AI assistant")
+            : (showAIPanel ? "Hide AI sidebar" : "Show AI sidebar"))
     }
 
     private var exitSplitViewButton: some View {
@@ -1762,9 +1784,137 @@ struct ContentView: View {
         }
     }
 
+    private var phoneSecondaryPanelIsVisible: Bool {
+        isPhone
+            && phoneSecondaryPanel != .none
+            && !phonePanelHiddenForTabDrag
+    }
+
+    private var phoneSecondaryPanelIsPresented: Bool {
+        isPhone && phoneSecondaryPanel != .none
+    }
+
+    private func togglePhoneSecondaryPanel(_ panel: PhoneSecondaryPanel) {
+        guard isPhone else { return }
+
+        if phoneSecondaryPanel == panel {
+            dismissPhoneSecondaryPanel()
+            return
+        }
+
+        if phoneSecondaryPanel == .ai {
+            resignPhonePanelInput()
+        }
+
+        if panel == .ai {
+            syncAIContextSelection(forceVisibleTab: true)
+            prepareAIContext()
+            showAIPanel = true
+            phoneAIPanelExpanded = phoneAIPanelExpanded || aiService.isProcessing || !aiService.messages.isEmpty
+        }
+
+        collapseToolbar()
+        withAnimation(.easeOut(duration: 0.22)) {
+            phoneSecondaryPanel = panel
+            phonePanelDragOffset = 0
+            phonePanelHiddenForTabDrag = false
+        }
+    }
+
+    private func dismissPhoneSecondaryPanel() {
+        guard isPhone else { return }
+        resignPhonePanelInput()
+        withAnimation(.easeOut(duration: 0.22)) {
+            phoneSecondaryPanel = .none
+            phonePanelDragOffset = 0
+            phonePanelHiddenForTabDrag = false
+        }
+    }
+
+    private func resignPhonePanelInput() {
+        guard isPhone else { return }
+        UIApplication.shared.sendAction(
+            #selector(UIResponder.resignFirstResponder),
+            to: nil,
+            from: nil,
+            for: nil
+        )
+    }
+
+    private func phonePanelDismissGrabber(
+        for panel: PhoneSecondaryPanel,
+        panelHeight: CGFloat
+    ) -> some View {
+        ZStack {
+            Capsule()
+                .fill(Color.secondary.opacity(0.45))
+                .frame(width: 42, height: 5)
+        }
+        .frame(width: 100, height: 44)
+        .contentShape(Rectangle())
+        .accessibilityLabel(panel == .ai ? "Drag to dismiss AI assistant" : "Drag to dismiss tabs")
+        .gesture(
+            DragGesture(minimumDistance: 8, coordinateSpace: .local)
+                .onChanged { value in
+                    guard phoneSecondaryPanel == panel else { return }
+                    phonePanelDragOffset = max(0, min(panelHeight, value.translation.height))
+                }
+                .onEnded { value in
+                    guard phoneSecondaryPanel == panel else { return }
+                    let dismissThreshold = max(80, panelHeight * 0.12)
+                    if value.translation.height > dismissThreshold {
+                        dismissPhoneSecondaryPanel()
+                    } else {
+                        withAnimation(.easeOut(duration: 0.16)) {
+                            phonePanelDragOffset = 0
+                        }
+                    }
+                }
+        )
+    }
+
+    private func isPrimarilyRightwardPhoneSwipe(_ translation: CGSize) -> Bool {
+        guard translation.width > 0 else { return false }
+        return translation.width > abs(translation.height) * 1.25
+    }
+
+    private func phonePanelHorizontalDismissGesture(
+        for panel: PhoneSecondaryPanel
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 10, coordinateSpace: .local)
+            .onEnded { value in
+                guard isPhone,
+                      phoneSecondaryPanel == panel,
+                      isPrimarilyRightwardPhoneSwipe(value.translation) else {
+                    return
+                }
+
+                let horizontalTravel = max(
+                    value.translation.width,
+                    value.predictedEndTranslation.width
+                )
+                guard horizontalTravel >= 48 else { return }
+                dismissPhoneSecondaryPanel()
+            }
+    }
+
+    private func phonePanelEdgeDismissTarget(
+        for panel: PhoneSecondaryPanel
+    ) -> some View {
+        HStack(spacing: 0) {
+            Color.clear
+                .frame(width: 36)
+                .contentShape(Rectangle())
+                .gesture(phonePanelHorizontalDismissGesture(for: panel))
+            Spacer(minLength: 0)
+        }
+        .frame(maxHeight: .infinity)
+        .accessibilityHidden(true)
+    }
+
     private func toolbarCollapsedPill(for tab: BrowserTab) -> some View {
         HStack(spacing: 12) {
-            Button { tab.activateWebView().goBack() } label: {
+            Button { tab.navigateBack() } label: {
                 Image(systemName: "chevron.left")
             }
             .browserToolbarControl()
@@ -2082,6 +2232,107 @@ struct ContentView: View {
         }
     }
 
+    private struct WebAILoginWarningOverlay: View {
+        let provider: WebAIProvider
+        let onCancel: () -> Void
+        let onContinue: () -> Void
+
+        @Environment(\.colorScheme) private var colorScheme
+
+        private var isDark: Bool {
+            colorScheme == .dark
+        }
+
+        private var continueTitle: String {
+            "Continue to \(provider.displayName)"
+        }
+
+        var body: some View {
+            GeometryReader { proxy in
+                let availableWidth = max(0, proxy.size.width - 32)
+                let panelWidth = min(520, availableWidth)
+                let panelHeight = max(0, proxy.size.height - 32)
+
+                ZStack {
+                    Color.black
+                        .opacity(isDark ? 0.48 : 0.28)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture { }
+
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 18) {
+                            Text("IMPORTANT")
+                                .font(.title2.weight(.bold))
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Text("Do not use your main ChatGPT or Gemini account. Create a free new account just to use with this app. The providers may terminate access at any time. These model options are optional and come with no guarantees.")
+                                .font(.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(.primary)
+
+                            VStack(spacing: 10) {
+                                Button(action: onCancel) {
+                                    Text("Cancel")
+                                        .font(.body.weight(.semibold))
+                                        .multilineTextAlignment(.center)
+                                        .foregroundStyle(.primary)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                        .glassEffectCompat(
+                                            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                                            material: .ultraThinMaterial,
+                                            strokeOpacity: isDark ? 0.16 : 0.28,
+                                            isInteractive: true
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Cancel")
+
+                                Button(action: onContinue) {
+                                    Text(continueTitle)
+                                        .font(.body.weight(.semibold))
+                                        .multilineTextAlignment(.center)
+                                        .foregroundStyle(.primary)
+                                        .frame(maxWidth: .infinity, minHeight: 44)
+                                        .padding(.horizontal, 14)
+                                        .padding(.vertical, 8)
+                                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                        .glassEffectCompat(
+                                            in: RoundedRectangle(cornerRadius: 14, style: .continuous),
+                                            material: .ultraThinMaterial,
+                                            strokeOpacity: isDark ? 0.16 : 0.28,
+                                            isInteractive: true
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel(continueTitle)
+                            }
+                            .glassEffectContainerCompat(spacing: 10)
+                        }
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassEffectCompat(
+                            in: RoundedRectangle(cornerRadius: 24, style: .continuous),
+                            material: .regularMaterial,
+                            strokeOpacity: isDark ? 0.18 : 0.32,
+                            isInteractive: false
+                        )
+                    }
+                    .frame(width: panelWidth)
+                    .frame(maxHeight: panelHeight)
+                    .scrollBounceBehavior(.basedOnSize)
+                    .scrollIndicators(.hidden)
+                }
+                .frame(width: proxy.size.width, height: proxy.size.height)
+            }
+            .ignoresSafeArea()
+            .accessibilityAddTraits(.isModal)
+        }
+    }
+
     private var hibernationProtectedTabIDs: Set<UUID> {
         Set([vm.selectedTabID, splitPrimaryID, splitSecondaryID, aiContextTabID].compactMap { $0 })
     }
@@ -2161,7 +2412,7 @@ struct ContentView: View {
             .keyboardShortcut("l", modifiers: .command)
 
             Button("Go Back") {
-                selectedTab?.activateWebView().goBack()
+                selectedTab?.navigateBack()
             }
             .keyboardShortcut("[", modifiers: .command)
 
@@ -2310,6 +2561,64 @@ struct ContentView: View {
         return vm.tabs[index]
     }
 
+    private func phoneSecondaryPanels(in proxy: GeometryProxy) -> some View {
+        let sheetWidth = max(0, proxy.size.width - 24)
+        let availableHeight = max(0, proxy.size.height - 8)
+        let tabsHeight = min(availableHeight, max(420, proxy.size.height * 0.88))
+        let aiHeight = phoneAIPanelExpanded
+            ? min(availableHeight, max(520, proxy.size.height - 18))
+            : min(availableHeight, max(360, proxy.size.height * 0.52))
+        let tabsVisible = phoneSecondaryPanel == .tabs && !phonePanelHiddenForTabDrag
+        let aiVisible = phoneSecondaryPanel == .ai && !phonePanelHiddenForTabDrag
+        let panelOffset = phonePanelDragOffset
+
+        return ZStack(alignment: .bottom) {
+            if phoneSecondaryPanelIsVisible {
+                Color.black.opacity(isSidebarDark ? 0.12 : 0.06)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        dismissPhoneSecondaryPanel()
+                    }
+                    .transition(.opacity)
+                    .zIndex(0)
+            }
+
+            phoneSidebarPanel
+                .frame(width: sheetWidth, height: tabsHeight)
+                .overlay(alignment: .top) {
+                    phonePanelDismissGrabber(for: .tabs, panelHeight: tabsHeight)
+                        .padding(.top, 2)
+                }
+                .offset(y: tabsVisible ? panelOffset : availableHeight + 40)
+                .opacity(tabsVisible ? 1 : 0)
+                // Keep the row gesture alive while the sheet moves offscreen
+                // for a tab-to-split drag.
+                .allowsHitTesting(phoneSecondaryPanel == .tabs)
+                .zIndex(phoneSecondaryPanel == .tabs ? 2 : 1)
+
+            phoneAISidebarPanel
+                .frame(width: sheetWidth, height: aiHeight)
+                .overlay(alignment: .top) {
+                    phonePanelDismissGrabber(for: .ai, panelHeight: aiHeight)
+                        .padding(.top, 2)
+                }
+                .offset(y: aiVisible ? panelOffset : availableHeight + 40)
+                .opacity(aiVisible ? 1 : 0)
+                .allowsHitTesting(phoneSecondaryPanel == .ai)
+                .zIndex(phoneSecondaryPanel == .ai ? 2 : 1)
+
+            if phoneSecondaryPanelIsVisible {
+                phonePanelEdgeDismissTarget(for: phoneSecondaryPanel)
+                    .zIndex(4)
+            }
+        }
+        .frame(width: proxy.size.width, height: proxy.size.height)
+        .animation(.easeOut(duration: 0.22), value: phoneSecondaryPanel)
+        .animation(.easeOut(duration: 0.22), value: phonePanelHiddenForTabDrag)
+        .animation(.easeOut(duration: 0.22), value: phoneAIPanelExpanded)
+    }
+
     @ViewBuilder
     private var mainLayout: some View {
         ZStack(alignment: .bottom) {
@@ -2345,6 +2654,12 @@ struct ContentView: View {
                                     if showSettingsMenu {
                                         showSettingsMenu = false
                                     }
+                                    if isPhone {
+                                        if phoneSecondaryPanel != .none {
+                                            dismissPhoneSecondaryPanel()
+                                        }
+                                        return
+                                    }
                                     if !isSidebarCollapsed {
                                         withAnimation(.easeOut(duration: 0.15)) {
                                             isSidebarCollapsed = true
@@ -2357,28 +2672,34 @@ struct ContentView: View {
                                 }
                         )
 
-                    // Left sidebar
-                    HStack {
-                        sidebarPanel
-                            .frame(height: proxy.size.height - verticalInset * 2, alignment: .top)
-                            .padding(.leading, horizontalInset)
-                            .padding(.vertical, verticalInset)
-                        Spacer()
-                    }
-
-                    // Right AI sidebar
-                    HStack {
-                        Spacer()
-                        if showAIPanel {
-                            aiSidebarPanel
+                    if isPhone {
+                        phoneSecondaryPanels(in: proxy)
+                    } else {
+                        // Left sidebar
+                        HStack {
+                            sidebarPanel
                                 .frame(height: proxy.size.height - verticalInset * 2, alignment: .top)
-                                .padding(.trailing, horizontalInset)
+                                .padding(.leading, horizontalInset)
                                 .padding(.vertical, verticalInset)
-                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                            Spacer()
+                        }
+
+                        // Right AI sidebar
+                        HStack {
+                            Spacer()
+                            if showAIPanel {
+                                aiSidebarPanel
+                                    .frame(height: proxy.size.height - verticalInset * 2, alignment: .top)
+                                    .padding(.trailing, horizontalInset)
+                                    .padding(.vertical, verticalInset)
+                                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                            }
                         }
                     }
 
-                    edgeDragDetector
+                    if !isPhone {
+                        edgeDragDetector
+                    }
 
                     if isPhone {
                         splitDropPreviewOverlay(contentRect: splitDropRect)
@@ -2403,13 +2724,16 @@ struct ContentView: View {
                     splitDropContentRect = newRect
                 }
             }
-            .ignoresSafeArea(.keyboard)
+            .ignoresSafeArea(
+                .keyboard,
+                edges: isPhone && phoneSecondaryPanel == .ai ? Edge.Set() : .all
+            )
 
             // Toolbar - outside GeometryReader for proper keyboard avoidance
             if let idx = vm.selectedIndex {
-                if isToolbarCollapsed {
+                if (!isPhone || !phoneSecondaryPanelIsPresented) && isToolbarCollapsed {
                     HStack(spacing: 12) {
-                        if isSidebarCollapsed {
+                        if isPhone || isSidebarCollapsed {
                             sidebarToggleButton
                         }
                         toolbarCollapsedPill(for: vm.tabs[idx])
@@ -2421,7 +2745,7 @@ struct ContentView: View {
                     .glassEffectContainerCompat(spacing: 12)
                     .padding(.bottom, 24)
                     .opacity(isScrolling ? 0 : 1)
-                } else {
+                } else if (!isPhone || !phoneSecondaryPanelIsPresented) {
                     toolbarView(for: vm.tabs[idx])
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal)
@@ -2468,6 +2792,20 @@ struct ContentView: View {
             refreshHibernationProtection()
             if showAIPanel {
                 prepareAIContext()
+            }
+        }
+        .onChange(of: aiService.isProcessing) { isProcessing in
+            if isPhone, isProcessing {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    phoneAIPanelExpanded = true
+                }
+            }
+        }
+        .onChange(of: aiService.messages) { messages in
+            if isPhone, !messages.isEmpty {
+                withAnimation(.easeOut(duration: 0.22)) {
+                    phoneAIPanelExpanded = true
+                }
             }
         }
         .onChange(of: omniboxFocused) { focused in
@@ -2852,6 +3190,33 @@ struct ContentView: View {
         webAIFallbackMessage = nil
     }
 
+    private func requestWebAILogin(for provider: WebAIProvider) {
+        pendingWebAILoginProvider = provider
+    }
+
+    private func cancelPendingWebAILogin() {
+        pendingWebAILoginProvider = nil
+    }
+
+    private func continueWebAILogin(for provider: WebAIProvider) {
+        guard let pendingProvider = pendingWebAILoginProvider,
+              pendingProvider.rawValue == provider.rawValue else { return }
+        pendingWebAILoginProvider = nil
+        openWebAILoginSession(for: pendingProvider)
+    }
+
+    private func webAILoginWarningOverlay(for provider: WebAIProvider) -> some View {
+        WebAILoginWarningOverlay(
+            provider: provider,
+            onCancel: {
+                cancelPendingWebAILogin()
+            },
+            onContinue: {
+                continueWebAILogin(for: provider)
+            }
+        )
+    }
+
     private func openWebAILoginSession(for provider: WebAIProvider) {
         showSettingsMenu = false
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
@@ -3011,13 +3376,22 @@ struct ContentView: View {
 
         withAnimation(.easeOut(duration: 0.2)) {
             showAIPanel = false
+            if isPhone {
+                resignPhonePanelInput()
+                phoneSecondaryPanel = .none
+                phonePanelDragOffset = 0
+                phonePanelHiddenForTabDrag = false
+                if isExplicitCancellation {
+                    phoneAIPanelExpanded = false
+                }
+            }
         }
         if activeWebProviderTab != nil {
             clearSplitView()
         }
     }
 
-    private var aiSidebarPanel: some View {
+    private func makeAISidebar() -> AISidebar {
         AISidebar(
             aiService: aiService,
             onSend: { text in
@@ -3053,12 +3427,31 @@ struct ContentView: View {
             onClearConversation: {
                 pendingRedditPreflight = nil
                 aiService.reset()
+            },
+            onInputFocusChanged: { focused in
+                guard isPhone, focused else { return }
+                withAnimation(.easeOut(duration: 0.22)) {
+                    phoneAIPanelExpanded = true
+                    phoneSecondaryPanel = .ai
+                    phonePanelDragOffset = 0
+                    phonePanelHiddenForTabDrag = false
+                }
             }
         )
+    }
+
+    private var aiSidebarPanel: some View {
+        makeAISidebar()
         .frame(width: aiSidebarBaseWidth)
         .overlay(alignment: .leading) {
             sidebarDismissHandle
         }
+    }
+
+    private var phoneAISidebarPanel: some View {
+        makeAISidebar()
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous))
     }
 
     private var sidebarDismissHandle: some View {
@@ -3221,6 +3614,17 @@ struct ContentView: View {
         DragGesture(minimumDistance: 10, coordinateSpace: .named(splitDragCoordinateSpace))
             .onChanged { value in
                 guard (!isCompactWidth || isPhone), tab.webAIProvider == nil else { return }
+                if isPhone, isPrimarilyRightwardPhoneSwipe(value.translation) {
+                    return
+                }
+                if isPhone,
+                   phoneSecondaryPanel == .tabs,
+                   !phonePanelHiddenForTabDrag {
+                    withAnimation(.easeOut(duration: 0.16)) {
+                        phonePanelHiddenForTabDrag = true
+                        phonePanelDragOffset = 0
+                    }
+                }
                 draggedSidebarTabID = tab.id
                 sidebarTabDragLocation = value.location
                 activeSplitDropZone = splitDropZone(
@@ -3229,8 +3633,19 @@ struct ContentView: View {
                 )
             }
             .onEnded { value in
+                if isPhone, isPrimarilyRightwardPhoneSwipe(value.translation) {
+                    resetSidebarTabDragState()
+                    return
+                }
                 guard draggedSidebarTabID == tab.id else {
                     resetSidebarTabDragState()
+                    if isPhone {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            phonePanelHiddenForTabDrag = false
+                            phonePanelDragOffset = 0
+                            phoneSecondaryPanel = .tabs
+                        }
+                    }
                     return
                 }
 
@@ -3238,9 +3653,14 @@ struct ContentView: View {
                     at: value.location,
                     contentRect: splitDropContentRect
                 )
+                let didDrop = dropZone.map { handleTabDrop(tab.id, in: $0) } ?? false
                 resetSidebarTabDragState()
-                if let dropZone {
-                    _ = handleTabDrop(tab.id, in: dropZone)
+                if isPhone {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        phonePanelHiddenForTabDrag = false
+                        phonePanelDragOffset = 0
+                        phoneSecondaryPanel = didDrop ? .none : .tabs
+                    }
                 }
             }
     }
@@ -3771,8 +4191,12 @@ struct ContentView: View {
             aiSelectionContext = AISelectionContext(tabID: tab.id, text: selectedText)
             aiContextTabID = tab.id
             aiHasUnreadResponse = false
-            withAnimation(.easeOut(duration: 0.2)) {
-                showAIPanel = true
+            if isPhone {
+                togglePhoneSecondaryPanel(.ai)
+            } else {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    showAIPanel = true
+                }
             }
         }
     }
@@ -3905,6 +4329,30 @@ struct ContentView: View {
         .background(
             sidebarBackground
         )
+        .clipShape(RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous)
+                .strokeBorder(Color.white.opacity(isSidebarDark ? 0.2 : 0.2), lineWidth: 1)
+        )
+        .shadow(
+            color: Color.black.opacity(isSidebarDark ? 0.4 : 0.2),
+            radius: 18,
+            x: 0,
+            y: 10
+        )
+        .contentShape(RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous))
+    }
+
+    private var phoneSidebarPanel: some View {
+        VStack(spacing: 8) {
+            sidebarContent
+            Spacer(minLength: 0)
+            settingsButton
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 4)
+        .padding(.bottom, 12)
+        .background(sidebarBackground)
         .clipShape(RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous)
@@ -4349,6 +4797,9 @@ struct ContentView: View {
         sidebarRow(
             title: "Settings",
             action: {
+                if isPhone {
+                    dismissPhoneSecondaryPanel()
+                }
                 if isCompactWidth {
                     withAnimation(.easeOut(duration: 0.2)) {
                         isSidebarCollapsed = true
@@ -4412,6 +4863,12 @@ struct ContentView: View {
                 prepareAIContext()
                 aiHasUnreadResponse = false
             } else {
+                if isPhone, phoneSecondaryPanel == .ai {
+                    resignPhonePanelInput()
+                    phoneSecondaryPanel = .none
+                    phonePanelDragOffset = 0
+                    phonePanelHiddenForTabDrag = false
+                }
                 pendingAIQueryTask?.cancel()
                 pendingAIQueryTask = nil
                 pendingAIQueryToken = UUID()
@@ -4786,6 +5243,11 @@ struct ContentView: View {
                 Button {
                     withAnimation(.easeOut(duration: 0.2)) {
                         showAIPanel = false
+                        if isPhone {
+                            phoneSecondaryPanel = .none
+                            phonePanelDragOffset = 0
+                            phonePanelHiddenForTabDrag = false
+                        }
                     }
                     clearSplitView()
                 } label: {
@@ -4920,6 +5382,13 @@ struct ContentView: View {
     private var settingsMenuView: some View {
         settingsMenuContent
             .frame(width: 360)
+            .overlay {
+                if let pendingWebAILoginProvider {
+                    webAILoginWarningOverlay(for: pendingWebAILoginProvider)
+                        .transition(.opacity)
+                        .zIndex(300)
+                }
+            }
         .fileImporter(
             isPresented: $showDownloadLocationPicker,
             allowedContentTypes: [.folder],
@@ -5032,7 +5501,7 @@ struct ContentView: View {
 
                     HStack(spacing: 10) {
                         Button(isChatGPTLoggedIn ? "Logged in" : "Log In to ChatGPT") {
-                            openWebAILoginSession(for: .chatgpt)
+                            requestWebAILogin(for: .chatgpt)
                         }
                         .buttonStyle(.bordered)
 
@@ -5044,7 +5513,7 @@ struct ContentView: View {
 
                     HStack(spacing: 10) {
                         Button(isGeminiLoggedIn ? "Logged in" : "Log In to Gemini") {
-                            openWebAILoginSession(for: .gemini)
+                            requestWebAILogin(for: .gemini)
                         }
                         .buttonStyle(.bordered)
 
@@ -5204,6 +5673,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
                     .ignoresSafeArea()
                     .onTapGesture {
+                        guard pendingWebAILoginProvider == nil else { return }
                         showSettingsMenu = false
                     }
 
@@ -5223,6 +5693,12 @@ struct ContentView: View {
                     )
                     .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
                     .preferredColorScheme(isSidebarDark ? .dark : .light)
+
+                if let pendingWebAILoginProvider {
+                    webAILoginWarningOverlay(for: pendingWebAILoginProvider)
+                        .transition(.opacity)
+                        .zIndex(300)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -5798,7 +6274,7 @@ struct ContentView: View {
 
             ThirdPartyCookieBlocker.shared.register(webView: webView)
 
-            webView.allowsBackForwardNavigationGestures = allowEdgeGestures
+            webView.allowsBackForwardNavigationGestures = false
             context.coordinator.setEdgeGesturesEnabled(allowEdgeGestures)
 
             if !webView.isLoading {
@@ -5904,9 +6380,12 @@ struct ContentView: View {
             private var didNotifyScrollStart = false
             private var leftEdgeGesture: UIScreenEdgePanGestureRecognizer?
             private var rightEdgeGesture: UIScreenEdgePanGestureRecognizer?
-            private var swipeRightGesture: UISwipeGestureRecognizer?
-            private var swipeLeftGesture: UISwipeGestureRecognizer?
+            private var iPadNavigationPanGesture: UIPanGestureRecognizer?
             private var interactionTapGesture: UITapGestureRecognizer?
+            private var navigationFeedbackGenerator: UIImpactFeedbackGenerator?
+            private var leftEdgeNavigationTriggered = false
+            private var rightEdgeNavigationTriggered = false
+            private var iPadNavigationTriggered = false
 
             init(
                 tab: BrowserTab,
@@ -5929,6 +6408,9 @@ struct ContentView: View {
                 self.onWebProviderReady = onWebProviderReady
                 self.onNavigate = onNavigate
                 super.init()
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    navigationFeedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
+                }
                 refreshControl.addTarget(self, action: #selector(handlePullToRefresh(_:)), for: .valueChanged)
             }
 
@@ -6579,7 +7061,7 @@ struct ContentView: View {
                 print("DEBUG: webViewDidClose called")
                 // Handle window.close() - navigate back or to home
                 if webView.canGoBack {
-                    webView.goBack()
+                    tab.navigateBack()
                 } else if let url = URL(string: "https://www.office.com") {
                     webView.load(URLRequest(url: url))
                 }
@@ -6620,37 +7102,35 @@ struct ContentView: View {
             // MARK: - Gesture handling
             func installGestures(on webView: WKWebView) {
                 if leftEdgeGesture?.view === webView { return }
-                [leftEdgeGesture, rightEdgeGesture, swipeRightGesture, swipeLeftGesture, interactionTapGesture]
+                [leftEdgeGesture, rightEdgeGesture, iPadNavigationPanGesture, interactionTapGesture]
                     .compactMap { $0 }
                     .forEach { $0.view?.removeGestureRecognizer($0) }
                 leftEdgeGesture = nil
                 rightEdgeGesture = nil
-                swipeRightGesture = nil
-                swipeLeftGesture = nil
+                iPadNavigationPanGesture = nil
                 interactionTapGesture = nil
                 let leftEdge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleLeftEdge(_:)))
                 leftEdge.edges = .left
                 leftEdge.cancelsTouchesInView = false
                 leftEdge.delegate = self
+                leftEdge.isEnabled = UIDevice.current.userInterfaceIdiom == .phone
                 webView.addGestureRecognizer(leftEdge)
 
                 let rightEdge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleRightEdge(_:)))
                 rightEdge.edges = .right
                 rightEdge.cancelsTouchesInView = false
                 rightEdge.delegate = self
+                rightEdge.isEnabled = UIDevice.current.userInterfaceIdiom == .phone
                 webView.addGestureRecognizer(rightEdge)
 
-                let swipeRight = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipeRight(_:)))
-                swipeRight.direction = .right
-                swipeRight.cancelsTouchesInView = false
-                swipeRight.delegate = self
-                webView.addGestureRecognizer(swipeRight)
-
-                let swipeLeft = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipeLeft(_:)))
-                swipeLeft.direction = .left
-                swipeLeft.cancelsTouchesInView = false
-                swipeLeft.delegate = self
-                webView.addGestureRecognizer(swipeLeft)
+                if UIDevice.current.userInterfaceIdiom != .phone {
+                    let navigationPan = UIPanGestureRecognizer(target: self, action: #selector(handleIPadNavigationPan(_:)))
+                    navigationPan.maximumNumberOfTouches = 1
+                    navigationPan.cancelsTouchesInView = false
+                    navigationPan.delegate = self
+                    webView.addGestureRecognizer(navigationPan)
+                    iPadNavigationPanGesture = navigationPan
+                }
 
                 let interactionTap = UITapGestureRecognizer(target: self, action: #selector(handleInteractionTap(_:)))
                 interactionTap.cancelsTouchesInView = false
@@ -6659,41 +7139,96 @@ struct ContentView: View {
 
                 leftEdgeGesture = leftEdge
                 rightEdgeGesture = rightEdge
-                swipeRightGesture = swipeRight
-                swipeLeftGesture = swipeLeft
                 interactionTapGesture = interactionTap
 
-                let pan = webView.scrollView.panGestureRecognizer
-                pan.require(toFail: leftEdge)
-                pan.require(toFail: rightEdge)
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    let pan = webView.scrollView.panGestureRecognizer
+                    pan.require(toFail: leftEdge)
+                    pan.require(toFail: rightEdge)
+                }
             }
 
             func setEdgeGesturesEnabled(_ enabled: Bool) {
-                leftEdgeGesture?.isEnabled = enabled
-                rightEdgeGesture?.isEnabled = enabled
-                swipeRightGesture?.isEnabled = enabled
-                swipeLeftGesture?.isEnabled = enabled
+                let isPhone = UIDevice.current.userInterfaceIdiom == .phone
+                leftEdgeGesture?.isEnabled = enabled && isPhone
+                rightEdgeGesture?.isEnabled = enabled && isPhone
+                iPadNavigationPanGesture?.isEnabled = enabled && !isPhone
             }
 
             @objc private func handleLeftEdge(_ g: UIScreenEdgePanGestureRecognizer) {
-                if g.state == .ended || g.state == .recognized {
-                    let webView = tab.activateWebView()
-                    if webView.canGoBack { webView.goBack() }
+                if g.state == .began {
+                    leftEdgeNavigationTriggered = false
+                    navigationFeedbackGenerator?.prepare()
+                } else if g.state == .ended {
+                    if !leftEdgeNavigationTriggered,
+                       navigationGestureCrossedThreshold(g, expectedHorizontalSign: 1) {
+                        let webView = tab.activateWebView()
+                        if webView.canGoBack {
+                            tab.navigateBack()
+                            navigationFeedbackGenerator?.impactOccurred(intensity: 1.0)
+                        }
+                    }
+                    leftEdgeNavigationTriggered = false
+                } else if g.state == .cancelled || g.state == .failed {
+                    leftEdgeNavigationTriggered = false
                 }
             }
 
             @objc private func handleRightEdge(_ g: UIScreenEdgePanGestureRecognizer) {
-                if g.state == .ended || g.state == .recognized {
-                    tab.navigateForward()
+                if g.state == .began {
+                    rightEdgeNavigationTriggered = false
+                    navigationFeedbackGenerator?.prepare()
+                } else if g.state == .ended {
+                    if !rightEdgeNavigationTriggered,
+                       navigationGestureCrossedThreshold(g, expectedHorizontalSign: -1) {
+                        let webView = tab.activateWebView()
+                        if webView.canGoForward {
+                            tab.navigateForward()
+                            navigationFeedbackGenerator?.impactOccurred(intensity: 1.0)
+                        }
+                    }
+                    rightEdgeNavigationTriggered = false
+                } else if g.state == .cancelled || g.state == .failed {
+                    rightEdgeNavigationTriggered = false
                 }
             }
 
-            @objc private func handleSwipeRight(_ g: UISwipeGestureRecognizer) {
-                if g.state == .ended { let webView = tab.activateWebView(); if webView.canGoBack { webView.goBack() } }
+            private func navigationGestureCrossedThreshold(
+                _ gesture: UIScreenEdgePanGestureRecognizer,
+                expectedHorizontalSign: CGFloat
+            ) -> Bool {
+                guard let view = gesture.view else { return false }
+                let translation = gesture.translation(in: view)
+                let horizontalTravel = translation.x * expectedHorizontalSign
+                let requiredTravel = min(max(view.bounds.width * 0.12, 52), 84)
+                return horizontalTravel >= requiredTravel
+                    && horizontalTravel > abs(translation.y) * 1.2
             }
 
-            @objc private func handleSwipeLeft(_ g: UISwipeGestureRecognizer) {
-                if g.state == .ended { tab.navigateForward() }
+            @objc private func handleIPadNavigationPan(_ gesture: UIPanGestureRecognizer) {
+                if gesture.state == .began {
+                    iPadNavigationTriggered = false
+                } else if gesture.state == .changed, !iPadNavigationTriggered {
+                    guard let view = gesture.view else { return }
+                    let translation = gesture.translation(in: view)
+                    let horizontalTravel = abs(translation.x)
+                    let requiredTravel = min(max(view.bounds.width * 0.075, 64), 96)
+                    guard horizontalTravel >= requiredTravel,
+                          horizontalTravel > abs(translation.y) * 1.25 else { return }
+
+                    let webView = tab.activateWebView()
+                    if translation.x > 0, webView.canGoBack {
+                        iPadNavigationTriggered = true
+                        tab.navigateBack()
+                    } else if translation.x < 0, webView.canGoForward {
+                        iPadNavigationTriggered = true
+                        tab.navigateForward()
+                    }
+                } else if gesture.state == .ended
+                            || gesture.state == .cancelled
+                            || gesture.state == .failed {
+                    iPadNavigationTriggered = false
+                }
             }
 
             @objc private func handleInteractionTap(_ g: UITapGestureRecognizer) {
@@ -6707,14 +7242,18 @@ struct ContentView: View {
                     let velocity = edge.velocity(in: edge.view)
                     return abs(velocity.x) > abs(velocity.y)
                 }
+                if gestureRecognizer == iPadNavigationPanGesture,
+                   let pan = gestureRecognizer as? UIPanGestureRecognizer {
+                    let velocity = pan.velocity(in: pan.view)
+                    return abs(velocity.x) > abs(velocity.y) * 1.15
+                }
                 return true
             }
 
             func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
                 if gestureRecognizer == leftEdgeGesture
                     || gestureRecognizer == rightEdgeGesture
-                    || gestureRecognizer == swipeRightGesture
-                    || gestureRecognizer == swipeLeftGesture
+                    || gestureRecognizer == iPadNavigationPanGesture
                     || gestureRecognizer == interactionTapGesture {
                     return true
                 }

@@ -30,6 +30,7 @@ struct AISidebar: View {
     var onSummaryExtraction: ((PageContentExtractor.ExtractedPageContent, SummaryLength) -> Bool)? = nil
     var onContextSelected: ((UUID) -> Void)? = nil
     var onClearConversation: (() -> Void)? = nil
+    var onInputFocusChanged: ((Bool) -> Void)? = nil
 
     @State private var input: String = ""
     @AppStorage("customPrompts") private var customPromptsData: String = "[]"
@@ -45,7 +46,6 @@ struct AISidebar: View {
     @State private var shouldAutoCollapseAfterNextReply = false
     @State private var showFullConversation = false
     @State private var presentedResponseCanvas: AIResponseCanvasPresentation?
-    @State private var automaticallyPresentedCanvasReplyIDs: Set<UUID> = []
 
     private var mlxAvailable: Bool {
         MLXLocalService.isAvailable()
@@ -233,12 +233,14 @@ struct AISidebar: View {
         .onChange(of: customPrompts) { _ in
             persistCustomPrompts()
         }
-        .onChange(of: aiService.messages) { messages in
+        .onChange(of: isInputFocused) { focused in
+            onInputFocusChanged?(focused)
+        }
+        .onChange(of: aiService.messages) { _ in
             if shouldAutoCollapseAfterNextReply && !aiService.isProcessing && hasCompletedAssistantReply {
                 areControlsExpanded = false
                 shouldAutoCollapseAfterNextReply = false
             }
-            presentLatestRichReplyIfNeeded(in: messages)
         }
         .sheet(isPresented: $showFullConversation) {
             AISidebarConversationArchiveSheet(
@@ -775,18 +777,6 @@ struct AISidebar: View {
         )
     }
 
-    private func presentLatestRichReplyIfNeeded(in messages: [ChatMessage]) {
-        guard let latestReply = messages.last,
-              latestReply.role == .assistant,
-              !automaticallyPresentedCanvasReplyIDs.contains(latestReply.id) else {
-            return
-        }
-        let presentation = AIResponseCanvasPresentation(message: latestReply)
-        guard presentation.shouldAutoPresent else { return }
-        automaticallyPresentedCanvasReplyIDs.insert(latestReply.id)
-        presentedResponseCanvas = presentation
-    }
-
     private var displayedMessages: [ChatMessage] {
         let maxVisibleMessages = 10
         let sidebarMessages = aiService.messages.filter(\.showsInSidebar)
@@ -1313,20 +1303,13 @@ private struct AISidebarConversationHistoryView: View, Equatable {
                 } else {
                     let responseCanvas = AIResponseCanvasPresentation(message: msg)
                     VStack(alignment: .leading, spacing: 9) {
-                        if responseCanvas.shouldAutoPresent {
-                            Text(responseCanvas.sidebarSummary)
-                                .font(.system(size: assistantReplyFontSize, weight: .semibold))
-                                .foregroundColor(primaryText)
-                                .fixedSize(horizontal: false, vertical: true)
-                        } else {
-                            AIResponseSidebarMarkdownView(
-                                text: assistantDisplayText(for: msg),
-                                fontSize: assistantReplyFontSize,
-                                lineSpacing: conversationLineSpacing,
-                                color: primaryText
-                            )
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
+                        AIResponseSidebarMarkdownView(
+                            text: assistantDisplayText(for: msg),
+                            fontSize: assistantReplyFontSize,
+                            lineSpacing: conversationLineSpacing,
+                            color: primaryText
+                        )
+                            .fixedSize(horizontal: false, vertical: true)
                         Button {
                             onOpenResponseCanvas(responseCanvas)
                         } label: {
