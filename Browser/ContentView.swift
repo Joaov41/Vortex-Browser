@@ -87,6 +87,7 @@ struct GlassTextField: View {
     var onSubmit: (() -> Void)?
     var showClearButton: Bool = true
     var trailingAccessory: AnyView? = nil
+    var onClear: (() -> Void)? = nil
     
     var body: some View {
         HStack(spacing: 8) {
@@ -108,11 +109,13 @@ struct GlassTextField: View {
             if showClearButton && !tab.address.isEmpty {
                 Button {
                     tab.address = ""
+                    onClear?()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
+                .ios26PhoneButtonHitTargetCompat()
                 .accessibilityLabel("Clear text")
             }
         }
@@ -173,6 +176,19 @@ private extension View {
             self
                 .frame(width: 44, height: 44)
                 .contentShape(.interaction, Rectangle())
+        }
+    }
+
+    @ViewBuilder
+    func ios26PhoneButtonHitTargetCompat() -> some View {
+        if #available(iOS 27.0, *) {
+            self
+        } else if UIDevice.current.userInterfaceIdiom == .phone {
+            self
+                .frame(width: 44, height: 44)
+                .contentShape(.interaction, Rectangle())
+        } else {
+            self
         }
     }
 }
@@ -1764,6 +1780,7 @@ struct ContentView: View {
             )
         }
         .buttonStyle(.plain)
+        .ios26PhoneButtonHitTargetCompat()
         .accessibilityLabel("Exit split view")
         .accessibilityHint("Keeps both tabs open")
     }
@@ -1781,6 +1798,16 @@ struct ContentView: View {
         withAnimation(.easeOut(duration: 0.15)) {
             isToolbarCollapsed = true
             omniboxFocused = false
+        }
+    }
+
+    private func preserveIOS26PhoneOmniboxFocusAfterClear() {
+        if #available(iOS 27.0, *) {
+            return
+        }
+        guard isPhone else { return }
+        DispatchQueue.main.async {
+            omniboxFocused = true
         }
     }
 
@@ -5288,9 +5315,11 @@ struct ContentView: View {
                                 .foregroundColor(tab.isReaderMode ? .primary : .secondary)
                         }
                         .buttonStyle(.plain)
+                        .ios26PhoneButtonHitTargetCompat()
                         .accessibilityLabel(tab.isReaderMode ? "Exit reader mode" : "Enter reader mode")
                         .disabled(tab.currentURL == nil)
-                    )
+                    ),
+                    onClear: preserveIOS26PhoneOmniboxFocusAfterClear
                 )
                 .focused($omniboxFocused)
                 .frame(minWidth: 0, maxWidth: .infinity)
@@ -5303,6 +5332,7 @@ struct ContentView: View {
                         .foregroundColor(.secondary)
                 }
                 .browserToolbarControl()
+                .ios26PhoneButtonHitTargetCompat()
                 .accessibilityLabel("Close search")
 
                 if splitMode != nil {
