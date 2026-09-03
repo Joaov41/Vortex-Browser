@@ -15,15 +15,59 @@ private func browserAIWebLog(_ message: @autoclosure () -> String) {
 }
 
 enum BrowserSiteViewportPolicy {
-    static let redditIPadTopContentInset: CGFloat = 12
+    static let protectedSiteIPadTopContentInset: CGFloat = 12
+    static let protectedSiteIPhoneTopContentInset: CGFloat = 24
 
     static func topContentInset(for url: URL?, idiom: UIUserInterfaceIdiom) -> CGFloat {
-        guard idiom == .pad,
-              let host = url?.host?.lowercased(),
-              host == "reddit.com" || host.hasSuffix(".reddit.com") else {
+        guard let host = url?.host?.lowercased(),
+              host == "reddit.com" || host.hasSuffix(".reddit.com")
+                || host == "x.com" || host.hasSuffix(".x.com")
+                || host == "twitter.com" || host.hasSuffix(".twitter.com") else {
             return 0
         }
-        return redditIPadTopContentInset
+
+        switch idiom {
+        case .pad:
+            return protectedSiteIPadTopContentInset
+        case .phone:
+            return protectedSiteIPhoneTopContentInset
+        default:
+            return 0
+        }
+    }
+}
+
+enum BrowserExternalNavigationPolicy {
+    private static func isXWebHost(_ host: String?) -> Bool {
+        guard let host = host?.lowercased() else { return false }
+        return host == "x.com" || host.hasSuffix(".x.com")
+            || host == "twitter.com" || host.hasSuffix(".twitter.com")
+    }
+
+    static func shouldForceXHTTPSNavigationInWebView(
+        _ url: URL?,
+        idiom: UIUserInterfaceIdiom,
+        navigationType: WKNavigationType
+    ) -> Bool {
+        guard idiom == .phone,
+              navigationType == .linkActivated,
+              let url,
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else {
+            return false
+        }
+        return isXWebHost(url.host)
+    }
+
+    static func shouldCancelXAppDeepLink(
+        _ url: URL?,
+        idiom: UIUserInterfaceIdiom
+    ) -> Bool {
+        guard idiom == .phone,
+              let scheme = url?.scheme?.lowercased() else {
+            return false
+        }
+        return scheme == "x" || scheme == "twitter"
     }
 }
 
@@ -1457,6 +1501,8 @@ struct ContentView: View {
     @State private var showRecentlyClosedTabs = false
     @State private var showTabGroupManager = false
     @State private var showAIPanel = false
+    @State private var isAISidebarInputFocused = false
+    @State private var iPadKeyboardOverlap: CGFloat = 0
     @State private var aiHasUnreadResponse = false
     @State private var aiQuery: String = ""
     @StateObject private var aiService = SimpleAIService.shared
@@ -1596,6 +1642,53 @@ struct ContentView: View {
 #else
         false
 #endif
+    }
+
+    private func activeKeyWindow() -> UIWindow? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .filter {
+                $0.activationState == .foregroundActive
+                    || $0.activationState == .foregroundInactive
+            }
+            .flatMap(\.windows)
+            .first(where: \.isKeyWindow)
+    }
+
+    private func keyboardAnimationDuration(from notification: Notification) -> Double {
+        guard let value = notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber else {
+            return 0.25
+        }
+        let duration = value.doubleValue
+        return duration > 0 ? duration : 0.25
+    }
+
+    private func updateIPadKeyboardOverlap(from notification: Notification) {
+        guard isNativeIPadDevice,
+              showAIPanel,
+              let window = activeKeyWindow(),
+              let frameValue = notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue else {
+            return
+        }
+
+        let keyboardFrameInWindow = window.screen.coordinateSpace.convert(
+            frameValue.cgRectValue,
+            to: window.coordinateSpace
+        )
+        let overlap = max(0, window.bounds.intersection(keyboardFrameInWindow).height)
+        let duration = keyboardAnimationDuration(from: notification)
+
+        withAnimation(.easeInOut(duration: duration)) {
+            iPadKeyboardOverlap = overlap
+        }
+    }
+
+    private func resetIPadKeyboardOverlap(from notification: Notification) {
+        guard isNativeIPadDevice else { return }
+        let duration = keyboardAnimationDuration(from: notification)
+        withAnimation(.easeInOut(duration: duration)) {
+            iPadKeyboardOverlap = 0
+        }
     }
 
     private var currentSidebarWidth: CGFloat {
@@ -2406,6 +2499,20 @@ struct ContentView: View {
                     selectedTabScope = .all
                 }
             }
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: UIResponder.keyboardWillChangeFrameNotification
+                )
+            ) { notification in
+                updateIPadKeyboardOverlap(from: notification)
+            }
+            .onReceive(
+                NotificationCenter.default.publisher(
+                    for: UIResponder.keyboardWillHideNotification
+                )
+            ) { notification in
+                resetIPadKeyboardOverlap(from: notification)
+            }
             .overlay {
                 keyboardCommandButtons
             }
@@ -2652,6 +2759,14 @@ struct ContentView: View {
             GeometryReader { proxy in
                 let verticalInset = max(24, min(72, proxy.size.height * 0.08))
                 let horizontalInset: CGFloat = 24
+                let aiSidebarKeyboardOverlap = isNativeIPadDevice
+                    && showAIPanel
+                    && isAISidebarInputFocused
+                    ? min(
+                        max(0, iPadKeyboardOverlap),
+                        max(0, proxy.size.height - verticalInset * 2)
+                    )
+                    : 0
                 let leadingDropInset = currentSidebarWidth > 1
                     ? horizontalInset + currentSidebarWidth + splitSpacing
                     : 0
@@ -2716,9 +2831,15 @@ struct ContentView: View {
                             Spacer()
                             if showAIPanel {
                                 aiSidebarPanel
-                                    .frame(height: proxy.size.height - verticalInset * 2, alignment: .top)
+                                    .frame(
+                                        height: proxy.size.height
+                                            - verticalInset * 2
+                                            - aiSidebarKeyboardOverlap,
+                                        alignment: .top
+                                    )
                                     .padding(.trailing, horizontalInset)
                                     .padding(.vertical, verticalInset)
+                                    .padding(.bottom, aiSidebarKeyboardOverlap)
                                     .transition(.move(edge: .trailing).combined(with: .opacity))
                             }
                         }
@@ -3456,6 +3577,10 @@ struct ContentView: View {
                 aiService.reset()
             },
             onInputFocusChanged: { focused in
+                isAISidebarInputFocused = focused
+                if isNativeIPadDevice, !focused {
+                    iPadKeyboardOverlap = 0
+                }
                 guard isPhone, focused else { return }
                 withAnimation(.easeOut(duration: 0.22)) {
                     phoneAIPanelExpanded = true
@@ -6338,10 +6463,11 @@ struct ContentView: View {
             }
         }
 
-        /// Reddit's desktop header sits directly beneath iPadOS's scroll-edge
-        /// glass when the browser extends under the top safe area. A small
-        /// content inset makes its top controls reliably tappable at rest while
-        /// leaving the WebView itself underlapping the glass during scrolling.
+        /// Protected-site headers sit directly beneath the platform's
+        /// scroll-edge glass when the browser extends under the top safe area.
+        /// A small device-specific content inset makes their top controls
+        /// reliably tappable at rest while leaving the WebView itself
+        /// underlapping the glass during scrolling.
         private static func applySiteSpecificTopInset(to webView: WKWebView, url: URL?) {
             let scrollView = webView.scrollView
             let desiredTop = BrowserSiteViewportPolicy.topContentInset(
@@ -6868,6 +6994,25 @@ struct ContentView: View {
                 }
 
                 if let url = navigationAction.request.url {
+                    if BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
+                        url,
+                        idiom: UIDevice.current.userInterfaceIdiom,
+                        navigationType: navigationAction.navigationType
+                    ) {
+                        webView.load(navigationAction.request)
+                        decisionHandler(.cancel)
+                        return
+                    }
+
+                    if BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
+                        url,
+                        idiom: UIDevice.current.userInterfaceIdiom
+                    ) {
+                        print("Blocked X app deep link on iPhone: \(url)")
+                        decisionHandler(.cancel)
+                        return
+                    }
+
                     // For incognito tabs, be very strict about navigation
                     if tab.isIncognito {
                         // Block navigation that tries to open new windows (often external apps)

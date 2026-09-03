@@ -1,4 +1,5 @@
 import XCTest
+import WebKit
 @testable import Browser
 
 final class AIResponseCanvasTests: XCTestCase {
@@ -113,6 +114,77 @@ final class AIResponseCanvasTests: XCTestCase {
         )
     }
 
+    func testIPhoneCancelsOnlyXAppDeepLinks() {
+        XCTAssertTrue(
+            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
+                URL(string: "x://timeline"),
+                idiom: .phone
+            )
+        )
+        XCTAssertTrue(
+            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
+                URL(string: "twitter://user?screen_name=example"),
+                idiom: .phone
+            )
+        )
+        XCTAssertFalse(
+            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
+                URL(string: "https://x.com/example"),
+                idiom: .phone
+            )
+        )
+        XCTAssertFalse(
+            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
+                URL(string: "mailto:test@example.com"),
+                idiom: .phone
+            )
+        )
+        XCTAssertFalse(
+            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
+                URL(string: "twitter://timeline"),
+                idiom: .pad
+            )
+        )
+    }
+
+    func testIPhoneForcesLinkActivatedXHTTPSNavigationIntoWebView() {
+        XCTAssertTrue(
+            BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
+                URL(string: "https://x.com/?lang=pt"),
+                idiom: .phone,
+                navigationType: .linkActivated
+            )
+        )
+        XCTAssertTrue(
+            BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
+                URL(string: "https://mobile.twitter.com/example"),
+                idiom: .phone,
+                navigationType: .linkActivated
+            )
+        )
+        XCTAssertFalse(
+            BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
+                URL(string: "https://x.com/?lang=pt"),
+                idiom: .phone,
+                navigationType: .other
+            )
+        )
+        XCTAssertFalse(
+            BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
+                URL(string: "https://x.com/?lang=pt"),
+                idiom: .pad,
+                navigationType: .linkActivated
+            )
+        )
+        XCTAssertFalse(
+            BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
+                URL(string: "https://x.com.example.com/"),
+                idiom: .phone,
+                navigationType: .linkActivated
+            )
+        )
+    }
+
     func testTabGroupsAndSessionRestoreWithoutUsingAppPreferences() {
         let suiteName = "BrowserTests.\(UUID().uuidString)"
         guard let defaults = UserDefaults(suiteName: suiteName) else {
@@ -181,32 +253,67 @@ final class AIResponseCanvasTests: XCTestCase {
         XCTAssertEqual(components.queryItems?.first(where: { $0.name == "q" })?.value, "browser news")
     }
 
-    func testRedditTopContentInsetIsLimitedToIPadRedditPages() {
+    func testProtectedSiteTopContentInsetsAreDeviceAndHostScoped() {
         XCTAssertEqual(
             BrowserSiteViewportPolicy.topContentInset(
                 for: URL(string: "https://www.reddit.com/r/AppleWatch/comments/example"),
                 idiom: .pad
             ),
-            BrowserSiteViewportPolicy.redditIPadTopContentInset
+            12
         )
         XCTAssertEqual(
             BrowserSiteViewportPolicy.topContentInset(
                 for: URL(string: "https://old.reddit.com/r/AppleWatch"),
                 idiom: .pad
             ),
-            BrowserSiteViewportPolicy.redditIPadTopContentInset
+            12
         )
         XCTAssertEqual(
             BrowserSiteViewportPolicy.topContentInset(
                 for: URL(string: "https://www.reddit.com/r/AppleWatch"),
                 idiom: .phone
             ),
-            0
+            24
+        )
+        XCTAssertEqual(
+            BrowserSiteViewportPolicy.topContentInset(
+                for: URL(string: "https://x.com/home"),
+                idiom: .pad
+            ),
+            12
+        )
+        XCTAssertEqual(
+            BrowserSiteViewportPolicy.topContentInset(
+                for: URL(string: "https://x.com/home"),
+                idiom: .phone
+            ),
+            24
+        )
+        XCTAssertEqual(
+            BrowserSiteViewportPolicy.topContentInset(
+                for: URL(string: "https://mobile.twitter.com/home"),
+                idiom: .phone
+            ),
+            24
         )
         XCTAssertEqual(
             BrowserSiteViewportPolicy.topContentInset(
                 for: URL(string: "https://example.com"),
                 idiom: .pad
+            ),
+            0
+        )
+        XCTAssertEqual(
+            BrowserSiteViewportPolicy.topContentInset(
+                for: URL(string: "https://notreddit.com/r/AppleWatch"),
+                idiom: .phone
+            ),
+            0
+        )
+        XCTAssertEqual(
+            BrowserSiteViewportPolicy.topContentInset(
+                for: URL(string: "https://x.com.evil.example/home"),
+                idiom: .phone
             ),
             0
         )

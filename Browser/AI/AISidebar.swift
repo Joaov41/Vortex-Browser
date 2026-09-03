@@ -98,6 +98,14 @@ struct AISidebar: View {
 #endif
     }
 
+    private var isIPadInputFocused: Bool {
+#if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .pad && isInputFocused
+#else
+        false
+#endif
+    }
+
     private var assistantReplyFontSize: CGFloat {
         isNativeTouchDevice ? scaledAssistantReplyFontSize : 14
     }
@@ -140,6 +148,9 @@ struct AISidebar: View {
     }
 
     private var effectiveControlsExpanded: Bool {
+        if isIPadInputFocused {
+            return false
+        }
         if !hasCompletedAssistantReply {
             return true
         }
@@ -205,6 +216,7 @@ struct AISidebar: View {
                 .background(Color.white.opacity(isDark ? 0.15 : 0.2))
 
             inputRow
+                .layoutPriority(1)
         }
         .padding(12)
         .clipShape(RoundedRectangle(cornerRadius: panelCornerRadius, style: .continuous))
