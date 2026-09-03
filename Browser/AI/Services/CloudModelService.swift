@@ -89,7 +89,7 @@ class CloudModelService: ObservableObject {
         let originalClipboardChangeCount = UIPasteboard.general.changeCount
         
         NSLog("📋 CloudModelService: Starting clipboard monitoring for Apple Intelligence response (\(type))...")
-        NSLog("📋 CLIPBOARD DEBUG: Original clipboard content: '\(String(originalClipboard.prefix(100)))...' (length: \(originalClipboard.count), changeCount: \(originalClipboardChangeCount))")
+        NSLog("📋 CLIPBOARD DEBUG: Original clipboard length: \(originalClipboard.count), changeCount: \(originalClipboardChangeCount)")
         
         // Start timeout timer
         requestTimeoutTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(requestTimeoutSeconds), repeats: false) { [weak self] _ in

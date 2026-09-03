@@ -1624,7 +1624,7 @@ class SimpleAIService: ObservableObject {
         requestID: UUID
     ) async {
         print("🔍 processQuery called with:")
-        print("   Query: \(query)")
+        print("   Query length: \(query.count)")
         print("   PageContent length: \(pageContent?.count ?? 0)")
 
         let sourceContext = pageContent ?? ""

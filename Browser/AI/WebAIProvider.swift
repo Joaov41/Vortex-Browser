@@ -31,8 +31,29 @@ enum WebAIProvider: String, CaseIterable {
         }
     }
 
-    func matches(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
+    var sessionHostMatches: [String] {
+        switch self {
+        case .chatgpt:
+            return ["chatgpt.com", "openai.com"]
+        case .gemini:
+            return ["gemini.google.com", "google.com"]
+        }
+    }
+
+    func matches(_ url: URL?) -> Bool {
+        guard let host = url?.host?.lowercased() else { return false }
         return hostMatches.contains(where: { host == $0 || host.hasSuffix(".\($0)") })
+    }
+
+    func allowsSessionNavigation(_ url: URL?) -> Bool {
+        guard let host = url?.host?.lowercased() else { return false }
+        return sessionHostMatches.contains(where: { host == $0 || host.hasSuffix(".\($0)") })
+    }
+}
+
+enum WebAIMessagePolicy {
+    static func allows(provider: WebAIProvider, url: URL?, isMainFrame: Bool) -> Bool {
+        guard isMainFrame, let url else { return false }
+        return provider.matches(url)
     }
 }

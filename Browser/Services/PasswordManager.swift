@@ -4,6 +4,17 @@ import WebKit
 import LocalAuthentication
 import Combine
 
+enum PasswordBridgePolicy {
+    static func normalizedCredentialHost(_ host: String?) -> String? {
+        guard let host else { return nil }
+        let normalized = host
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        return normalized.isEmpty ? nil : normalized
+    }
+}
+
 @MainActor
 class PasswordManager: NSObject, ObservableObject {
     static let shared = PasswordManager()
@@ -251,16 +262,19 @@ class PasswordManager: NSObject, ObservableObject {
 extension PasswordManager: WKScriptMessageHandler {
     nonisolated func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any],
-              let type = body["type"] as? String else { return }
+              let type = body["type"] as? String,
+              let website = PasswordBridgePolicy.normalizedCredentialHost(message.frameInfo.securityOrigin.host) else {
+            return
+        }
         
         let bodyCapture = body
         let webViewCapture = message.webView
+        let frameInfoCapture = message.frameInfo
         
         Task { @MainActor in
             switch type {
             case "loginDetected":
-                if let website = bodyCapture["website"] as? String,
-                   let username = bodyCapture["username"] as? String,
+                if let username = bodyCapture["username"] as? String,
                    let password = bodyCapture["password"] as? String {
                     
                     // Check if credentials already exist
@@ -273,12 +287,25 @@ extension PasswordManager: WKScriptMessageHandler {
                 }
                 
             case "checkCredentials":
-                if let website = bodyCapture["website"] as? String,
-                   let webView = webViewCapture {
+                if let webView = webViewCapture {
                     // Try to load and autofill credentials
                     if let creds = await self.loadCredentials(for: website) {
-                        let js = "if (window.autofillCredentials) { window.autofillCredentials('\(creds.username)', '\(creds.password)'); }"
-                        try? await webView.evaluateJavaScript(js)
+                        let script = """
+                        if (window.autofillCredentials) {
+                            window.autofillCredentials(username, password);
+                            return true;
+                        }
+                        return false;
+                        """
+                        try? await webView.callAsyncJavaScript(
+                            script,
+                            arguments: [
+                                "username": creds.username,
+                                "password": creds.password
+                            ],
+                            in: frameInfoCapture,
+                            contentWorld: .page
+                        )
                     }
                 }
                 

@@ -556,4 +556,106 @@ final class AIResponseCanvasTests: XCTestCase {
         XCTAssertTrue(metadata.statusText.contains("partial"))
         XCTAssertTrue(metadata.contextDescription.contains("partial extraction"))
     }
+
+    func testPasswordBridgeUsesNormalizedWebKitOriginHost() {
+        XCTAssertEqual(
+            PasswordBridgePolicy.normalizedCredentialHost(" Example.COM. "),
+            "example.com"
+        )
+        XCTAssertEqual(
+            PasswordBridgePolicy.normalizedCredentialHost("login.example.com"),
+            "login.example.com"
+        )
+        XCTAssertNil(PasswordBridgePolicy.normalizedCredentialHost(nil))
+        XCTAssertNil(PasswordBridgePolicy.normalizedCredentialHost(" ... "))
+    }
+
+    func testWebAIBridgeAcceptsOnlyProviderMainFrames() {
+        XCTAssertTrue(
+            WebAIMessagePolicy.allows(
+                provider: .chatgpt,
+                url: URL(string: "https://chatgpt.com/c/123"),
+                isMainFrame: true
+            )
+        )
+        XCTAssertTrue(
+            WebAIMessagePolicy.allows(
+                provider: .gemini,
+                url: URL(string: "https://gemini.google.com/app"),
+                isMainFrame: true
+            )
+        )
+        XCTAssertFalse(
+            WebAIMessagePolicy.allows(
+                provider: .chatgpt,
+                url: URL(string: "https://chatgpt.com.evil.example/"),
+                isMainFrame: true
+            )
+        )
+        XCTAssertFalse(
+            WebAIMessagePolicy.allows(
+                provider: .chatgpt,
+                url: URL(string: "https://auth.openai.com/"),
+                isMainFrame: true
+            )
+        )
+        XCTAssertFalse(
+            WebAIMessagePolicy.allows(
+                provider: .gemini,
+                url: URL(string: "https://gemini.google.com/app"),
+                isMainFrame: false
+            )
+        )
+        XCTAssertTrue(
+            WebAIProvider.chatgpt.allowsSessionNavigation(
+                URL(string: "https://auth.openai.com/login")
+            )
+        )
+        XCTAssertTrue(
+            WebAIProvider.gemini.allowsSessionNavigation(
+                URL(string: "https://accounts.google.com/ServiceLogin")
+            )
+        )
+        XCTAssertFalse(
+            WebAIProvider.chatgpt.allowsSessionNavigation(
+                URL(string: "https://openai.com.evil.example/")
+            )
+        )
+    }
+
+    func testIncognitoTabsNeverRequestRemoteFavicons() {
+        let pageURL = URL(string: "https://example.com/private")
+        XCTAssertNil(
+            BrowserFaviconPolicy.remoteFaviconURL(for: pageURL, isIncognito: true)
+        )
+
+        guard let faviconURL = BrowserFaviconPolicy.remoteFaviconURL(
+            for: pageURL,
+            isIncognito: false
+        ) else {
+            return XCTFail("Expected a favicon URL for a normal tab")
+        }
+        XCTAssertEqual(faviconURL.host, "www.google.com")
+        XCTAssertEqual(
+            URLComponents(url: faviconURL, resolvingAgainstBaseURL: false)?
+                .queryItems?
+                .first(where: { $0.name == "domain" })?
+                .value,
+            "example.com"
+        )
+    }
+
+    func testMoreCommentsRetryCountIsBounded() {
+        XCTAssertEqual(
+            RedditMoreCommentsRetryPolicy.nextRetryCount(current: 0, maximum: 5),
+            1
+        )
+        XCTAssertEqual(
+            RedditMoreCommentsRetryPolicy.nextRetryCount(current: 4, maximum: 5),
+            5
+        )
+        XCTAssertNil(
+            RedditMoreCommentsRetryPolicy.nextRetryCount(current: 5, maximum: 5)
+        )
+    }
 }

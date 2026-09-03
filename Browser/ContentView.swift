@@ -651,6 +651,10 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
             DispatchQueue.main.async {
                 self.parent.isLoading = false
             }
+            guard parent.request.provider.matches(webView.url) else {
+                browserAIWebLog("didFinish awaiting provider origin request=\(parent.request.id.uuidString.prefix(8))")
+                return
+            }
             armCaptureSession(in: webView)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
                 self.injectPrompt(into: webView)
@@ -658,6 +662,10 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
         }
 
         private func injectPrompt(into webView: WKWebView) {
+            guard parent.request.provider.matches(webView.url) else {
+                browserAIWebLog("inject skipped non-provider origin request=\(parent.request.id.uuidString.prefix(8))")
+                return
+            }
             if parent.request.prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 browserAIWebLog("inject skipped empty prompt request=\(parent.request.id.uuidString.prefix(8))")
                 hasInjectedCurrentRequest = true
@@ -714,6 +722,11 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
 
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             guard message.name == BrowserWebAIRepresentable.scriptMessageHandlerName,
+                  WebAIMessagePolicy.allows(
+                    provider: parent.request.provider,
+                    url: message.frameInfo.request.url ?? message.webView?.url,
+                    isMainFrame: message.frameInfo.isMainFrame
+                  ),
                   let payload = message.body as? [String: Any],
                   let type = payload["type"] as? String,
                   let requestID = payload["requestId"] as? String,
@@ -778,7 +791,8 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
         }
 
         private func armCaptureSession(in webView: WKWebView) {
-            guard parent.request.shouldAutoCapture else { return }
+            guard parent.request.shouldAutoCapture,
+                  parent.request.provider.matches(webView.url) else { return }
             captureFinished = false
             expectedChunks.removeAll()
             chunkBuffers.removeAll()
@@ -788,24 +802,12 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
 
         private func canReuseCurrentPage(in webView: WKWebView, for provider: WebAIProvider) -> Bool {
             guard !webView.isLoading else { return false }
-            guard let host = webView.url?.host?.lowercased() else { return false }
-            switch provider {
-            case .chatgpt:
-                return host.contains("chatgpt.com") || host.contains("openai.com")
-            case .gemini:
-                return host.contains("gemini.google.com") || host.contains("google.com")
-            }
+            return provider.matches(webView.url)
         }
 
         private func isProviderPageLoading(in webView: WKWebView, for provider: WebAIProvider) -> Bool {
             guard webView.isLoading else { return false }
-            guard let host = webView.url?.host?.lowercased() else { return false }
-            switch provider {
-            case .chatgpt:
-                return host.contains("chatgpt.com") || host.contains("openai.com")
-            case .gemini:
-                return host.contains("gemini.google.com") || host.contains("google.com")
-            }
+            return provider.allowsSessionNavigation(webView.url)
         }
 
         private func buildArmCaptureScript() -> String {
@@ -3009,6 +3011,11 @@ struct ContentView: View {
             } else {
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenSharedURL"))) { notification in
+            if let urlString = notification.userInfo?["url"] as? String {
+                openSharedContent(urlString)
+            }
+        }
         .onOpenURL { url in
             handleIncomingURL(url)
         }
@@ -3441,17 +3448,6 @@ struct ContentView: View {
             self.checkForSharedURL()
         }
         darwinObserver.startObserving()
-
-        // Listen for notification taps from share extension
-        NotificationCenter.default.addObserver(
-            forName: Notification.Name("OpenSharedURL"),
-            object: nil,
-            queue: .main
-        ) { notification in
-            if let urlString = notification.userInfo?["url"] as? String {
-                self.openSharedContent(urlString)
-            }
-        }
     }
 
     private func checkForSharedURL() {
@@ -6151,7 +6147,8 @@ struct ContentView: View {
         contextOverride: String? = nil
     ) {
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPrompt.isEmpty else { return }
+        guard !trimmedPrompt.isEmpty,
+              provider.matches(webView.url) else { return }
         let trimmedOverride = contextOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasOverride = !(trimmedOverride?.isEmpty ?? true)
 
@@ -6234,6 +6231,15 @@ struct ContentView: View {
         targetID: UUID?,
         attempt: Int = 0
     ) {
+        guard provider.matches(webView.url) else {
+            if pendingWebProviderPrompt == text && pendingWebProviderProvider == provider {
+                pendingWebProviderPrompt = nil
+                pendingWebProviderProvider = nil
+                pendingWebProviderTargetID = nil
+                pendingWebProviderContextOverride = nil
+            }
+            return
+        }
         guard let payloadData = try? JSONSerialization.data(withJSONObject: ["text": text], options: []),
               var payloadString = String(data: payloadData, encoding: .utf8) else { return }
 
@@ -6244,6 +6250,15 @@ struct ContentView: View {
 
         let script = "(function(){ return window.__webProviderReceiveFromNative ? window.__webProviderReceiveFromNative(\(payloadString)) : false; })();"
         webView.evaluateJavaScript(script) { result, error in
+            guard provider.matches(webView.url) else {
+                if self.pendingWebProviderPrompt == text && self.pendingWebProviderProvider == provider {
+                    self.pendingWebProviderPrompt = nil
+                    self.pendingWebProviderProvider = nil
+                    self.pendingWebProviderTargetID = nil
+                    self.pendingWebProviderContextOverride = nil
+                }
+                return
+            }
             let success = (result as? Bool) ?? false
             if error != nil || !success {
                 self.pendingWebProviderPrompt = text
@@ -6573,6 +6588,7 @@ struct ContentView: View {
             func installWebProviderMessageHandler(on webView: WKWebView) {
                 let controller = webView.configuration.userContentController
                 controller.removeScriptMessageHandler(forName: Self.webProviderHandlerName)
+                guard tab.webAIProvider != nil else { return }
                 controller.add(self, name: Self.webProviderHandlerName)
             }
 
@@ -6586,8 +6602,15 @@ struct ContentView: View {
                 guard let body = message.body as? [String: Any],
                       let providerID = body["provider"] as? String,
                       let provider = WebAIProvider(rawValue: providerID),
-                      let prompt = body["prompt"] as? String else { return }
-                let targetWebView = message.webView ?? tab.liveWebView ?? tab.activateWebView()
+                      let assignedProvider = tab.webAIProvider,
+                      provider == assignedProvider,
+                      WebAIMessagePolicy.allows(
+                        provider: assignedProvider,
+                        url: message.frameInfo.request.url ?? message.webView?.url,
+                        isMainFrame: message.frameInfo.isMainFrame
+                      ),
+                      let prompt = body["prompt"] as? String,
+                      let targetWebView = message.webView else { return }
                 onWebProviderPrompt?(targetWebView, provider, prompt)
             }
 

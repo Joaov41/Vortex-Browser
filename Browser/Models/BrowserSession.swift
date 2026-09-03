@@ -4,6 +4,19 @@ import SwiftUI
 import UIKit
 import WebKit
 
+enum BrowserFaviconPolicy {
+    static func remoteFaviconURL(for pageURL: URL?, isIncognito: Bool) -> URL? {
+        guard !isIncognito,
+              let host = pageURL?.host,
+              !host.isEmpty,
+              var components = URLComponents(string: "https://www.google.com/s2/favicons") else {
+            return nil
+        }
+        components.queryItems = [URLQueryItem(name: "domain", value: host)]
+        return components.url
+    }
+}
+
 @MainActor
 final class BrowserTab: ObservableObject, Identifiable {
     static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
@@ -765,8 +778,10 @@ final class BrowserViewModel: ObservableObject {
     }
 
     func fetchFavicon(for tab: BrowserTab) {
-        guard let host = tab.url?.host,
-              let faviconURL = URL(string: "https://www.google.com/s2/favicons?domain=\(host)") else { return }
+        guard let faviconURL = BrowserFaviconPolicy.remoteFaviconURL(
+            for: tab.url,
+            isIncognito: tab.isIncognito
+        ) else { return }
         URLSession.shared.dataTask(with: faviconURL) { data, _, _ in
             guard let data, let image = UIImage(data: data) else { return }
             Task { @MainActor in tab.favicon = image }

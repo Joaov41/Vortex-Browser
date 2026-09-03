@@ -126,6 +126,13 @@ enum RedditExtractionRetryPolicy {
     }
 }
 
+enum RedditMoreCommentsRetryPolicy {
+    static func nextRetryCount(current: Int, maximum: Int) -> Int? {
+        guard current < maximum else { return nil }
+        return current + 1
+    }
+}
+
 // MARK: - Reddit API Error Types
 enum RedditAPIError: LocalizedError {
     case invalidURL
@@ -277,9 +284,10 @@ class RedditAPI {
     
     /// Delay factor for exponential backoff (in seconds)
     private let backoffFactor: Double = 2.0
-    
-    /// Semaphore to limit concurrent network requests
-    private let semaphore = DispatchSemaphore(value: 3) // Adjust based on system capabilities
+
+    /// Retained for the legacy batched helper. The active "more comments"
+    /// path is sequential and must not hold this across recursive retries.
+    private let semaphore = DispatchSemaphore(value: 3)
     
     // MARK: - Public Method to Get Content
     
@@ -1081,9 +1089,6 @@ class RedditAPI {
         let chunks = ids.chunked(into: chunkSize)
         
         for (index, chunk) in chunks.enumerated() {
-            semaphore.wait() // Control concurrency
-            defer { semaphore.signal() }
-            
             var components = URLComponents(string: "https://www.reddit.com/api/morechildren.json")!
             components.queryItems = [
                 URLQueryItem(name: "api_type", value: "json"),
@@ -1116,10 +1121,22 @@ class RedditAPI {
                 case 200...299:
                     break // Success, continue processing
                 case 429:
+                    guard let currentRetryCount = RedditMoreCommentsRetryPolicy.nextRetryCount(
+                        current: retryCount,
+                        maximum: maxRetryCount
+                    ) else {
+                        print("❌ Failed to fetch more comments after \(retryCount) retries.")
+                        hadCommentFetchFailures = true
+                        continue
+                    }
                     print("⚠️ Rate limited, waiting before retrying chunk \(index + 1)...")
-                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+                    try await self.handleRateLimit(retryCount: currentRetryCount)
                     // Retry the same chunk after delay
-                    let retryComments = try await self.fetchMoreComments(ids: chunk, depth: depth, retryCount: retryCount)
+                    let retryComments = try await self.fetchMoreComments(
+                        ids: chunk,
+                        depth: depth,
+                        retryCount: currentRetryCount
+                    )
                     comments.append(contentsOf: retryComments.comments)
                     totalCommentCount += retryComments.commentCount
                     continue
@@ -1232,7 +1249,10 @@ class RedditAPI {
                 print("⚠️ Error processing chunk \(index + 1): \(error.localizedDescription)")
                 
                 // Only retry for certain types of errors
-                if retryCount < maxRetryCount {
+                if let currentRetryCount = RedditMoreCommentsRetryPolicy.nextRetryCount(
+                    current: retryCount,
+                    maximum: maxRetryCount
+                ) {
                     var shouldRetry = false
                     
                     if let urlError = error as? URLError {
@@ -1244,7 +1264,6 @@ class RedditAPI {
                     }
                     
                     if shouldRetry {
-                        let currentRetryCount = retryCount + 1
                         print("🔄 Retrying to fetch more comments (Attempt \(currentRetryCount))...")
                         try await self.handleRateLimit(retryCount: currentRetryCount)
                         // Re-append the same chunk for retry
