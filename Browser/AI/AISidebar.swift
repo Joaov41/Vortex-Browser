@@ -52,7 +52,7 @@ struct AISidebar: View {
     }
 
     private var userSelectableBackends: [AIModelBackend] {
-        AIModelBackend.allCases.filter { $0 != .applePCCGateway }
+        AIModelBackend.allCases
     }
 
     private func modelMenuTitle(for backend: AIModelBackend) -> String {
@@ -233,22 +233,19 @@ struct AISidebar: View {
             y: 6
         )
         .onAppear {
-            if aiService.backend == .applePCCGateway {
-                aiService.backend = .localApple
-            }
             syncContextSelection()
             loadCustomPrompts()
         }
-        .onChange(of: contextOptionIDs) { _ in
+        .onChange(of: contextOptionIDs) { _, _ in
             syncContextSelection()
         }
-        .onChange(of: customPrompts) { _ in
+        .onChange(of: customPrompts) { _, _ in
             persistCustomPrompts()
         }
-        .onChange(of: isInputFocused) { focused in
+        .onChange(of: isInputFocused) { _, focused in
             onInputFocusChanged?(focused)
         }
-        .onChange(of: aiService.messages) { _ in
+        .onChange(of: aiService.messages) { _, _ in
             if shouldAutoCollapseAfterNextReply && !aiService.isProcessing && hasCompletedAssistantReply {
                 areControlsExpanded = false
                 shouldAutoCollapseAfterNextReply = false
@@ -400,10 +397,7 @@ struct AISidebar: View {
                                     }
                                 }
                             }
-                            .disabled(
-                                (backend == .mlxLocal && !mlxAvailable)
-                                    || !backend.isAvailableInCurrentEnvironment
-                            )
+                            .disabled(backend == .mlxLocal && !mlxAvailable)
                         }
                     } label: {
                         HStack(spacing: 8) {
@@ -440,10 +434,7 @@ struct AISidebar: View {
                         ForEach(userSelectableBackends, id: \.self) { backend in
                             Text(modelMenuTitle(for: backend))
                                 .tag(backend)
-                                .disabled(
-                                    (backend == .mlxLocal && !mlxAvailable)
-                                        || !backend.isAvailableInCurrentEnvironment
-                                )
+                                .disabled(backend == .mlxLocal && !mlxAvailable)
                         }
                     }
                     .pickerStyle(.menu)
@@ -454,26 +445,6 @@ struct AISidebar: View {
 
     private var modelRow: some View {
         backendRow
-    }
-
-    private var shortcutRow: some View {
-        rowContainer {
-            HStack(spacing: 10) {
-                iconContainer {
-                    Image(systemName: "shortcuts")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(primaryText)
-                }
-                TextField("Shortcut name", text: Binding(get: { aiService.shortcutName }, set: { aiService.shortcutName = $0 }))
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .foregroundColor(primaryText)
-
-                Image(systemName: "questionmark.circle")
-                    .foregroundColor(secondaryText)
-                    .help("Configure an iOS Shortcut that returns text in the clipboard.")
-            }
-        }
     }
 
     private var summarizeRow: some View {
@@ -997,7 +968,7 @@ private struct AISidebarMessagesSection: View {
 
     private var activeThroughput: AIThroughputState? {
         guard let throughput = renderedThroughputState else { return nil }
-        guard throughput.backend == .localApple || throughput.backend == .mlxLocal || throughput.backend == .applePCCGateway else { return nil }
+        guard throughput.backend == .localApple || throughput.backend == .mlxLocal else { return nil }
         return throughput
     }
 
@@ -1090,7 +1061,7 @@ private struct AISidebarMessagesSection: View {
         .onAppear {
             syncImmediately()
         }
-        .onChange(of: isProcessing) { processing in
+        .onChange(of: isProcessing) { _, processing in
             if !processing {
                 syncImmediately()
             }

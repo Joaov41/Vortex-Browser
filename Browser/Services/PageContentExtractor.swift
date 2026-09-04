@@ -140,41 +140,39 @@ enum PageContentExtractor {
     }
 
     static func isRedditURL(_ url: URL) -> Bool {
-        guard let host = url.host?.lowercased() else { return false }
-        return host.contains("reddit.com")
+        HostMatchingPolicy.matches(url.host, any: ["reddit.com"])
     }
 
     private static func extractDOMContent(from webView: WKWebView, preferFast: Bool) async -> ExtractedPageContent? {
         let timeout = preferFast ? 2.0 : 4.0
         do {
             browserAIExtractLog("DOM article START timeout=\(timeout)s")
-            let extracted = try await withTimeout(seconds: timeout) {
+            let extracted: ExtractedPageContent? = try await withTimeout(seconds: timeout) {
                 await withCheckedContinuation { continuation in
                     DispatchQueue.main.async {
                         webView.evaluateJavaScript(articleExtractionScript) { result, _ in
-                            continuation.resume(returning: result)
+                            continuation.resume(returning: makeExtractedContent(from: result))
                         }
                     }
                 }
             }
-            if let extractedContent = makeExtractedContent(from: extracted) {
-                browserAIExtractLog("DOM article SUCCESS bodyChars=\(extractedContent.body.count)")
-                return extractedContent
+            if let extracted {
+                browserAIExtractLog("DOM article SUCCESS bodyChars=\(extracted.body.count)")
+                return extracted
             }
 
             browserAIExtractLog("DOM article EMPTY, trying fallback")
-            let fallback = try await withTimeout(seconds: timeout) {
+            let fallback: ExtractedPageContent? = try await withTimeout(seconds: timeout) {
                 await withCheckedContinuation { continuation in
                     DispatchQueue.main.async {
                         webView.evaluateJavaScript(fallbackTextScript) { result, _ in
-                            continuation.resume(returning: result)
+                            continuation.resume(returning: makeExtractedContent(from: result))
                         }
                     }
                 }
             }
-            let fallbackResult = makeExtractedContent(from: fallback)
-            browserAIExtractLog("DOM fallback success=\(fallbackResult != nil) bodyChars=\(fallbackResult?.body.count ?? 0)")
-            return fallbackResult
+            browserAIExtractLog("DOM fallback success=\(fallback != nil) bodyChars=\(fallback?.body.count ?? 0)")
+            return fallback
         } catch {
             browserAIExtractLog("DOM failed error=\(error.localizedDescription)")
             return nil
@@ -286,24 +284,14 @@ enum PageContentExtractor {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func withTimeout<T>(
+    private static func withTimeout<T: Sendable>(
         seconds: Double,
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
-        return try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask {
-                try await operation()
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                throw RedditExtractionError.timedOut
-            }
-
-            guard let first = try await group.next() else {
-                throw RedditExtractionError.timedOut
-            }
-            group.cancelAll()
-            return first
-        }
+        try await AsyncTimeout.run(
+            seconds: seconds,
+            timeoutError: { RedditExtractionError.timedOut },
+            operation: operation
+        )
     }
 }

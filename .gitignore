@@ -38,3 +38,6 @@ logo.png
 # Local scratch and generated source aggregates
 corrected/
 all-swift-code.txt
+.codex-checkpoints/
+remotion-browser-film/node_modules/
+remotion-browser-film/output/

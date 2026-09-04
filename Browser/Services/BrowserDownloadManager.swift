@@ -376,7 +376,7 @@ final class BrowserDownloadManager: NSObject, ObservableObject, WKDownloadDelega
         _ download: WKDownload,
         decideDestinationUsing response: URLResponse,
         suggestedFilename: String,
-        completionHandler: @escaping (URL?) -> Void
+        completionHandler: @escaping @MainActor @Sendable (URL?) -> Void
     ) {
         let key = ObjectIdentifier(download)
         guard let liveDownload = liveDownloads[key] else {

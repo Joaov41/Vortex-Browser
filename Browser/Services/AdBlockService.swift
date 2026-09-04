@@ -19,6 +19,56 @@ struct FilterList: Codable, Identifiable {
     ]
 }
 
+enum AdBlockRuntimePolicy {
+    static func isProtectionActive(globalEnabled: Bool, sitePaused: Bool) -> Bool {
+        globalEnabled && !sitePaused
+    }
+}
+
+nonisolated enum AdBlockContentRulePolicy {
+    struct Target: Equatable, Sendable {
+        let host: String
+        let path: String?
+    }
+
+    static func target(from rawValue: String) -> Target? {
+        let trimmed = rawValue
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        guard !trimmed.isEmpty else { return nil }
+
+        let urlString = trimmed.contains("://") ? trimmed : "https://\(trimmed)"
+        guard let components = URLComponents(string: urlString),
+              let rawHost = components.host else { return nil }
+        let host = rawHost.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard !host.isEmpty,
+              host.unicodeScalars.allSatisfy({ isASCIIHostnameScalar($0) }) else { return nil }
+
+        let rawPath = components.percentEncodedPath
+        let path = rawPath.isEmpty || rawPath == "/" ? nil : rawPath
+        return Target(host: host, path: path)
+    }
+
+    static func urlFilter(for target: Target) -> String {
+        let escapedHost = NSRegularExpression.escapedPattern(for: target.host)
+        var filter = "^https?://(?:[^/:?#@]+\\.)*\(escapedHost)(?::[0-9]+)?"
+        if let path = target.path {
+            filter += NSRegularExpression.escapedPattern(for: path)
+        }
+        return filter + "(?:[/?#]|$)"
+    }
+
+    private static func isASCIIHostnameScalar(_ scalar: UnicodeScalar) -> Bool {
+        guard scalar.isASCII else { return false }
+        switch scalar.value {
+        case 0x30...0x39, 0x61...0x7A, 0x2D, 0x2E: // 0-9, a-z, -, .
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 @MainActor
 class AdBlockService: NSObject, ObservableObject {
     static let shared = AdBlockService()
@@ -34,7 +84,7 @@ class AdBlockService: NSObject, ObservableObject {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "adBlockEnabled")
             if isEnabled != oldValue {
-                updateContentBlockingRules()
+                handleConfigurationChange(recompileNativeRules: true)
             }
         }
     }
@@ -61,6 +111,7 @@ class AdBlockService: NSObject, ObservableObject {
     private let maxStoredNetworkRules = 5_000
     private let maxStoredCosmeticRules = 3_000
     private let maxRuleCacheFileBytes = 1_500_000
+    private let maxJavaScriptNetworkRules = 5_000
 
     // Cached JavaScript - regenerated when cosmetic selectors change
     private var cachedBlockingJavaScript: String {
@@ -235,14 +286,11 @@ class AdBlockService: NSObject, ObservableObject {
         // Yandex
         "mc.yandex.ru",
         "metrika.yandex.ru",
-        "yandex.com",
-        "yandex.net",
 
         // Social Trackers
         "mix.com",
         "graph.facebook.com",
         "connect.facebook.net",
-        "t.co",
         "platform.twitter.com",
         "syndication.twitter.com",
 
@@ -278,7 +326,6 @@ class AdBlockService: NSObject, ObservableObject {
 
         // Additional Twitter/X
         "ads.twitter.com",
-        "api.twitter.com",
         "static.ads-twitter.com",
         "analytics.twitter.com",
 
@@ -297,7 +344,6 @@ class AdBlockService: NSObject, ObservableObject {
         "analytics-sg.tiktok.com",
         "business-api.tiktok.com",
         "log.byteoversea.com",
-        "byteoversea.com",
 
         // Yahoo additional
         "udcm.yahoo.com",
@@ -319,7 +365,6 @@ class AdBlockService: NSObject, ObservableObject {
         "grs.hicloud.com",
         "logservice1.hicloud.com",
         "logbak.hicloud.com",
-        "hicloud.com",
 
         // Samsung Health
         "analytics-api.samsunghealthcn.com",
@@ -478,14 +523,13 @@ class AdBlockService: NSObject, ObservableObject {
     func prepareAsync() {
         guard !isReady else { return }
         Task {
-            guard Self.nativeContentRuleListsSupported else {
-                // Native rules are intentionally bypassed on iOS 27+.
-                // The hardcoded JavaScript blocker remains active in each web view.
-                isReady = true
-                return
-            }
             await downloadMissingFilterLists()
-            await loadContentBlockingRules()
+            cachedBlockingJavaScriptStorage = nil
+            if Self.nativeContentRuleListsSupported {
+                await loadContentBlockingRules()
+                await compileCustomRules()
+            }
+            refreshJavaScriptConfiguration(reloadPages: true)
             isReady = true
         }
     }
@@ -632,6 +676,8 @@ class AdBlockService: NSObject, ObservableObject {
         guard !rule.isEmpty && !customRules.contains(rule) else { return }
         customRules.append(rule)
         saveCustomRules()
+        cachedBlockingJavaScriptStorage = nil
+        refreshJavaScriptConfiguration(reloadPages: true)
         Task {
             await compileCustomRules()
         }
@@ -640,6 +686,8 @@ class AdBlockService: NSObject, ObservableObject {
     func removeCustomRule(_ rule: String) {
         customRules.removeAll { $0 == rule }
         saveCustomRules()
+        cachedBlockingJavaScriptStorage = nil
+        refreshJavaScriptConfiguration(reloadPages: true)
         Task {
             await compileCustomRules()
         }
@@ -649,9 +697,18 @@ class AdBlockService: NSObject, ObservableObject {
         if let index = filterLists.firstIndex(where: { $0.id == list.id }) {
             filterLists[index].isEnabled.toggle()
             saveFilterLists()
-            // Invalidate JavaScript cache since cosmetic selectors may have changed
             cachedBlockingJavaScriptStorage = nil
-            updateContentBlockingRules()
+            refreshJavaScriptConfiguration(reloadPages: true)
+            let updatedList = filterLists[index]
+            Task {
+                if updatedList.isEnabled,
+                   loadRuleCache(for: updatedList, kind: .network) == nil {
+                    await updateFilterList(updatedList)
+                }
+                await loadContentBlockingRules()
+                cachedBlockingJavaScriptStorage = nil
+                refreshJavaScriptConfiguration(reloadPages: true)
+            }
         }
     }
 
@@ -659,8 +716,13 @@ class AdBlockService: NSObject, ObservableObject {
         let newList = FilterList(name: name, url: url, isEnabled: true, lastUpdated: nil, ruleCount: 0)
         filterLists.append(newList)
         saveFilterLists()
+        cachedBlockingJavaScriptStorage = nil
+        refreshJavaScriptConfiguration(reloadPages: true)
         Task {
             await updateFilterList(newList)
+            await loadContentBlockingRules()
+            cachedBlockingJavaScriptStorage = nil
+            refreshJavaScriptConfiguration(reloadPages: true)
         }
     }
 
@@ -671,6 +733,7 @@ class AdBlockService: NSObject, ObservableObject {
         removeRuleCaches(for: list)
         // Invalidate JavaScript cache
         cachedBlockingJavaScriptStorage = nil
+        refreshJavaScriptConfiguration(reloadPages: true)
         updateContentBlockingRules()
     }
 
@@ -681,6 +744,9 @@ class AdBlockService: NSObject, ObservableObject {
         }
         isUpdatingFilters = false
         await loadContentBlockingRules()
+        await compileCustomRules()
+        cachedBlockingJavaScriptStorage = nil
+        refreshJavaScriptConfiguration(reloadPages: true)
     }
 
     /// Clears all cached compiled rules and forces fresh recompilation.
@@ -691,6 +757,7 @@ class AdBlockService: NSObject, ObservableObject {
         guard Self.nativeContentRuleListsSupported,
               let contentRuleListStore else {
             cachedBlockingJavaScriptStorage = nil
+            refreshJavaScriptConfiguration(reloadPages: true)
             isUpdatingFilters = false
             return
         }
@@ -723,7 +790,9 @@ class AdBlockService: NSObject, ObservableObject {
         // 4. Clear JavaScript cache
         cachedBlockingJavaScriptStorage = nil
 
-        // 5. Clear active rule lists
+        // 5. Detach only Vortex's ad-block lists. Other privacy services may
+        // have installed their own content rules on the same controller.
+        removeNativeRulesFromAllWebViews()
         activeRuleList = nil
         customRuleList = nil
 
@@ -731,21 +800,8 @@ class AdBlockService: NSObject, ObservableObject {
         await loadContentBlockingRules()
         await compileCustomRules()
 
-        // 7. Re-configure all registered WebViews with new rules
-        await MainActor.run {
-            for webView in registeredWebViews.allObjects {
-                // Remove old rules
-                webView.configuration.userContentController.removeAllContentRuleLists()
-
-                // Add new rules
-                if let ruleList = activeRuleList {
-                    webView.configuration.userContentController.add(ruleList)
-                }
-                if let customList = customRuleList {
-                    webView.configuration.userContentController.add(customList)
-                }
-            }
-        }
+        cachedBlockingJavaScriptStorage = nil
+        refreshJavaScriptConfiguration(reloadPages: true)
 
         isUpdatingFilters = false
         print("DEBUG: Cache cleared and rules recompiled successfully")
@@ -846,14 +902,11 @@ class AdBlockService: NSObject, ObservableObject {
         let validStarts: Set<Character> = [".", "#", "[", "*", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
         guard validStarts.contains(firstChar) else { return nil }
 
-        // Escape characters that could break JavaScript strings
-        let escaped = trimmed
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "'", with: "\\'")
+        // Configuration is serialized with JSONEncoder later, so returning an
+        // already JavaScript-escaped selector would corrupt valid CSS escapes.
+        return trimmed
             .replacingOccurrences(of: "\n", with: "")
             .replacingOccurrences(of: "\r", with: "")
-
-        return escaped
     }
 
     private func convertToRegex(_ rule: String) -> String? {
@@ -903,8 +956,11 @@ class AdBlockService: NSObject, ObservableObject {
             jsonRules.append(blockRule)
         }
 
-        guard !jsonRules.isEmpty,
-              let jsonData = try? JSONSerialization.data(withJSONObject: jsonRules),
+        guard !jsonRules.isEmpty else {
+            replaceCustomRuleList(with: nil)
+            return
+        }
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: jsonRules),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
             return
         }
@@ -914,29 +970,22 @@ class AdBlockService: NSObject, ObservableObject {
                 forIdentifier: "customAdBlockRules",
                 encodedContentRuleList: jsonString
             )
-            customRuleList = ruleList
+            replaceCustomRuleList(with: ruleList)
         } catch {
             print("Failed to compile custom rules: \(error)")
         }
     }
 
     func configureWebView(_ webView: WKWebView) {
-        guard isEnabled else { return }
-
-        // Track WebView so we can apply rules later if they're not ready yet
+        let isNewRegistration = !registeredWebViews.contains(webView)
         registeredWebViews.add(webView)
 
-        if Self.nativeContentRuleListsSupported {
-            if let ruleList = activeRuleList {
-                webView.configuration.userContentController.add(ruleList)
-            }
+        applyNativeRuleState(to: webView, siteProtectionEnabled: true)
+        guard isNewRegistration else { return }
 
-            if let customList = customRuleList {
-                webView.configuration.userContentController.add(customList)
-            }
-        }
-
-        // Add JavaScript to block ads and trackers (cached to avoid regenerating per webview)
+        // Install the runtime even while blocking is disabled. Later setting
+        // changes append a small, newer configuration script and reload, so
+        // the same WebView can turn protection on without being recreated.
         let blockingScript = WKUserScript(
             source: cachedBlockingJavaScript,
             injectionTime: .atDocumentStart,
@@ -949,15 +998,64 @@ class AdBlockService: NSObject, ObservableObject {
     }
 
     func setProtectionEnabled(_ enabled: Bool, for webView: WKWebView) {
-        guard isEnabled, Self.nativeContentRuleListsSupported else { return }
-        if enabled {
-            if let activeRuleList {
+        applyNativeRuleState(to: webView, siteProtectionEnabled: enabled)
+    }
+
+    private func handleConfigurationChange(recompileNativeRules: Bool) {
+        cachedBlockingJavaScriptStorage = nil
+        if !isEnabled {
+            removeNativeRulesFromAllWebViews()
+        } else {
+            for webView in registeredWebViews.allObjects {
+                let siteEnabled = !SitePrivacyStore.shared.isAdBlockingPaused(for: webView.url)
+                applyNativeRuleState(to: webView, siteProtectionEnabled: siteEnabled)
+            }
+        }
+        refreshJavaScriptConfiguration(reloadPages: true)
+        if recompileNativeRules {
+            updateContentBlockingRules()
+        }
+    }
+
+    private func refreshJavaScriptConfiguration(reloadPages: Bool) {
+        let source = cachedBlockingJavaScript
+        let userScript = WKUserScript(
+            source: source,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: false
+        )
+        for webView in registeredWebViews.allObjects {
+            webView.configuration.userContentController.addUserScript(userScript)
+            webView.evaluateJavaScript(source, completionHandler: nil)
+            if reloadPages, webView.url != nil {
+                webView.reload()
+            }
+        }
+    }
+
+    private func applyNativeRuleState(to webView: WKWebView, siteProtectionEnabled: Bool) {
+        guard Self.nativeContentRuleListsSupported else { return }
+        let shouldEnable = AdBlockRuntimePolicy.isProtectionActive(
+            globalEnabled: isEnabled,
+            sitePaused: !siteProtectionEnabled
+        )
+        if let activeRuleList {
+            webView.configuration.userContentController.remove(activeRuleList)
+            if shouldEnable {
                 webView.configuration.userContentController.add(activeRuleList)
             }
-            if let customRuleList {
+        }
+        if let customRuleList {
+            webView.configuration.userContentController.remove(customRuleList)
+            if shouldEnable {
                 webView.configuration.userContentController.add(customRuleList)
             }
-        } else {
+        }
+    }
+
+    private func removeNativeRulesFromAllWebViews() {
+        guard Self.nativeContentRuleListsSupported else { return }
+        for webView in registeredWebViews.allObjects {
             if let activeRuleList {
                 webView.configuration.userContentController.remove(activeRuleList)
             }
@@ -967,9 +1065,37 @@ class AdBlockService: NSObject, ObservableObject {
         }
     }
 
-    private func generateBlockingJavaScript() -> String {
-        let domainsJS = adNetworkDomains.map { "'\($0)'" }.joined(separator: ",\n                ")
+    private func replaceActiveRuleList(with replacement: WKContentRuleList?) {
+        let previous = activeRuleList
+        for webView in registeredWebViews.allObjects {
+            if let previous {
+                webView.configuration.userContentController.remove(previous)
+            }
+        }
+        activeRuleList = replacement
+        guard isEnabled else { return }
+        for webView in registeredWebViews.allObjects {
+            let siteEnabled = !SitePrivacyStore.shared.isAdBlockingPaused(for: webView.url)
+            applyNativeRuleState(to: webView, siteProtectionEnabled: siteEnabled)
+        }
+    }
 
+    private func replaceCustomRuleList(with replacement: WKContentRuleList?) {
+        let previous = customRuleList
+        for webView in registeredWebViews.allObjects {
+            if let previous {
+                webView.configuration.userContentController.remove(previous)
+            }
+        }
+        customRuleList = replacement
+        guard isEnabled else { return }
+        for webView in registeredWebViews.allObjects {
+            let siteEnabled = !SitePrivacyStore.shared.isAdBlockingPaused(for: webView.url)
+            applyNativeRuleState(to: webView, siteProtectionEnabled: siteEnabled)
+        }
+    }
+
+    private func generateBlockingJavaScript() -> String {
         // Combine hardcoded selectors with cosmetic selectors from filter lists
         var allSelectors = adSelectors
         for list in filterLists where list.isEnabled {
@@ -979,23 +1105,38 @@ class AdBlockService: NSObject, ObservableObject {
         }
         // Deduplicate selectors
         let uniqueSelectors = Array(Set(allSelectors))
-        let selectorsJS = uniqueSelectors.map { "'\($0)'" }.joined(separator: ",\n                    ")
-
         // Generate additional CSS rules from cosmetic selectors for persistent hiding
         let cosmeticCSS = uniqueSelectors
             .filter { !$0.contains(":") || $0.contains("[") } // Skip pseudo-selectors that might fail
             .prefix(2000) // Limit to avoid massive CSS
             .joined(separator: ",\n                    ")
 
+        let domainsJSON = javaScriptJSON(adNetworkDomains)
+        let networkRulesJSON = javaScriptJSON(enabledJavaScriptNetworkRules())
+        let selectorsJSON = javaScriptJSON(uniqueSelectors)
+        let customRulesJSON = javaScriptJSON(customRules)
+        let cosmeticCSSJSON = javaScriptJSON(cosmeticCSS)
+        let enabledJavaScript = isEnabled ? "true" : "false"
+
         return """
         (function() {
             'use strict';
 
-            try {
-                if (localStorage.getItem('__vortexAdBlockDisabled') === '1') {
-                    return;
-                }
-            } catch (_) {}
+            const nextConfiguration = {
+                enabled: \(enabledJavaScript),
+                blockedDomains: \(domainsJSON),
+                networkRules: \(networkRulesJSON),
+                adSelectors: \(selectorsJSON),
+                customRules: \(customRulesJSON),
+                cosmeticCSS: \(cosmeticCSSJSON)
+            };
+            const existingRuntime = window.__vortexAdBlockRuntime;
+            if (existingRuntime && typeof existingRuntime.applyConfiguration === 'function') {
+                existingRuntime.applyConfiguration(nextConfiguration);
+                return;
+            }
+            const runtime = Object.assign({}, nextConfiguration);
+            window.__vortexAdBlockRuntime = runtime;
 
             let blockedCount = 0;
             let lastReportedBlockedCount = 0;
@@ -1005,6 +1146,8 @@ class AdBlockService: NSObject, ObservableObject {
             const safetySweepMs = 30000;
             const notifyThrottleMs = 1000;
             const blockedMarkerAttr = 'data-codex-adblocked';
+            const originalStyleAttr = 'data-vortex-adblock-original-style';
+            const noOriginalStyleMarker = '__vortex_no_original_style__';
             const maxDirtyRootsBeforeFullScan = 120;
             const sponsoredTexts = new Set(['sponsored', 'promoted', 'advertisement']);
             const dirtyRoots = new Set();
@@ -1022,6 +1165,12 @@ class AdBlockService: NSObject, ObservableObject {
                 'reddit.com',
                 'redditmedia.com',
                 'redditstatic.com',
+                // X relies on both current and legacy Twitter hosts. Keep its
+                // network APIs intact and hide promoted posts cosmetically.
+                'x.com',
+                'twitter.com',
+                'twimg.com',
+                't.co',
                 // AI providers
                 'chatgpt.com',
                 'chat.openai.com',
@@ -1030,50 +1179,118 @@ class AdBlockService: NSObject, ObservableObject {
                 'bard.google.com'
             ];
 
-            function isWhitelisted(url) {
-                return whitelist.some(domain => url.includes(domain));
-            }
-
-            // Comprehensive ad and tracking domains
-            const blockedDomains = [
-                \(domainsJS)
-            ];
-
-            // Cosmetic selectors
-            const adSelectors = [
-                \(selectorsJS)
-            ];
-
-            // Pre-validate selectors so one invalid rule doesn't disrupt grouped matching
-            const validAdSelectors = [];
-            adSelectors.forEach(selector => {
+            function parsedURL(value) {
                 try {
-                    document.querySelector(selector);
-                    validAdSelectors.push(selector);
-                } catch (e) {}
-            });
-
-            // Group selectors to reduce querySelectorAll overhead while preserving fallback behavior
-            const selectorGroupSize = 60;
-            const selectorGroups = [];
-            for (let i = 0; i < validAdSelectors.length; i += selectorGroupSize) {
-                selectorGroups.push(validAdSelectors.slice(i, i + selectorGroupSize));
+                    if (value instanceof Request) { value = value.url; }
+                    return new URL(String(value), document.baseURI);
+                } catch (_) {
+                    return null;
+                }
             }
+
+            function hostMatches(host, domain) {
+                return host === domain || host.endsWith('.' + domain);
+            }
+
+            function siteKey(host) {
+                const normalized = (host || '').toLowerCase().replace(/^\\.+|\\.+$/g, '');
+                if (!normalized || /^\\d+(?:\\.\\d+){3}$/.test(normalized) || normalized.includes(':')) {
+                    return normalized;
+                }
+                const labels = normalized.split('.');
+                return labels.length > 1 ? labels.slice(-2).join('.') : normalized;
+            }
+
+            function isSameSite(parsed) {
+                return siteKey(parsed.hostname) === siteKey(window.location.hostname);
+            }
+
+            function isWhitelisted(url) {
+                const parsed = parsedURL(url);
+                if (!parsed) { return false; }
+                return whitelist.some(domain => hostMatches(parsed.hostname.toLowerCase(), domain));
+            }
+
+            function matchesBlockedDomain(url) {
+                const parsed = parsedURL(url);
+                if (!parsed) { return false; }
+                const host = parsed.hostname.toLowerCase();
+                const path = parsed.pathname.toLowerCase();
+                return (runtime.blockedDomains || []).some(entry => {
+                    const separator = entry.indexOf('/');
+                    const domain = (separator >= 0 ? entry.slice(0, separator) : entry).toLowerCase();
+                    const requiredPath = separator >= 0 ? entry.slice(separator).toLowerCase() : '';
+                    if (!hostMatches(host, domain)) { return false; }
+                    if (requiredPath) { return path.includes(requiredPath); }
+                    return !isSameSite(parsed);
+                });
+            }
+
+            const selectorGroupSize = 60;
+            const networkRuleGroupSize = 80;
+            let selectorGroups = [];
+            let networkRuleExpressions = [];
+            let customRuleExpressions = [];
+
+            function protectionEnabled() {
+                if (!runtime.enabled) { return false; }
+                try {
+                    return localStorage.getItem('__vortexAdBlockDisabled') !== '1';
+                } catch (_) {
+                    return true;
+                }
+            }
+
+            function rebuildRuntimeRules() {
+                const validAdSelectors = [];
+                (runtime.adSelectors || []).forEach(selector => {
+                    try {
+                        document.querySelector(selector);
+                        validAdSelectors.push(selector);
+                    } catch (_) {}
+                });
+                selectorGroups = [];
+                for (let i = 0; i < validAdSelectors.length; i += selectorGroupSize) {
+                    selectorGroups.push(validAdSelectors.slice(i, i + selectorGroupSize));
+                }
+                networkRuleExpressions = [];
+                const patterns = runtime.networkRules || [];
+                for (let i = 0; i < patterns.length; i += networkRuleGroupSize) {
+                    const group = patterns.slice(i, i + networkRuleGroupSize);
+                    try {
+                        networkRuleExpressions.push(new RegExp(group.map(rule => '(?:' + rule + ')').join('|'), 'i'));
+                    } catch (_) {
+                        group.forEach(rule => {
+                            try { networkRuleExpressions.push(new RegExp(rule, 'i')); } catch (_) {}
+                        });
+                    }
+                }
+                customRuleExpressions = (runtime.customRules || []).flatMap(rule => {
+                    try { return [new RegExp(rule, 'i')]; } catch (_) { return []; }
+                });
+            }
+
+            function shouldBlockURL(url) {
+                const parsed = parsedURL(url);
+                if (!protectionEnabled() || !parsed || isWhitelisted(parsed.href)) {
+                    return false;
+                }
+                if (matchesBlockedDomain(parsed.href)) {
+                    return true;
+                }
+                return (!isSameSite(parsed)
+                        && networkRuleExpressions.some(expression => expression.test(parsed.href)))
+                    || customRuleExpressions.some(expression => expression.test(parsed.href));
+            }
+            rebuildRuntimeRules();
 
             // Block fetch requests to ad domains
             const originalFetch = window.fetch;
             window.fetch = function(...args) {
                 const url = args[0];
-                if (typeof url === 'string') {
-                    if (isWhitelisted(url)) {
-                        return originalFetch.apply(this, args);
-                    }
-                    for (const domain of blockedDomains) {
-                        if (url.includes(domain)) {
-                            incrementBlockedCount(1);
-                            return Promise.reject(new Error('Blocked by ad blocker'));
-                        }
-                    }
+                if (shouldBlockURL(url)) {
+                    incrementBlockedCount(1);
+                    return Promise.reject(new Error('Blocked by ad blocker'));
                 }
                 return originalFetch.apply(this, args);
             };
@@ -1081,13 +1298,9 @@ class AdBlockService: NSObject, ObservableObject {
             // Block XMLHttpRequest to ad domains
             const originalOpen = XMLHttpRequest.prototype.open;
             XMLHttpRequest.prototype.open = function(method, url, ...rest) {
-                if (typeof url === 'string' && !isWhitelisted(url)) {
-                    for (const domain of blockedDomains) {
-                        if (url.includes(domain)) {
-                            incrementBlockedCount(1);
-                            throw new Error('Blocked by ad blocker');
-                        }
-                    }
+                if (shouldBlockURL(url)) {
+                    incrementBlockedCount(1);
+                    throw new Error('Blocked by ad blocker');
                 }
                 return originalOpen.apply(this, [method, url, ...rest]);
             };
@@ -1095,13 +1308,9 @@ class AdBlockService: NSObject, ObservableObject {
             // Block WebSocket connections to ad domains
             const OriginalWebSocket = window.WebSocket;
             window.WebSocket = function(url, protocols) {
-                if (typeof url === 'string' && !isWhitelisted(url)) {
-                    for (const domain of blockedDomains) {
-                        if (url.includes(domain)) {
-                            incrementBlockedCount(1);
-                            throw new Error('Blocked by ad blocker');
-                        }
-                    }
+                if (shouldBlockURL(url)) {
+                    incrementBlockedCount(1);
+                    throw new Error('Blocked by ad blocker');
                 }
                 return new OriginalWebSocket(url, protocols);
             };
@@ -1148,12 +1357,31 @@ class AdBlockService: NSObject, ObservableObject {
                 }
 
                 const alreadyBlocked = element.getAttribute(blockedMarkerAttr) === '1';
+                if (!element.hasAttribute(originalStyleAttr)) {
+                    element.setAttribute(
+                        originalStyleAttr,
+                        element.getAttribute('style') || noOriginalStyleMarker
+                    );
+                }
                 applyHiddenStyles(element);
 
                 if (!alreadyBlocked) {
                     element.setAttribute(blockedMarkerAttr, '1');
                     incrementBlockedCount(1);
                 }
+            }
+
+            function restoreHiddenElements() {
+                document.querySelectorAll('[' + blockedMarkerAttr + '="1"]').forEach(element => {
+                    const originalStyle = element.getAttribute(originalStyleAttr);
+                    if (originalStyle === noOriginalStyleMarker || originalStyle === null) {
+                        element.removeAttribute('style');
+                    } else {
+                        element.setAttribute('style', originalStyle);
+                    }
+                    element.removeAttribute(blockedMarkerAttr);
+                    element.removeAttribute(originalStyleAttr);
+                });
             }
 
             function hideBySelectorsInRoot(root) {
@@ -1262,6 +1490,10 @@ class AdBlockService: NSObject, ObservableObject {
             }
 
             function runPendingScans() {
+                if (!protectionEnabled()) {
+                    dirtyRoots.clear();
+                    return;
+                }
                 const roots = dirtyRoots.size > 0 ? Array.from(dirtyRoots) : [document];
                 dirtyRoots.clear();
                 injectAdBlockCSS();
@@ -1274,6 +1506,9 @@ class AdBlockService: NSObject, ObservableObject {
 
             // Leading-edge: run immediately after idle, then coalesce additional mutations for 300ms.
             function scheduleMutationScan() {
+                if (!protectionEnabled()) {
+                    return;
+                }
                 if (mutationCoalesceTimer !== null) {
                     return;
                 }
@@ -1290,6 +1525,7 @@ class AdBlockService: NSObject, ObservableObject {
 
             // Inject persistent CSS (includes cosmetic filter selectors from EasyList)
             const injectAdBlockCSS = () => {
+                if (!protectionEnabled()) return;
                 if (document.getElementById('adblock-css-rules')) return;
                 const style = document.createElement('style');
                 style.id = 'adblock-css-rules';
@@ -1317,7 +1553,7 @@ class AdBlockService: NSObject, ObservableObject {
                     .cookie-banner, .cookie-notice, #cookie-banner,
                     .gdpr-banner, .consent-banner,
                     /* Cosmetic filters from EasyList */
-                    \(cosmeticCSS) {
+                    ${runtime.cosmeticCSS} {
                         display: none !important;
                         visibility: hidden !important;
                         height: 0 !important;
@@ -1336,6 +1572,11 @@ class AdBlockService: NSObject, ObservableObject {
 
             // Combined function
             const runAdBlocking = () => {
+                if (!protectionEnabled()) {
+                    document.getElementById('adblock-css-rules')?.remove();
+                    restoreHiddenElements();
+                    return;
+                }
                 injectAdBlockCSS();
                 addDirtyRoot(document);
                 runPendingScans();
@@ -1350,6 +1591,7 @@ class AdBlockService: NSObject, ObservableObject {
 
             // Watch for dynamic content
             const observer = new MutationObserver((mutations) => {
+                if (!protectionEnabled()) { return; }
                 mutations.forEach(mutation => {
                     if (mutation.type === 'childList') {
                         mutation.addedNodes.forEach(node => addDirtyRoot(node));
@@ -1387,6 +1629,20 @@ class AdBlockService: NSObject, ObservableObject {
                 document.addEventListener('DOMContentLoaded', startObserver);
             }
 
+            runtime.applyConfiguration = function(configuration) {
+                runtime.enabled = configuration.enabled;
+                runtime.blockedDomains = configuration.blockedDomains || [];
+                runtime.networkRules = configuration.networkRules || [];
+                runtime.adSelectors = configuration.adSelectors || [];
+                runtime.customRules = configuration.customRules || [];
+                runtime.cosmeticCSS = configuration.cosmeticCSS || '';
+                rebuildRuntimeRules();
+                document.getElementById('adblock-css-rules')?.remove();
+                restoreHiddenElements();
+                if (protectionEnabled()) {
+                    runAdBlocking();
+                }
+            };
             // Re-scan when page becomes visible and on bfcache restore.
             document.addEventListener('visibilitychange', () => {
                 if (!document.hidden) {
@@ -1401,7 +1657,7 @@ class AdBlockService: NSObject, ObservableObject {
 
             // Low-frequency safety sweep for edge cases that avoid mutation triggers.
             setInterval(() => {
-                if (document.hidden) {
+                if (document.hidden || !protectionEnabled()) {
                     return;
                 }
                 addDirtyRoot(document);
@@ -1409,6 +1665,29 @@ class AdBlockService: NSObject, ObservableObject {
             }, safetySweepMs);
         })();
         """
+    }
+
+    private func javaScriptJSON<T: Encodable>(_ value: T) -> String {
+        guard let data = try? JSONEncoder().encode(value),
+              let string = String(data: data, encoding: .utf8) else {
+            return "null"
+        }
+        return string
+    }
+
+    private func enabledJavaScriptNetworkRules() -> [String] {
+        var rules: [String] = []
+        var seen = Set<String>()
+        for list in filterLists where list.isEnabled {
+            guard let cached = loadRuleCache(for: list, kind: .network) else { continue }
+            for rule in cached where seen.insert(rule).inserted {
+                rules.append(rule)
+                if rules.count == maxJavaScriptNetworkRules {
+                    return rules
+                }
+            }
+        }
+        return rules
     }
 
     private func updateContentBlockingRules() {
@@ -1426,7 +1705,7 @@ class AdBlockService: NSObject, ObservableObject {
         }
 
         guard isEnabled else {
-            activeRuleList = nil
+            removeNativeRulesFromAllWebViews()
             return
         }
 
@@ -1440,11 +1719,7 @@ class AdBlockService: NSObject, ObservableObject {
                 if let cachedList = try? await contentRuleListStore.lookupContentRuleListAsync(forIdentifier: "adBlockRules") {
                     print("DEBUG: AdBlock cache hit! Using existing compiled rules.")
                     await MainActor.run {
-                        self.activeRuleList = cachedList
-                        // Apply rules to registered WebViews immediately
-                        for webView in self.registeredWebViews.allObjects {
-                            webView.configuration.userContentController.add(cachedList)
-                        }
+                        self.replaceActiveRuleList(with: cachedList)
                     }
                     return
                 }
@@ -1462,7 +1737,8 @@ class AdBlockService: NSObject, ObservableObject {
                 for pattern in cachedRules {
                     let rule: [String: Any] = [
                         "trigger": [
-                            "url-filter": pattern
+                            "url-filter": pattern,
+                            "load-type": ["third-party"]
                         ],
                         "action": [
                             "type": "block"
@@ -1473,112 +1749,29 @@ class AdBlockService: NSObject, ObservableObject {
             }
         }
 
-        // Add domain-based blocking rules - block requests TO ad domains
-        // Use simple "contains" matching for maximum reliability
-        let domainResourceTypes = normalizedResourceTypes([
+        // Hard-coded targets use an anchored host boundary. Host-only targets
+        // apply only to third-party loads so visiting the service itself still
+        // works; path-specific ad endpoints can also be blocked first-party.
+        let thirdPartyResourceTypes = normalizedResourceTypes([
             "script", "image", "style-sheet", "raw", "font", "media", "popup", "document"
         ])
+        let endpointResourceTypes = normalizedResourceTypes([
+            "script", "image", "style-sheet", "raw", "font", "media"
+        ])
 
-        // Create individual rules for each ad domain (simple contains matching)
-        for domain in adNetworkDomains {
-            // Clean domain - remove paths for proper URL matching
-            var cleanDomain = domain.lowercased()
-            if let slashIndex = cleanDomain.firstIndex(of: "/") {
-                cleanDomain = String(cleanDomain[..<slashIndex])
+        for rawTarget in adNetworkDomains {
+            guard let target = AdBlockContentRulePolicy.target(from: rawTarget) else { continue }
+            var trigger: [String: Any] = [
+                "url-filter": AdBlockContentRulePolicy.urlFilter(for: target),
+                "resource-type": target.path == nil ? thirdPartyResourceTypes : endpointResourceTypes
+            ]
+            if target.path == nil {
+                trigger["load-type"] = ["third-party"]
             }
-            cleanDomain = cleanDomain.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            guard !cleanDomain.isEmpty else { continue }
-
-            // Escape dots for regex - use simple "contains" pattern
-            let escapedDomain = cleanDomain.replacingOccurrences(of: ".", with: "\\\\.")
-
-            // Simple pattern: match any URL containing this domain
-            let domainRule: [String: Any] = [
-                "trigger": [
-                    "url-filter": escapedDomain,
-                    "resource-type": domainResourceTypes
-                ],
-                "action": [
-                    "type": "block"
-                ]
-            ]
-            jsonRules.append(domainRule)
-        }
-
-        // URL path patterns
-        let pathPatterns = [
-            "ads", "advertisement", "adsystem", "adsense", "adserver", "adservice",
-            "adtracker", "admanager", "banner", "popup", "popunder", "tracking",
-            "analytics", "pixel", "beacon", "telemetry", "sponsored"
-        ]
-        for pattern in pathPatterns {
-            let escaped = NSRegularExpression.escapedPattern(for: pattern)
-            let pathPattern = ".*\\\\/\(escaped)\\\\/.*"
-            let pathRule: [String: Any] = [
-                "trigger": [
-                    "url-filter": pathPattern,
-                    "resource-type": normalizedResourceTypes(["script", "image", "xmlhttprequest"])
-                ],
-                "action": [
-                    "type": "block"
-                ]
-            ]
-            jsonRules.append(pathRule)
-        }
-
-        // Specific ad network patterns
-        let specificPatterns: [(String, [String])] = [
-            ("doubleclick\\.net", ["script", "image", "document", "style-sheet", "raw"]),
-            ("googlesyndication\\.com", ["script", "image", "document", "style-sheet", "raw"]),
-            ("googletagmanager\\.com", ["script"]),
-            ("google-analytics\\.com", ["script", "image"]),
-            ("facebook\\.com/tr", ["script", "image"]),
-            ("facebook\\.net/signals", ["script"]),
-            ("amazon-adsystem\\.com", ["script", "image", "document"]),
-            ("criteo\\.com", ["script", "image"]),
-            ("criteo\\.net", ["script", "image"]),
-            ("outbrain\\.com", ["script", "image"]),
-            ("taboola\\.com", ["script", "image"]),
-            ("adnxs\\.com", ["script", "image", "document"]),
-            ("pubmatic\\.com", ["script", "image"]),
-            ("rubiconproject\\.com", ["script", "image"]),
-            ("openx\\.net", ["script", "image"]),
-            ("hotjar\\.com", ["script"]),
-            ("mixpanel\\.com", ["script"]),
-            ("segment\\.com", ["script"]),
-            ("segment\\.io", ["script"]),
-            ("chartbeat\\.com", ["script"]),
-            ("newrelic\\.com", ["script"]),
-            ("nr-data\\.net", ["script"]),
-            // Reddit (only ad-specific endpoints)
-            ("redditmedia\\.com/ads", ["script", "image", "document"]),
-            ("reddit\\.com/api/v2/ad", ["xmlhttprequest", "document"]),
-            // Huawei (high priority - these were not being blocked)
-            ("hicloud\\.com", ["script", "image", "document", "style-sheet", "raw", "font", "media"]),
-            ("metrics\\.data\\.hicloud\\.com", ["script", "image", "document", "raw"]),
-            ("metrics2\\.data\\.hicloud\\.com", ["script", "image", "document", "raw"]),
-            ("grs\\.hicloud\\.com", ["script", "image", "document", "raw"]),
-            ("logservice\\.hicloud\\.com", ["script", "image", "document", "raw"]),
-            ("logservice1\\.hicloud\\.com", ["script", "image", "document", "raw"]),
-            ("logbak\\.hicloud\\.com", ["script", "image", "document", "raw"]),
-            // Google Ads scripts (ads.js, pagead.js)
-            ("googlesyndication\\.com", ["script", "image", "document", "style-sheet", "raw"]),
-            ("pagead", ["script", "image"]),
-            ("ads\\.js", ["script"]),
-            ("adsbygoogle", ["script"])
-        ]
-
-        for (pattern, resourceTypes) in specificPatterns {
-            let rule: [String: Any] = [
-                "trigger": [
-                    "url-filter": pattern,
-                    "resource-type": normalizedResourceTypes(resourceTypes)
-                ],
-                "action": [
-                    "type": "block"
-                ]
-            ]
-            jsonRules.append(rule)
+            jsonRules.append([
+                "trigger": trigger,
+                "action": ["type": "block"]
+            ])
         }
 
         // Limit rules to avoid hitting WebKit limits (50000 rules max)
@@ -1607,14 +1800,8 @@ class AdBlockService: NSObject, ObservableObject {
             print("DEBUG: Successfully compiled rules. RuleList = \(ruleList != nil ? "valid" : "nil")")
 
             await MainActor.run {
-                self.activeRuleList = ruleList
-                // Apply rules to WebViews that were configured before rules were ready
-                if let ruleList = ruleList {
-                    for webView in self.registeredWebViews.allObjects {
-                        webView.configuration.userContentController.add(ruleList)
-                    }
-                    print("DEBUG: Applied rules to \(self.registeredWebViews.allObjects.count) WebViews")
-                }
+                self.replaceActiveRuleList(with: ruleList)
+                print("DEBUG: Applied rules to \(self.registeredWebViews.allObjects.count) WebViews")
             }
         } catch {
             print("DEBUG: Failed to compile content blocking rules: \(error)")
@@ -1634,46 +1821,11 @@ class AdBlockService: NSObject, ObservableObject {
         combinedString += customRules.joined(separator: "|")
         
         // Add static domains/selectors versioning (bump this if hardcoded lists change)
-        combinedString += "_v8_static"
+        combinedString += "_v9_safe_host_boundaries"
         
         let inputData = Data(combinedString.utf8)
         let hashed = SHA256.hash(data: inputData)
         return hashed.compactMap { String(format: "%02x", $0) }.joined()
-    }
-
-    private func normalizedContentRuleDomains() -> [String] {
-        var domains = Set<String>()
-        for raw in adNetworkDomains {
-            var value = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-            guard !value.isEmpty else { continue }
-
-            if let url = URL(string: value), let scheme = url.scheme, !scheme.isEmpty, let host = url.host {
-                value = host
-            } else if let slashIndex = value.firstIndex(of: "/") {
-                value = String(value[..<slashIndex])
-            }
-
-            value = value.trimmingCharacters(in: CharacterSet(charactersIn: "."))
-            guard !value.isEmpty else { continue }
-            guard value.unicodeScalars.allSatisfy({ isASCIIHostnameScalar($0) }) else { continue }
-
-            domains.insert(value)
-            domains.insert("*." + value)
-        }
-
-        return domains.sorted()
-    }
-
-    private func isASCIIHostnameScalar(_ scalar: UnicodeScalar) -> Bool {
-        if scalar.isASCII {
-            switch scalar.value {
-            case 0x30...0x39, 0x61...0x7A, 0x2D, 0x2E: // 0-9, a-z, -, .
-                return true
-            default:
-                return false
-            }
-        }
-        return false
     }
 
     private func normalizedResourceTypes(_ raw: [String]) -> [String] {
@@ -1757,12 +1909,12 @@ private extension WKContentRuleListStore {
 
 // MARK: - WKScriptMessageHandler
 extension AdBlockService: WKScriptMessageHandler {
-    nonisolated func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any],
-              let count = body["count"] as? Int else { return }
-
-        Task { @MainActor in
-            self.blockedCount = count
-        }
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "adBlockHandler",
+              let body = message.body as? [String: Any],
+              body["type"] as? String == "blocked",
+              let count = body["count"] as? Int,
+              (0...1_000_000).contains(count) else { return }
+        blockedCount = count
     }
 }

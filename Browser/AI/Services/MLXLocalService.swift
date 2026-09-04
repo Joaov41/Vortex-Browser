@@ -77,7 +77,7 @@ struct MLXGenerationMetrics: Sendable {
 #if canImport(MLX) && canImport(MLXLLM) && canImport(MLXLMCommon)
 import MLX
 import MLXLLM
-import MLXLMCommon
+@preconcurrency import MLXLMCommon
 import Hub
 #if canImport(MLXVLM)
 import MLXVLM
@@ -135,7 +135,7 @@ actor MLXLocalService {
     private func configureMemoryIfNeeded() {
         guard !hasConfiguredMemory else { return }
         // Keep MLX cache bounded so WebKit rendering and local inference can coexist.
-        GPU.set(cacheLimit: 512 * 1024 * 1024)
+        Memory.cacheLimit = 512 * 1024 * 1024
         hasConfiguredMemory = true
     }
 
@@ -203,7 +203,7 @@ actor MLXLocalService {
     }
 
     func clearTransientCache() {
-        GPU.clearCache()
+        Memory.clearCache()
     }
 
     /// Drop the cached model container so the next generation starts with a
@@ -219,7 +219,7 @@ actor MLXLocalService {
         } else if !id.isEmpty {
             modelCache[id] = nil
         }
-        GPU.clearCache()
+        Memory.clearCache()
     }
 
     func unloadModel(modelID: String) {
@@ -229,7 +229,7 @@ actor MLXLocalService {
             inFlightLoads[id] = nil
         }
         modelCache[id] = nil
-        GPU.clearCache()
+        Memory.clearCache()
     }
 
     func unloadAllModels() {
@@ -238,7 +238,7 @@ actor MLXLocalService {
         }
         inFlightLoads.removeAll()
         modelCache.removeAll()
-        GPU.clearCache()
+        Memory.clearCache()
     }
 
     func generateText(
@@ -554,7 +554,7 @@ actor MLXLocalService {
             inFlightLoads[cacheKey] = nil
         }
         modelCache[cacheKey] = nil
-        GPU.clearCache()
+        Memory.clearCache()
     }
 
     /// Download a model to a custom location (e.g., iCloud Drive for sharing).

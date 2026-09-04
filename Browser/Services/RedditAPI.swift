@@ -285,10 +285,6 @@ class RedditAPI {
     /// Delay factor for exponential backoff (in seconds)
     private let backoffFactor: Double = 2.0
 
-    /// Retained for the legacy batched helper. The active "more comments"
-    /// path is sequential and must not hold this across recursive retries.
-    private let semaphore = DispatchSemaphore(value: 3)
-    
     // MARK: - Public Method to Get Content
     
     /// Fetches and extracts content from a given Reddit URL.
@@ -305,7 +301,10 @@ class RedditAPI {
     /// Fetches a Reddit page together with enough metadata for callers to
     /// report whether the complete accessible comment tree was obtained.
     func getContentResult(from url: URL, includeAllComments: Bool = true) async throws -> RedditContentResult {
-        var components = URLComponents(url: url, resolvingAgainstBaseURL: true)!
+        guard HostMatchingPolicy.matches(url.host, any: ["reddit.com"]),
+              var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
+            throw RedditAPIError.invalidURL
+        }
         components.scheme = "https"
         components.host = "www.reddit.com"
         
@@ -337,7 +336,7 @@ class RedditAPI {
             throw RedditAPIError.invalidURL
         }
         
-        print("🌐 Fetching from: \(apiURL)")
+        print("🌐 Fetching Reddit JSON from \(apiURL.scheme ?? "https")://\(apiURL.host ?? "reddit.com")\(apiURL.path)")
         
         var request = URLRequest(url: apiURL)
         request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
@@ -488,7 +487,7 @@ class RedditAPI {
         self.didHitMoreRequestLimit = false
         self.hadCommentFetchFailures = false
         self.discoveredMoreCommentIDs = 0
-        print("🔗 Link ID set to: \(self.linkId!)")
+        print("🔗 Reddit link ID prepared")
         
         // Build post metadata
         var content = buildPostMetadata(from: post)
@@ -645,241 +644,6 @@ class RedditAPI {
         }
         
         return metadata
-    }
-    
-    // MARK: - Extract Comments Recursively
-    
-    /// Recursively extracts comments from a list of comment children.
-    ///
-    /// - Parameters:
-    ///   - children: An array of comment children dictionaries.
-    ///   - depth: The current depth of comment nesting.
-    /// - Returns: An array of formatted comment strings.
-    private func extractComments(from children: [[String: Any]], depth: Int = 0) -> [String] {
-        print("📝 Extracting comments (depth: \(depth), count: \(children.count))")
-        var comments: [String] = []
-        
-        for (index, child) in children.enumerated() {
-            print("📝 Processing comment \(index + 1) at depth \(depth)")
-            
-            guard let kind = child["kind"] as? String else {
-                print("⚠️ Comment \(index + 1): No kind found")
-                continue
-            }
-            
-            print("📝 Comment kind: \(kind)")
-            
-            guard let data = child["data"] as? [String: Any] else {
-                print("⚠️ Comment \(index + 1): No data found")
-                continue
-            }
-            
-            if kind == "more" {
-                print("📝 Found 'more' comment")
-                if let count = data["count"] as? Int,
-                   let childrenIds = data["children"] as? [String] {
-                    let moreText = "... \(count) more replies (tap to load)"
-                    comments.append(moreText)
-                    print("✅ Added more comments indicator: \(moreText)")
-                    print("📝 More comments IDs: \(childrenIds)")
-                }
-                continue
-            }
-            
-            if kind == "t1" {
-                print("📝 Processing t1 comment")
-                
-                // Extract comment content
-                let content: String
-                if let contentText = data["contentText"] as? String {
-                    content = contentText
-                } else if let body = data["body"] as? String {
-                    content = body
-                } else {
-                    print("⚠️ Comment \(index + 1): No content found")
-                    continue
-                }
-                
-                var comment = String(repeating: "  ", count: depth)
-                
-                if let author = data["author"] as? String {
-                    comment += "u/\(author): "
-                }
-                
-                comment += content
-                
-                if let score = data["score"] as? Int {
-                    comment += " [\(score) points]"
-                }
-                
-                comments.append(comment)
-                print("✅ Added comment from u/\(data["author"] as? String ?? "unknown")")
-                
-                // Handle nested replies
-                if let replies = data["replies"] as? [String: Any],
-                   let repliesData = replies["data"] as? [String: Any],
-                   let replyChildren = repliesData["children"] as? [[String: Any]] {
-                    print("📝 Processing \(replyChildren.count) nested replies")
-                    let nestedComments = extractComments(from: replyChildren, depth: depth + 1)
-                    comments.append(contentsOf: nestedComments)
-                    print("✅ Added \(nestedComments.count) nested comments")
-                }
-            }
-        }
-        
-        return comments
-    }
-    
-    // MARK: - Fetch All Comments
-    
-    /// Fetches all comments by processing initial comments and recursively handling "more" items.
-    ///
-    /// - Parameter initialComments: The initial array of comment children.
-    /// - Returns: An array of formatted comment strings.
-    private func fetchAllComments(initialComments: [[String: Any]]) async throws -> [String] {
-        guard let linkId = self.linkId else {
-            throw URLError(.badURL) // Or a custom error indicating link_id is missing
-        }
-        
-        var allComments = [String]()
-        var queue: [(children: [[String: Any]], depth: Int)] = [(initialComments, 0)]
-        var retryCount = 0
-        var totalMoreItemsFound = 0
-        var totalMoreItemsProcessed = 0
-        
-        while !queue.isEmpty {
-            let batch = queue.removeFirst()
-            let (comments, moreItems, commentCount) = try await processCommentBatch(children: batch.children, depth: batch.depth)
-            allComments.append(contentsOf: comments)
-            
-            // Track total "more" items found
-            totalMoreItemsFound += moreItems.count
-            print("🔍 Found \(moreItems.count) 'more' items in this batch. Total 'more' items found: \(totalMoreItemsFound)")
-            
-            for moreItem in moreItems {
-                do {
-                    let moreComments = try await fetchMoreChildren(children: moreItem.ids, depth: moreItem.depth, linkId: linkId)
-                    queue.append((moreComments, moreItem.depth))
-                    totalMoreItemsProcessed += 1
-                    print("🔍 Processed 'more' item \(totalMoreItemsProcessed)/\(totalMoreItemsFound)")
-                } catch {
-                    print("⚠️ Error fetching more comments: \(error.localizedDescription). Retry count: \(retryCount)")
-                    if retryCount < maxRetryCount {
-                        retryCount += 1
-                        print("🔄 Retrying to fetch more comments (Attempt \(retryCount))...")
-                        try await handleRateLimit(retryCount: retryCount)
-                        // Re-append the same moreItem for retry
-                        do {
-                            let retryMoreComments = try await fetchMoreChildren(children: moreItem.ids, depth: moreItem.depth, linkId: linkId)
-                            queue.append((retryMoreComments, moreItem.depth))
-                        } catch {
-                            print("❌ Failed to fetch more comments on retry: \(error.localizedDescription)")
-                            continue
-                        }
-                    } else {
-                        print("❌ Failed to fetch more comments after \(retryCount) retries.")
-                        continue
-                    }
-                }
-            }
-        }
-        
-        // Log the total number of comments fetched
-        print("✅ Fetched a total of \(allComments.count) comments.")
-        
-        return allComments
-    }
-    
-    // MARK: - Fetch More Children Comments
-    
-    /// Fetches additional comments referenced by a "more" item.
-    ///
-    /// - Parameters:
-    ///   - children: An array of comment IDs to fetch.
-    ///   - depth: The current depth of comment nesting.
-    ///   - linkId: The `link_id` of the Reddit post.
-    /// - Returns: An array of comment dictionaries.
-    private func fetchMoreChildren(children: [String], depth: Int, linkId: String) async throws -> [[String: Any]] {
-        let chunkSize = 100 // Reddit's API limit per request
-        var allComments = [[String: Any]]()
-        
-        let chunks = children.chunked(into: chunkSize)
-        
-        for (index, chunk) in chunks.enumerated() {
-            semaphore.wait() // Control concurrency
-            defer { semaphore.signal() }
-            
-            var components = URLComponents(string: "https://www.reddit.com/api/morechildren.json")!
-            components.queryItems = [
-                URLQueryItem(name: "api_type", value: "json"),
-                URLQueryItem(name: "link_id", value: linkId),
-                URLQueryItem(name: "children", value: chunk.joined(separator: ",")),
-                URLQueryItem(name: "sort", value: "confidence"),
-                URLQueryItem(name: "limit_children", value: "false"),
-                URLQueryItem(name: "depth", value: "10")
-            ]
-            
-            guard let url = components.url else {
-                print("❌ Failed to construct URL for chunk \(index + 1)")
-                hadCommentFetchFailures = true
-                continue
-            }
-            
-            var request = URLRequest(url: url)
-            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
-            request.setValue("application/json", forHTTPHeaderField: "Accept")
-            
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    print("❌ Invalid response type for chunk \(index + 1)")
-                    hadCommentFetchFailures = true
-                    continue
-                }
-                
-                if httpResponse.statusCode == 429 {
-                    print("⚠️ Rate limited, waiting before retrying chunk \(index + 1)...")
-                    try await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
-                    // Retry the same chunk after delay
-                    let retryComments = try await fetchMoreChildren(children: chunk, depth: depth, linkId: linkId)
-                    allComments.append(contentsOf: retryComments)
-                    continue
-                }
-                
-                guard (200...299).contains(httpResponse.statusCode) else {
-                    print("❌ Bad status: \(httpResponse.statusCode) for chunk \(index + 1)")
-                    continue
-                }
-                
-                let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-                guard let jsonData = json?["json"] as? [String: Any],
-                      let dataDict = jsonData["data"] as? [String: Any],
-                      let things = dataDict["things"] as? [[String: Any]] else {
-                    print("❌ Failed to parse JSON structure for chunk \(index + 1)")
-                    hadCommentFetchFailures = true
-                    continue
-                }
-                
-                if things.isEmpty {
-                    print("⚠️ 'More' item fetched zero comments for chunk \(index + 1).")
-                } else {
-                    allComments.append(contentsOf: things)
-                    print("✅ Added \(things.count) comments from chunk \(index + 1)")
-                }
-                
-                // Respect rate limits by introducing a delay between chunks
-                if index < chunks.count - 1 {
-                    try await Task.sleep(nanoseconds: 500_000_000) // 0.5 second delay
-                }
-                
-            } catch {
-                print("⚠️ Error processing chunk \(index + 1): \(error.localizedDescription)")
-                throw error // Propagate the error to handle retries
-            }
-        }
-        
-        return allComments
     }
     
     // MARK: - Format Individual Comment
@@ -1089,7 +853,12 @@ class RedditAPI {
         let chunks = ids.chunked(into: chunkSize)
         
         for (index, chunk) in chunks.enumerated() {
-            var components = URLComponents(string: "https://www.reddit.com/api/morechildren.json")!
+            guard var components = URLComponents(
+                string: "https://www.reddit.com/api/morechildren.json"
+            ) else {
+                hadCommentFetchFailures = true
+                continue
+            }
             components.queryItems = [
                 URLQueryItem(name: "api_type", value: "json"),
                 URLQueryItem(name: "link_id", value: linkId),
@@ -1157,16 +926,13 @@ class RedditAPI {
                 guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                     print("⚠️ Could not parse JSON response for chunk \(index + 1)")
                     hadCommentFetchFailures = true
-                    if let responseString = String(data: data, encoding: .utf8) {
-                        print("🔍 Raw response: \(responseString.prefix(200))...")
-                    }
                     continue
                 }
                 
                 // Check for Reddit API errors in response
                 if let jsonContent = json["json"] as? [String: Any],
                    let errors = jsonContent["errors"] as? [[String]], !errors.isEmpty {
-                    print("⚠️ Reddit API returned errors for chunk \(index + 1): \(errors)")
+                    print("⚠️ Reddit API returned \(errors.count) error record(s) for chunk \(index + 1)")
                     hadCommentFetchFailures = true
                     continue
                 }

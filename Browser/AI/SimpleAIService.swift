@@ -5,221 +5,12 @@ import Security
 import FoundationModels
 #endif
 
-private func browserAIServiceLog(_ message: @autoclosure () -> String) {
+nonisolated private func browserAIServiceLog(_ message: @autoclosure () -> String) {
     print("🧠 [AIService] \(message())")
 }
 
-private func appleLocalFollowUpLog(_ message: @autoclosure () -> String) {
+nonisolated private func appleLocalFollowUpLog(_ message: @autoclosure () -> String) {
     print("🍎 [LocalFollowUp] \(message())")
-}
-
-private enum BrowserAIKeychain {
-    private static let service = "Browser.ApplePCCGateway"
-
-    static func string(for account: String) -> String? {
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account,
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-
-        var item: CFTypeRef?
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
-        guard status == errSecSuccess,
-              let data = item as? Data,
-              let value = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        return value
-    }
-
-    static func setString(_ value: String, for account: String) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: account
-        ]
-
-        guard !trimmed.isEmpty else {
-            SecItemDelete(query as CFDictionary)
-            return
-        }
-
-        let data = Data(trimmed.utf8)
-        let attributes: [String: Any] = [kSecValueData as String: data]
-        let updateStatus = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
-        if updateStatus == errSecItemNotFound {
-            var addQuery = query
-            addQuery[kSecValueData as String] = data
-            SecItemAdd(addQuery as CFDictionary, nil)
-        }
-    }
-}
-
-private struct PCCGatewayConfiguration {
-    let host: String
-    let port: Int
-    let token: String
-    let model: String
-
-    var normalizedToken: String {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.lowercased().hasPrefix("bearer ") {
-            return String(trimmed.dropFirst(7)).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return trimmed
-    }
-
-    func endpoint(path: String) -> URL? {
-        let trimmedHost = host.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedHost.isEmpty else { return nil }
-
-        if trimmedHost.lowercased().hasPrefix("http://") || trimmedHost.lowercased().hasPrefix("https://") {
-            guard var components = URLComponents(string: trimmedHost) else { return nil }
-            if components.port == nil {
-                components.port = port
-            }
-            components.path = path
-            return components.url
-        }
-
-        var components = URLComponents()
-        components.scheme = "http"
-        components.host = trimmedHost
-        components.port = port
-        components.path = path
-        return components.url
-    }
-}
-
-private enum PCCGatewayError: LocalizedError {
-    case unavailableOnCurrentOS
-    case invalidConfiguration(String)
-    case httpStatus(Int, String)
-    case emptyResponse
-
-    var errorDescription: String? {
-        switch self {
-        case .unavailableOnCurrentOS:
-            return "Apple PCC Gateway requires iOS 27 or later in this build."
-        case .invalidConfiguration(let message):
-            return message
-        case .httpStatus(let status, let message):
-            return "Apple PCC Gateway error \(status): \(message)"
-        case .emptyResponse:
-            return "Apple PCC Gateway returned an empty response."
-        }
-    }
-}
-
-private struct PCCGatewayChatMessage: Codable {
-    let role: String
-    let content: String
-}
-
-private struct PCCGatewayChatRequest: Encodable {
-    let model: String
-    let messages: [PCCGatewayChatMessage]
-    let stream: Bool
-}
-
-private struct PCCGatewayChatResponse: Decodable {
-    struct Choice: Decodable {
-        struct Message: Decodable {
-            let content: String?
-        }
-
-        let message: Message?
-        let text: String?
-    }
-
-    let choices: [Choice]
-}
-
-private final class PCCGatewayClient {
-    private let configuration: PCCGatewayConfiguration
-
-    init(configuration: PCCGatewayConfiguration) {
-        self.configuration = configuration
-    }
-
-    func healthSummary() async throws -> String {
-        let data = try await send(path: "/health", method: "GET", body: nil)
-        guard !data.isEmpty else { return "Connected to Apple PCC Gateway." }
-        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            let status = object["status"] as? String ?? "ok"
-            let model = object["model"] as? String ?? configuration.model
-            if let available = object["model_available"] as? Bool {
-                return "Apple PCC Gateway \(status). Model \(model): \(available ? "available" : "unavailable")."
-            }
-            return "Apple PCC Gateway \(status). Model \(model)."
-        }
-        return String(data: data, encoding: .utf8) ?? "Connected to Apple PCC Gateway."
-    }
-
-    func complete(prompt: String) async throws -> String {
-        let requestBody = PCCGatewayChatRequest(
-            model: configuration.model,
-            messages: [PCCGatewayChatMessage(role: "user", content: prompt)],
-            stream: false
-        )
-        let body = try JSONEncoder().encode(requestBody)
-        let data = try await send(path: "/v1/chat/completions", method: "POST", body: body)
-        let decoded = try JSONDecoder().decode(PCCGatewayChatResponse.self, from: data)
-        let text = decoded.choices.compactMap { $0.message?.content ?? $0.text }.first?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let text, !text.isEmpty else {
-            throw PCCGatewayError.emptyResponse
-        }
-        return text
-    }
-
-    private func send(path: String, method: String, body: Data?) async throws -> Data {
-        guard !configuration.normalizedToken.isEmpty else {
-            throw PCCGatewayError.invalidConfiguration("Enter the Apple PCC Gateway token from the Mac start script.")
-        }
-        guard let url = configuration.endpoint(path: path) else {
-            throw PCCGatewayError.invalidConfiguration("Enter a valid Apple PCC Gateway host or IP address.")
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method
-        request.timeoutInterval = 300
-        request.setValue("Bearer \(configuration.normalizedToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        if let body {
-            request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        }
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse else {
-            throw PCCGatewayError.invalidConfiguration("Apple PCC Gateway returned a non-HTTP response.")
-        }
-        guard (200...299).contains(http.statusCode) else {
-            throw PCCGatewayError.httpStatus(http.statusCode, Self.errorMessage(from: data))
-        }
-        return data
-    }
-
-    private static func errorMessage(from data: Data) -> String {
-        if let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            if let error = object["error"] as? [String: Any],
-               let message = error["message"] as? String {
-                return message
-            }
-            if let message = object["message"] as? String {
-                return message
-            }
-            if let status = object["status"] as? String {
-                return status
-            }
-        }
-        return String(data: data, encoding: .utf8) ?? "Unknown gateway error."
-    }
 }
 
 #if canImport(FoundationModels)
@@ -233,7 +24,7 @@ private enum AppleLocalStreamEvent: Sendable {
     case firstSnapshot(Date)
 }
 
-private enum AppleLocalStandbyState: Sendable {
+nonisolated private enum AppleLocalStandbyState: Sendable {
     case idle
     case warming
     case ready
@@ -394,7 +185,7 @@ private actor AppleLocalGenerationService {
             let warmupPrompt = "Reply with exactly: OK"
             if #available(iOS 26.0, macOS 26.0, *) {
                 let options = GenerationOptions(
-                    sampling: .greedy,
+                    samplingMode: .greedy,
                     maximumResponseTokens: 1
                 )
                 _ = try await session.respond(to: warmupPrompt, options: options).content
@@ -543,7 +334,13 @@ private actor AppleLocalGenerationService {
             let acquisition = await acquireSessionForRequest()
             persistentSession = acquisition.session
         }
-        let session = persistentSession!
+        guard let session = persistentSession else {
+            throw NSError(
+                domain: "SimpleAIService.AppleLocal",
+                code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Apple local model session could not be created."]
+            )
+        }
         activeSession = session
         isGenerating = true
         defer {
@@ -555,7 +352,7 @@ private actor AppleLocalGenerationService {
         }
         if #available(iOS 26.0, macOS 26.0, *) {
             let options = GenerationOptions(
-                sampling: .greedy,
+                samplingMode: .greedy,
                 maximumResponseTokens: effectiveMax
             )
             return try await session.respond(to: normalized, options: options).content
@@ -659,7 +456,7 @@ private actor AppleLocalGenerationService {
         }
 
         if #available(iOS 26.0, macOS 26.0, *) {
-            let options = GenerationOptions(sampling: .greedy, maximumResponseTokens: maxOutputTokens)
+            let options = GenerationOptions(samplingMode: .greedy, maximumResponseTokens: maxOutputTokens)
             var fullText = ""
             var bufferedDelta = ""
             var lastFlushTime = Date.distantPast
@@ -819,28 +616,9 @@ private actor ApplePrivateCloudGenerationService {
 enum AIModelBackend: String, CaseIterable {
     case localApple
     case cloudShortcuts
-    case applePCCGateway
     case mlxLocal
     case webChatGPT
     case webGemini
-
-    var isAvailableInCurrentEnvironment: Bool {
-        switch self {
-        case .applePCCGateway:
-            #if DEBUG
-            return true
-            #else
-            if #available(iOS 27.0, *) {
-                return true
-            }
-            // TestFlight uses a sandbox receipt. Treat missing/unknown receipts
-            // as pre-release too, so an iOS 26 distribution cannot fail open.
-            return Bundle.main.appStoreReceiptURL?.lastPathComponent == "receipt"
-            #endif
-        default:
-            return true
-        }
-    }
 
     var displayName: String {
         switch self {
@@ -848,8 +626,6 @@ enum AIModelBackend: String, CaseIterable {
             return "Local"
         case .cloudShortcuts:
             return "Cloud"
-        case .applePCCGateway:
-            return "Apple PCC Gateway"
         case .mlxLocal:
             return "MLX"
         case .webChatGPT:
@@ -863,8 +639,6 @@ enum AIModelBackend: String, CaseIterable {
         switch self {
         case .localApple:
             return "Apple Local"
-        case .applePCCGateway:
-            return "Apple PCC"
         case .mlxLocal:
             return "MLX"
         default:
@@ -879,6 +653,31 @@ enum AIModelBackend: String, CaseIterable {
         default:
             return false
         }
+    }
+}
+
+enum AIBackendPersistence {
+    static let legacyPCCGatewayRawValue = "applePCCGateway"
+
+    static func restoredBackend(rawValue: String?) -> AIModelBackend? {
+        guard let rawValue else { return nil }
+        if rawValue == legacyPCCGatewayRawValue {
+            return .cloudShortcuts
+        }
+        return AIModelBackend(rawValue: rawValue)
+    }
+}
+
+private enum LegacyPCCGatewayState {
+    private static let defaultsKeys = ["pccGatewayHost", "pccGatewayPort", "pccGatewayModel"]
+
+    static func removePersistedConfiguration() {
+        defaultsKeys.forEach(UserDefaults.standard.removeObject(forKey:))
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: "Browser.ApplePCCGateway"
+        ]
+        SecItemDelete(query as CFDictionary)
     }
 }
 
@@ -1028,6 +827,14 @@ class SimpleAIService: ObservableObject {
 
     private struct AppleLocalFirstSnapshotTimeoutError: Error {}
 
+    private enum AppleCloudTimeoutError: LocalizedError {
+        case timedOut
+
+        var errorDescription: String? {
+            "Apple Cloud did not respond within 90 seconds. Please try again."
+        }
+    }
+
     private actor AppleLocalFirstSnapshotTracker {
         private var firstSnapshotAt: Date?
         private var streamStartedAt: Date?
@@ -1074,30 +881,6 @@ class SimpleAIService: ObservableObject {
         }
     }
     @Published var shortcutName: String = "RSS Reader Cloud Summary"
-    @Published var pccGatewayHost: String = UserDefaults.standard.string(forKey: "pccGatewayHost") ?? "127.0.0.1" {
-        didSet {
-            UserDefaults.standard.set(pccGatewayHost.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "pccGatewayHost")
-        }
-    }
-    @Published var pccGatewayPort: Int = {
-        let saved = UserDefaults.standard.integer(forKey: "pccGatewayPort")
-        return saved > 0 ? saved : 1977
-    }() {
-        didSet {
-            UserDefaults.standard.set(pccGatewayPort, forKey: "pccGatewayPort")
-        }
-    }
-    @Published var pccGatewayModel: String = UserDefaults.standard.string(forKey: "pccGatewayModel") ?? "pcc" {
-        didSet {
-            let trimmed = pccGatewayModel.trimmingCharacters(in: .whitespacesAndNewlines)
-            UserDefaults.standard.set(trimmed.isEmpty ? "pcc" : trimmed, forKey: "pccGatewayModel")
-        }
-    }
-    @Published var pccGatewayToken: String = "" {
-        didSet {
-            BrowserAIKeychain.setString(pccGatewayToken, for: "token")
-        }
-    }
     let streamState = AIStreamState()
 
     static func shouldShowSlowRedditProcessingNotice(
@@ -1122,6 +905,7 @@ class SimpleAIService: ObservableObject {
     private var activeRequestID: UUID? = nil
     private var activeMessageChannel: MessageChannel = .appBackend
     private var requestTimeoutTask: Task<Void, Never>? = nil
+    private var activeRequestTask: Task<Void, Never>? = nil
     private var latestThroughputSessionID: UUID? = nil
     private var activeAppleLocalStreamSessionID: UUID? = nil
     private var appleLocalDiagnosticsByRequestID: [UUID: AppleLocalDiagnostics] = [:]
@@ -1134,7 +918,6 @@ class SimpleAIService: ObservableObject {
     private var appleWarmupTask: Task<Void, Never>? = nil
     private var warmedUpAppleLocal = false
     private let requestTimeoutNanoseconds: UInt64 = 90_000_000_000
-    private let pccGatewayRequestTimeoutNanoseconds: UInt64 = 300_000_000_000
     // A full Reddit map/reduce pass can legitimately require many small local
     // generations. Keep the app cancellable while allowing that pass to finish
     // instead of firing the ordinary single-request watchdog after 90 seconds.
@@ -1148,11 +931,6 @@ class SimpleAIService: ObservableObject {
     private let mlxInputCharacterLimit = 12_000
     private let mlxQueryContextCharacterLimit = 6_000
     private let mlxPromptCharacterLimit = 12_000
-    // PCC is documented as a 32K-token context window. This character cap is a
-    // conservative approximation (~24K tokens for English text) that leaves room
-    // for instructions and the generated answer inside the model window.
-    private let pccGatewayInputCharacterLimit = 96_000
-    private let pccGatewayFollowUpContextCharacterLimit = 10_000
     private let appleLocalMaxOutputTokens = 320
     private let appleLocalConciseMaxOutputTokens = 224
     private let appleLocalRetryBodyCharacterLimit = 2_400
@@ -1189,16 +967,14 @@ class SimpleAIService: ObservableObject {
     }
 
     private init() {
-        if let savedBackend = UserDefaults.standard.string(forKey: "selectedAIBackend"),
-           let restored = AIModelBackend(rawValue: savedBackend) {
-            if restored.isAvailableInCurrentEnvironment {
-                self.backend = restored
-            } else {
-                self.backend = .localApple
-                UserDefaults.standard.set(AIModelBackend.localApple.rawValue, forKey: "selectedAIBackend")
+        let savedBackend = UserDefaults.standard.string(forKey: "selectedAIBackend")
+        if let restored = AIBackendPersistence.restoredBackend(rawValue: savedBackend) {
+            self.backend = restored
+            if savedBackend != restored.rawValue {
+                UserDefaults.standard.set(restored.rawValue, forKey: "selectedAIBackend")
             }
         }
-        self.pccGatewayToken = BrowserAIKeychain.string(for: "token") ?? ""
+        LegacyPCCGatewayState.removePersistedConfiguration()
     }
 
     var hasSourcePageContext: Bool {
@@ -1212,30 +988,22 @@ class SimpleAIService: ObservableObject {
         return trimmed.isEmpty ? nil : sourcePageContext
     }
 
-    func testPCCGatewayConnection() async throws -> String {
-        try await makePCCGatewayClient().healthSummary()
-    }
-
-    private func makePCCGatewayClient() throws -> PCCGatewayClient {
-        guard AIModelBackend.applePCCGateway.isAvailableInCurrentEnvironment else {
-            throw PCCGatewayError.unavailableOnCurrentOS
-        }
-        let host = pccGatewayHost.trimmingCharacters(in: .whitespacesAndNewlines)
-        let model = pccGatewayModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let config = PCCGatewayConfiguration(
-            host: host.isEmpty ? "127.0.0.1" : host,
-            port: pccGatewayPort > 0 ? pccGatewayPort : 1977,
-            token: pccGatewayToken,
-            model: model.isEmpty ? "pcc" : model
-        )
-        return PCCGatewayClient(configuration: config)
+    @MainActor
+    @discardableResult
+    func handleCloudShortcutCallback(_ url: URL) -> Bool {
+        cloudService.handleCallback(url)
     }
 
     private func runPrivateCloudComputeIfAvailable(prompt: String) async throws -> String? {
         #if canImport(FoundationModels)
         if #available(iOS 27.0, *) {
             print("☁️ [Apple Cloud] Using Apple Private Cloud Compute (prompt: \(prompt.count) chars)")
-            return try await ApplePrivateCloudGenerationService.shared.respond(to: prompt)
+            return try await AsyncTimeout.run(
+                seconds: 90,
+                timeoutError: { AppleCloudTimeoutError.timedOut }
+            ) {
+                try await ApplePrivateCloudGenerationService.shared.respond(to: prompt)
+            }
         }
         #endif
         return nil
@@ -1284,7 +1052,11 @@ class SimpleAIService: ObservableObject {
 
         requestTimeoutTask = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds: self.requestTimeoutNanoseconds)
+            do {
+                try await Task.sleep(nanoseconds: self.requestTimeoutNanoseconds)
+            } catch {
+                return
+            }
             await MainActor.run {
                 guard self.isRequestActive(requestID) else { return }
                 self.streamState.resetText()
@@ -1429,15 +1201,19 @@ class SimpleAIService: ObservableObject {
             let timeoutNanoseconds: UInt64
             if isRedditRequest {
                 timeoutNanoseconds = self.redditProcessingTimeoutNanoseconds
-            } else if selectedBackend == .applePCCGateway {
-                timeoutNanoseconds = self.pccGatewayRequestTimeoutNanoseconds
             } else {
                 timeoutNanoseconds = self.requestTimeoutNanoseconds
             }
-            try? await Task.sleep(nanoseconds: timeoutNanoseconds)
+            do {
+                try await Task.sleep(nanoseconds: timeoutNanoseconds)
+            } catch {
+                return
+            }
             await MainActor.run {
                 guard self.isRequestActive(requestID) else { return }
                 browserAIServiceLog("requestTimeout fired requestID=\(requestID.uuidString.prefix(8)) backend=\(selectedBackend.rawValue)")
+                self.activeRequestTask?.cancel()
+                self.activeRequestTask = nil
                 self.streamState.resetText()
                 self.appendRetainedMessage(.init(role: .assistant, text: "Request timed out. Please try again."), channel: .appBackend)
                 self.clearThroughputIfSessionMatches(sessionID: requestID)
@@ -1488,10 +1264,10 @@ class SimpleAIService: ObservableObject {
                     if RedditSummaryPlanner.isRedditContext(providedPageContent) {
                         sourcePageContext = providedPageContent
                     } else {
-                        let contextCap = selectedBackend == .applePCCGateway
-                            ? pccGatewayInputCharacterLimit
-                            : mlxInputCharacterLimit
-                        sourcePageContext = Self.truncatePreservingStructure(providedPageContent, maxChars: contextCap)
+                        sourcePageContext = Self.truncatePreservingStructure(
+                            providedPageContent,
+                            maxChars: mlxInputCharacterLimit
+                        )
                     }
                 }
                 resolvedPageContent = {
@@ -1507,7 +1283,7 @@ class SimpleAIService: ObservableObject {
             let treatsPromptAsInstruction = !showsUserPromptInSidebar
             browserAIServiceLog("execute query promptChars=\(prompt.count) providedPageContentChars=\(providedPageContent?.count ?? 0) resolvedPageContentChars=\(resolvedPageContent?.count ?? 0) sourcePageContextChars=\(sourcePageContext?.count ?? 0) treatsPromptAsInstruction=\(treatsPromptAsInstruction)")
             appendRetainedMessage(.init(role: .user, text: prompt, showsInSidebar: showsUserPromptInSidebar), channel: .appBackend)
-            Task(priority: .userInitiated) { [weak self] in
+            activeRequestTask = Task(priority: .userInitiated) { [weak self] in
                 guard let self else {
                     print("🔴 [query] self is nil in Task!")
                     return
@@ -1540,8 +1316,6 @@ class SimpleAIService: ObservableObject {
                         contextCap = length == .short
                             ? appleLocalShortSummaryContextCharacterLimit
                             : appleLocalSummaryContextCharacterLimit
-                    case .applePCCGateway:
-                        contextCap = pccGatewayInputCharacterLimit
                     default:
                         contextCap = mlxInputCharacterLimit
                     }
@@ -1558,7 +1332,7 @@ class SimpleAIService: ObservableObject {
             let displayMessage = length == .short ? "Generate a short summary (2 paragraphs)" : "Generate a detailed summary"
             browserAIServiceLog("execute summary inputChars=\(content.count) storedSourcePageContextChars=\(sourcePageContext?.count ?? 0)")
             appendRetainedMessage(.init(role: .user, text: displayMessage), channel: .appBackend)
-            Task(priority: .userInitiated) { [weak self] in
+            activeRequestTask = Task(priority: .userInitiated) { [weak self] in
                 browserAIServiceLog("runSummary task START requestID=\(requestID.uuidString.prefix(8)) backend=\(selectedBackend.rawValue)")
                 await self?.runSummary(content, length: length, backend: selectedBackend, requestID: requestID)
                 browserAIServiceLog("runSummary task END requestID=\(requestID.uuidString.prefix(8)) backend=\(selectedBackend.rawValue)")
@@ -1577,6 +1351,7 @@ class SimpleAIService: ObservableObject {
         }
         requestTimeoutTask?.cancel()
         requestTimeoutTask = nil
+        activeRequestTask = nil
         activeRequestID = nil
         activeAppleLocalStreamSessionID = nil
         isProcessing = false
@@ -1696,41 +1471,6 @@ class SimpleAIService: ObservableObject {
                     }
                 }
                 return
-
-            case .applePCCGateway:
-                let hasConversationContext = !(conversationContext?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
-                let contextLimit = hasConversationContext ? pccGatewayFollowUpContextCharacterLimit : pccGatewayInputCharacterLimit
-                let condensed = Self.truncatePreservingStructure(sourceContext, maxChars: contextLimit)
-                print("   Apple PCC Gateway - Condensed content length: \(condensed.count)")
-                let prompt: String
-                if treatsPromptAsInstruction {
-                    prompt = buildInstructionTaskBody(
-                        instruction: query,
-                        pageContext: condensed,
-                        conversationContext: conversationContext
-                    )
-                } else {
-                    prompt = buildQueryTaskBody(
-                        question: query,
-                        pageContext: condensed,
-                        concise: false,
-                        conversationContext: conversationContext
-                    )
-                }
-                let counter = AIThroughputCounter()
-                await MainActor.run {
-                    self.beginThroughputSession(sessionID: requestID, backend: .applePCCGateway)
-                }
-                let responseText = try await makePCCGatewayClient().complete(prompt: prompt)
-                await MainActor.run {
-                    self.completeRequest(with: responseText, requestID: requestID)
-                }
-                await finishThroughputSessionIfNeeded(
-                    requestID: requestID,
-                    backend: .applePCCGateway,
-                    counter: counter,
-                    fallbackText: responseText
-                )
 
             case .localApple:
                 appleLocalFollowUpLog("runQuery local start requestID=\(requestID.uuidString.prefix(8)) queryChars=\(query.count) pageContentChars=\(pageContent?.count ?? 0)")
@@ -2339,9 +2079,6 @@ class SimpleAIService: ObservableObject {
             counter.add(units: metrics.tokenCount)
             return metrics.text
 
-        case .applePCCGateway:
-            return try await makePCCGatewayClient().complete(prompt: prompt)
-
         case .cloudShortcuts:
             if let response = try await runPrivateCloudComputeIfAvailable(prompt: prompt) {
                 return response
@@ -2551,39 +2288,6 @@ class SimpleAIService: ObservableObject {
                     }
                 }
 
-            case .applePCCGateway:
-                let condensedContent = Self.truncatePreservingStructure(content, maxChars: pccGatewayInputCharacterLimit)
-                print("Condensed content for Apple PCC Gateway: \(condensedContent.count) chars (original: \(content.count))")
-
-                let prompt: String
-                if length == .short {
-                    prompt = """
-                    Summarize the following article in 2 short but complete paragraphs.
-                    Paragraph 1: state the main topic, outcome, or announcement.
-                    Paragraph 2: include the most important supporting details, people/companies involved, and any notable implications if present.
-                    Keep it concise, but do not make it overly brief or vague.
-
-                    \(condensedContent)
-                    """
-                } else {
-                    prompt = "Summarize the following text clearly, highlighting key themes and points. Provide a detailed analysis:\n\n" + condensedContent
-                }
-
-                let counter = AIThroughputCounter()
-                await MainActor.run {
-                    self.beginThroughputSession(sessionID: requestID, backend: .applePCCGateway)
-                }
-                let responseText = try await makePCCGatewayClient().complete(prompt: prompt)
-                await MainActor.run {
-                    self.completeRequest(with: responseText, requestID: requestID)
-                }
-                await finishThroughputSessionIfNeeded(
-                    requestID: requestID,
-                    backend: .applePCCGateway,
-                    counter: counter,
-                    fallbackText: responseText
-                )
-
             case .localApple:
                 let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
                 let summaryContextLimit = length == .short
@@ -2742,7 +2446,7 @@ class SimpleAIService: ObservableObject {
 
             case .webChatGPT, .webGemini:
                 await MainActor.run {
-                    self.completeRequest(with: "Summaries are available for Local, Cloud, Apple PCC Gateway, or MLX.", requestID: requestID)
+                    self.completeRequest(with: "Summaries are available for Local, Cloud, or MLX.", requestID: requestID)
                 }
             }
         } catch {
@@ -2957,24 +2661,11 @@ class SimpleAIService: ObservableObject {
         seconds: TimeInterval,
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
-        // Race the operation against a sleep timer.  When the timer wins we
-        // cancel the (possibly non-responsive) operation task and throw
-        // immediately — we do NOT await operationTask.value so a hung
-        // session.respond() cannot block the caller.
-        return try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask {
-                try await operation()
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                throw AppleLocalDirectTimeoutError.timedOut
-            }
-            guard let result = try await group.next() else {
-                throw AppleLocalDirectTimeoutError.timedOut
-            }
-            group.cancelAll()
-            return result
-        }
+        try await AsyncTimeout.run(
+            seconds: seconds,
+            timeoutError: { AppleLocalDirectTimeoutError.timedOut },
+            operation: operation
+        )
     }
 
     private func runAppleLocalRedditStreamWithRetry(
@@ -3038,8 +2729,41 @@ class SimpleAIService: ObservableObject {
         let hardTimeoutSeconds = Double(appleLocalRedditFirstSnapshotHardTimeoutNanoseconds) / 1_000_000_000
 
         do {
-            let finalText = try await withThrowingTaskGroup(of: String.self) { group in
-                group.addTask { [weak self] in
+            let requestLabel = String(requestID.uuidString.prefix(8))
+            let finalText = try await AsyncTimeout.race(
+                timeoutError: {
+                    var warned = false
+                    while true {
+                        if Task.isCancelled {
+                            return CancellationError()
+                        }
+                        let hasFirstSnapshot = await firstSnapshotTracker.hasFirstSnapshot()
+                        guard let streamStartDate = await firstSnapshotTracker.streamStartDate() else {
+                            do {
+                                try await Task.sleep(nanoseconds: 100_000_000)
+                            } catch {
+                                return CancellationError()
+                            }
+                            continue
+                        }
+                        let streamElapsed = Date().timeIntervalSince(streamStartDate)
+                        if !warned && streamElapsed >= softWarningSeconds {
+                            warned = true
+                            if !hasFirstSnapshot {
+                                print("⚠️ [Apple Local][Diag \(requestLabel)] first snapshot pending > \(Int(softWarningSeconds))s")
+                            }
+                        }
+                        if streamElapsed >= hardTimeoutSeconds && !hasFirstSnapshot {
+                            return AppleLocalFirstSnapshotTimeoutError()
+                        }
+                        do {
+                            try await Task.sleep(nanoseconds: 100_000_000)
+                        } catch {
+                            return CancellationError()
+                        }
+                    }
+                },
+                operation: { [weak self] in
                     guard let self else { throw CancellationError() }
                     return try await AppleLocalGenerationService.shared.streamResponse(
                         to: prompt,
@@ -3055,42 +2779,11 @@ class SimpleAIService: ObservableObject {
                             if case .firstSnapshot(let at) = event {
                                 await firstSnapshotTracker.markIfNeeded(at)
                             }
-                            self.handleAppleLocalStreamEvent(event, requestID: requestID)
+                            await self.handleAppleLocalStreamEvent(event, requestID: requestID)
                         }
                     )
                 }
-                group.addTask {
-                    let startedAt = Date()
-                    var warned = false
-                    while true {
-                        try Task.checkCancellation()
-                        let elapsed = Date().timeIntervalSince(startedAt)
-                        let hasFirstSnapshot = await firstSnapshotTracker.hasFirstSnapshot()
-                        guard let streamStartDate = await firstSnapshotTracker.streamStartDate() else {
-                            // First-snapshot watchdog starts once streaming has actually started.
-                            try await Task.sleep(nanoseconds: 100_000_000)
-                            continue
-                        }
-                        let streamElapsed = Date().timeIntervalSince(streamStartDate)
-                        if !warned && streamElapsed >= softWarningSeconds {
-                            warned = true
-                            if !hasFirstSnapshot {
-                                let id = String(requestID.uuidString.prefix(8))
-                                print("⚠️ [Apple Local][Diag \(id)] first snapshot pending > \(Int(softWarningSeconds))s")
-                            }
-                        }
-                        if streamElapsed >= hardTimeoutSeconds && !hasFirstSnapshot {
-                            throw AppleLocalFirstSnapshotTimeoutError()
-                        }
-                        try await Task.sleep(nanoseconds: 100_000_000)
-                    }
-                }
-                defer { group.cancelAll() }
-                guard let firstCompleted = try await group.next() else {
-                    throw AppleLocalFirstSnapshotTimeoutError()
-                }
-                return firstCompleted
-            }
+            )
             counter.add(units: Self.approximateAppleTokenCount(from: finalText))
             return AppleLocalStreamAttemptResult(
                 text: finalText,
@@ -3432,20 +3125,11 @@ class SimpleAIService: ObservableObject {
         seconds: TimeInterval,
         operation: @escaping @Sendable () async throws -> T
     ) async throws -> T {
-        return try await withThrowingTaskGroup(of: T.self) { group in
-            group.addTask {
-                try await operation()
-            }
-            group.addTask {
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                throw MLXTimeoutError()
-            }
-            guard let result = try await group.next() else {
-                throw MLXTimeoutError()
-            }
-            group.cancelAll()
-            return result
-        }
+        try await AsyncTimeout.run(
+            seconds: seconds,
+            timeoutError: { MLXTimeoutError() },
+            operation: operation
+        )
     }
 
     private func buildMLXTaskBody(
@@ -4082,6 +3766,8 @@ class SimpleAIService: ObservableObject {
     func reset() {
         requestTimeoutTask?.cancel()
         requestTimeoutTask = nil
+        activeRequestTask?.cancel()
+        activeRequestTask = nil
         mlxWarmupTask?.cancel()
         mlxWarmupTask = nil
         appleWarmupTask?.cancel()

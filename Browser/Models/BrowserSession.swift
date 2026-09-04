@@ -5,23 +5,20 @@ import UIKit
 import WebKit
 
 enum BrowserFaviconPolicy {
-    static func remoteFaviconURL(for pageURL: URL?, isIncognito: Bool) -> URL? {
+    static func sameOriginFaviconURL(for pageURL: URL?, isIncognito: Bool) -> URL? {
         guard !isIncognito,
-              let host = pageURL?.host,
-              !host.isEmpty,
-              var components = URLComponents(string: "https://www.google.com/s2/favicons") else {
+              let pageURL,
+              let scheme = pageURL.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              pageURL.host?.isEmpty == false else {
             return nil
         }
-        components.queryItems = [URLQueryItem(name: "domain", value: host)]
-        return components.url
+        return URL(string: "/favicon.ico", relativeTo: pageURL)?.absoluteURL
     }
 }
 
 @MainActor
 final class BrowserTab: ObservableObject, Identifiable {
-    static let mobileUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-    static let desktopUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_5) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
-
     let id: UUID
     @Published var title: String
     @Published var address: String
@@ -93,13 +90,14 @@ final class BrowserTab: ObservableObject, Identifiable {
 
         let configuration = makeConfiguration()
         let created = AIWebView(frame: .zero, configuration: configuration)
-        created.customUserAgent = useDesktopUserAgent ? Self.desktopUserAgent : Self.mobileUserAgent
+        created.customUserAgent = nil
         created.allowsLinkPreview = !isIncognito
         // Vortex owns back/forward gestures so it can enforce a deliberate
         // threshold and provide consistent animation and iPhone haptics.
         created.allowsBackForwardNavigationGestures = false
 
         AdBlockService.shared.configureWebView(created)
+        ThirdPartyCookieBlocker.shared.register(webView: created)
         if !isIncognito {
             PasswordManager.shared.configureWebView(created)
         }
@@ -183,7 +181,8 @@ final class BrowserTab: ObservableObject, Identifiable {
 
     func setUserAgentPreference(_ useDesktop: Bool) {
         useDesktopUserAgent = useDesktop
-        liveWebView?.customUserAgent = useDesktop ? Self.desktopUserAgent : Self.mobileUserAgent
+        liveWebView?.customUserAgent = nil
+        liveWebView?.configuration.defaultWebpagePreferences.preferredContentMode = useDesktop ? .desktop : .mobile
     }
 
     func restoreScrollPositionIfNeeded(on webView: WKWebView) {
@@ -294,6 +293,7 @@ final class BrowserTab: ObservableObject, Identifiable {
 
     private func makeConfiguration() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.preferredContentMode = useDesktopUserAgent ? .desktop : .mobile
         if isIncognito {
             configuration.websiteDataStore = .nonPersistent()
             configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -523,7 +523,7 @@ final class BrowserViewModel: ObservableObject {
         }
     }
 
-    deinit {
+    isolated deinit {
         if let memoryWarningObserver {
             NotificationCenter.default.removeObserver(memoryWarningObserver)
         }
@@ -689,8 +689,9 @@ final class BrowserViewModel: ObservableObject {
         if tabs.isEmpty {
             addTabBlank()
         } else {
-            selectedTabID = tabs[min(index, tabs.count - 1)].id
-            protectedTabIDs.insert(selectedTabID!)
+            let nextSelectedID = tabs[min(index, tabs.count - 1)].id
+            selectedTabID = nextSelectedID
+            protectedTabIDs.insert(nextSelectedID)
             saveSession()
         }
         enforceWebViewBudget()
@@ -778,12 +779,16 @@ final class BrowserViewModel: ObservableObject {
     }
 
     func fetchFavicon(for tab: BrowserTab) {
-        guard let faviconURL = BrowserFaviconPolicy.remoteFaviconURL(
+        guard let faviconURL = BrowserFaviconPolicy.sameOriginFaviconURL(
             for: tab.url,
             isIncognito: tab.isIncognito
         ) else { return }
-        URLSession.shared.dataTask(with: faviconURL) { data, _, _ in
-            guard let data, let image = UIImage(data: data) else { return }
+        URLSession.shared.dataTask(with: faviconURL) { data, response, _ in
+            guard let response = response as? HTTPURLResponse,
+                  (200...299).contains(response.statusCode),
+                  let data,
+                  data.count <= 1_048_576,
+                  let image = UIImage(data: data) else { return }
             Task { @MainActor in tab.favicon = image }
         }.resume()
     }
@@ -900,7 +905,6 @@ final class BrowserViewModel: ObservableObject {
         }
         selectedTabID = tabs.contains(where: { $0.id == snapshot.selectedTabID }) ? snapshot.selectedTabID : tabs.first?.id
         if let selectedTabID { protectedTabIDs.insert(selectedTabID) }
-        tabs.forEach(fetchFavicon)
         return true
     }
 

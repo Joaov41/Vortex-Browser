@@ -6,12 +6,19 @@ import UIKit
 import UserNotifications
 import UniformTypeIdentifiers
 
-private func browserAIFlowLog(_ message: @autoclosure () -> String) {
+nonisolated private func browserAIFlowLog(_ message: @autoclosure () -> String) {
     print("🌐 [AIFlow] \(message())")
 }
 
-private func browserAIWebLog(_ message: @autoclosure () -> String) {
+nonisolated private func browserAIWebLog(_ message: @autoclosure () -> String) {
     print("🕸️ [AIWeb] \(message())")
+}
+
+nonisolated private func browserURLForLog(_ url: URL?) -> String {
+    guard let url else { return "nil" }
+    let scheme = url.scheme?.lowercased() ?? "unknown"
+    let host = url.host?.lowercased() ?? "no-host"
+    return "\(scheme)://\(host)"
 }
 
 enum BrowserSiteViewportPolicy {
@@ -78,11 +85,12 @@ enum AIPanelDismissalPolicy {
 }
 
 // MARK: - Darwin Notification Observer (for Share Extension IPC)
-class DarwinNotificationObserver: ObservableObject {
+@MainActor
+final class DarwinNotificationObserver: ObservableObject {
     static let notificationName = "com.browser.sharedURL" as CFString
     static let appGroupID = "group.com.browser.app"  // Update with your actual App Group ID
 
-    var onNotificationReceived: (() -> Void)?
+    let notifications = PassthroughSubject<Void, Never>()
 
     func startObserving() {
         let center = CFNotificationCenterGetDarwinNotifyCenter()
@@ -97,7 +105,7 @@ class DarwinNotificationObserver: ObservableObject {
                 let observerInstance = Unmanaged<DarwinNotificationObserver>.fromOpaque(observer).takeUnretainedValue()
                 DispatchQueue.main.async {
                     print("DEBUG: Calling onNotificationReceived callback")
-                    observerInstance.onNotificationReceived?()
+                    observerInstance.notifications.send()
                 }
             }
         }
@@ -119,7 +127,7 @@ class DarwinNotificationObserver: ObservableObject {
         CFNotificationCenterRemoveEveryObserver(center, Unmanaged.passUnretained(self).toOpaque())
     }
 
-    deinit {
+    isolated deinit {
         stopObserving()
     }
 }
@@ -287,6 +295,20 @@ extension View {
 final class AIWebView: WKWebView {
     var onAskAI: (() -> Void)?
 
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        let command = UICommand(
+            title: "Ask Vortex",
+            action: #selector(askAI(_:))
+        )
+        let menu = UIMenu(
+            title: "",
+            options: .displayInline,
+            children: [command]
+        )
+        builder.insertChild(menu, atEndOfMenu: .standardEdit)
+    }
+
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
         if action == #selector(askAI(_:)) {
             return true
@@ -296,16 +318,6 @@ final class AIWebView: WKWebView {
 
     @objc func askAI(_ sender: Any?) {
         onAskAI?()
-    }
-
-    static func installAskAIMenu() {
-        let menu = UIMenuController.shared
-        let selector = #selector(AIWebView.askAI(_:))
-        if let items = menu.menuItems, items.contains(where: { $0.action == selector }) {
-            return
-        }
-        let askItem = UIMenuItem(title: "Ask Vortex", action: selector)
-        menu.menuItems = (menu.menuItems ?? []) + [askItem]
     }
 }
 
@@ -322,7 +334,6 @@ private struct BrowserWebAIRequest: Identifiable, Equatable {
 private final class BrowserWebAISessionManager {
     static let shared = BrowserWebAISessionManager()
 
-    private let processPool = WKProcessPool()
     private let websiteDataStore = WKWebsiteDataStore.default()
     private var webViews: [WebAIProvider: WKWebView] = [:]
 
@@ -348,7 +359,6 @@ private final class BrowserWebAISessionManager {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
         configuration.websiteDataStore = websiteDataStore
-        configuration.processPool = processPool
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
@@ -375,12 +385,10 @@ private final class BrowserWebAISessionManager {
         }
 
         let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        let domainFragments = sessionDomainFragments(for: provider)
         websiteDataStore.fetchDataRecords(ofTypes: dataTypes) { [weak self] records in
             guard let self else { return }
             let matching = records.filter { record in
-                let name = record.displayName.lowercased()
-                return domainFragments.contains { name.contains($0) }
+                provider.matchesSessionHost(record.displayName)
             }
 
             self.websiteDataStore.removeData(ofTypes: dataTypes, for: matching) {
@@ -397,11 +405,11 @@ private final class BrowserWebAISessionManager {
 
                 switch provider {
                 case .chatgpt:
-                    let isChatGPTDomain = domain.contains("chatgpt.com") || domain.contains("openai.com")
+                    let isChatGPTDomain = provider.matchesSessionHost(domain)
                     let isSessionCookie = name.contains("session-token") || name.contains("auth-session")
                     return isChatGPTDomain && isSessionCookie
                 case .gemini:
-                    let isGoogleDomain = domain == "google.com" || domain.hasSuffix(".google.com")
+                    let isGoogleDomain = provider.matchesSessionHost(domain)
                     let authenticatedCookieNames: Set<String> = [
                         "sid", "hsid", "ssid", "apisid", "sapisid",
                         "__secure-1psid", "__secure-3psid"
@@ -438,7 +446,7 @@ private final class BrowserWebAISessionManager {
         let script: String
         switch provider {
         case .chatgpt:
-            guard host.contains("chatgpt.com") || host.contains("openai.com") else {
+            guard provider.allowsSessionNavigation(webView.url) else {
                 completion(false)
                 return
             }
@@ -525,14 +533,6 @@ private final class BrowserWebAISessionManager {
         webView.navigationDelegate = coordinator
     }
 
-    private func sessionDomainFragments(for provider: WebAIProvider) -> [String] {
-        switch provider {
-        case .chatgpt:
-            return ["chatgpt.com", "openai.com", "auth.openai.com"]
-        case .gemini:
-            return ["gemini.google.com", "google.com", "accounts.google.com"]
-        }
-    }
 }
 
 private struct BrowserWebAIRepresentable: UIViewRepresentable {
@@ -602,7 +602,7 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
             guard !hasPreparedCurrentRequest else { return }
             hasPreparedCurrentRequest = true
 
-            browserAIWebLog("update request=\(parent.request.id.uuidString.prefix(8)) provider=\(parent.request.provider.displayName) changed=\(requestChanged) url=\(webView.url?.absoluteString ?? "nil") loading=\(webView.isLoading)")
+            browserAIWebLog("update request=\(parent.request.id.uuidString.prefix(8)) provider=\(parent.request.provider.displayName) changed=\(requestChanged) origin=\(browserURLForLog(webView.url)) loading=\(webView.isLoading)")
 
             BrowserWebAISessionManager.shared.reconfigure(
                 webView,
@@ -627,7 +627,7 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
                     self.injectPrompt(into: webView)
                 }
             } else {
-                browserAIWebLog("update loading provider home request=\(parent.request.id.uuidString.prefix(8)) url=\(parent.request.provider.url.absoluteString)")
+                browserAIWebLog("update loading provider home request=\(parent.request.id.uuidString.prefix(8)) provider=\(parent.request.provider.displayName)")
                 webView.load(URLRequest(url: parent.request.provider.url))
             }
         }
@@ -638,7 +638,7 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
             hasInjectedCurrentRequest = false
             expectedChunks.removeAll()
             chunkBuffers.removeAll()
-            browserAIWebLog("didStart request=\(parent.request.id.uuidString.prefix(8)) url=\(webView.url?.absoluteString ?? "nil")")
+            browserAIWebLog("didStart request=\(parent.request.id.uuidString.prefix(8)) origin=\(browserURLForLog(webView.url))")
             DispatchQueue.main.async {
                 self.parent.isLoading = true
                 self.parent.didInject = false
@@ -647,7 +647,7 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
         }
 
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            browserAIWebLog("didFinish request=\(parent.request.id.uuidString.prefix(8)) url=\(webView.url?.absoluteString ?? "nil")")
+            browserAIWebLog("didFinish request=\(parent.request.id.uuidString.prefix(8)) origin=\(browserURLForLog(webView.url))")
             DispatchQueue.main.async {
                 self.parent.isLoading = false
             }
@@ -1591,9 +1591,6 @@ struct ContentView: View {
     @State private var isChatGPTLoggedIn = false
     @State private var isGeminiLoggedIn = false
     @State private var pendingWebAILoginProvider: WebAIProvider?
-    @State private var isTestingPCCGateway = false
-    @State private var pccGatewayStatusMessage: String?
-    
     // MLX Local settings
     @AppStorage("mlxModelID") private var mlxModelID: String = MLXLocalSettings.defaultModelID
     @AppStorage("mlxMaxOutputTokens") private var mlxMaxOutputTokens: Int = MLXLocalSettings.defaultMaxOutputTokens
@@ -2928,50 +2925,50 @@ struct ContentView: View {
                     .zIndex(150)
             }
         }
-        .onChange(of: vm.tabs.count) { _ in
+        .onChange(of: vm.tabs.count) { _, _ in
             syncSplitState()
             syncAIContextSelection()
         }
-        .onChange(of: vm.selectedTabID) { _ in
+        .onChange(of: vm.selectedTabID) { _, _ in
             let previousSelected = lastSelectedTabID
             lastSelectedTabID = vm.selectedTabID
             syncSplitState()
             syncAIContextSelection(previousSelectedTabID: previousSelected)
         }
-        .onChange(of: aiContextTabID) { _ in
+        .onChange(of: aiContextTabID) { _, _ in
             refreshHibernationProtection()
             if showAIPanel {
                 prepareAIContext()
             }
         }
-        .onChange(of: aiService.isProcessing) { isProcessing in
+        .onChange(of: aiService.isProcessing) { _, isProcessing in
             if isPhone, isProcessing {
                 withAnimation(.easeOut(duration: 0.22)) {
                     phoneAIPanelExpanded = true
                 }
             }
         }
-        .onChange(of: aiService.messages) { messages in
+        .onChange(of: aiService.messages) { _, messages in
             if isPhone, !messages.isEmpty {
                 withAnimation(.easeOut(duration: 0.22)) {
                     phoneAIPanelExpanded = true
                 }
             }
         }
-        .onChange(of: omniboxFocused) { focused in
+        .onChange(of: omniboxFocused) { _, focused in
             if focused {
                 if isToolbarCollapsed {
                     expandToolbar(focusOmnibox: false)
                 }
             }
         }
-        .onChange(of: requestDesktopSite) { _ in
+        .onChange(of: requestDesktopSite) { _, _ in
             applyUserAgentPreference()
         }
-        .onChange(of: aiService.backend) { newValue in
+        .onChange(of: aiService.backend) { _, newValue in
             handleBackendSelection(newValue)
         }
-        .onChange(of: mlxModelID) { newValue in
+        .onChange(of: mlxModelID) { _, newValue in
             mlxWarmupTask?.cancel()
             let capturedModelID = newValue
             mlxWarmupTask = Task {
@@ -3004,7 +3001,7 @@ struct ContentView: View {
             mlxWarmupTask?.cancel()
             darwinObserver.stopObserving()
         }
-        .onChange(of: scenePhase) { newPhase in
+        .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 // Check when becoming active (in case Darwin notification was missed)
                 checkForSharedURL()
@@ -3015,6 +3012,9 @@ struct ContentView: View {
             if let urlString = notification.userInfo?["url"] as? String {
                 openSharedContent(urlString)
             }
+        }
+        .onReceive(darwinObserver.notifications) {
+            checkForSharedURL()
         }
         .onOpenURL { url in
             handleIncomingURL(url)
@@ -3422,31 +3422,8 @@ struct ContentView: View {
         }
     }
 
-    private func testPCCGatewayConnection() {
-        pccGatewayStatusMessage = nil
-        isTestingPCCGateway = true
-
-        Task {
-            do {
-                let message = try await aiService.testPCCGatewayConnection()
-                await MainActor.run {
-                    self.pccGatewayStatusMessage = message
-                    self.isTestingPCCGateway = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.pccGatewayStatusMessage = "Connection failed: \(error.localizedDescription)"
-                    self.isTestingPCCGateway = false
-                }
-            }
-        }
-    }
-
     // MARK: - Shared URL Handling (from Share Extension)
     private func setupSharedURLHandling() {
-        darwinObserver.onNotificationReceived = { [weak darwinObserver] in
-            self.checkForSharedURL()
-        }
         darwinObserver.startObserving()
     }
 
@@ -3470,7 +3447,7 @@ struct ContentView: View {
         }
 
         sharedURLRetryCount = 0
-        print("DEBUG: Found shared URL: \(sharedURLString)")
+        print("DEBUG: Found shared content (\(sharedURLString.count) characters)")
 
         // Remove the URL from shared defaults immediately
         sharedDefaults.removeObject(forKey: "sharedURL")
@@ -3480,6 +3457,9 @@ struct ContentView: View {
     }
 
     private func handleIncomingURL(_ url: URL) {
+        if aiService.handleCloudShortcutCallback(url) {
+            return
+        }
         guard url.scheme?.lowercased() == shareAppURLScheme else {
             return
         }
@@ -3501,7 +3481,7 @@ struct ContentView: View {
 
         guard let url = vm.destinationURL(from: trimmed) else { return }
 
-        print("DEBUG: Opening new tab with URL: \(url)")
+        print("DEBUG: Opening shared content at \(browserURLForLog(url))")
 
         // Create a new tab with the shared URL
         let newTab = BrowserTab(title: "Loading...", url: url)
@@ -4441,10 +4421,9 @@ struct ContentView: View {
 
     private func applyUserAgentPreference() {
         let useDesktop = requestDesktopSite
-        let userAgent = useDesktop ? BrowserTab.desktopUserAgent : BrowserTab.mobileUserAgent
         vm.setUserAgentPreference(useDesktop)
         if let external = splitSecondaryExternalTab {
-            external.activateWebView().customUserAgent = userAgent
+            external.setUserAgentPreference(useDesktop)
         }
         reloadVisibleTabsForUserAgentChange()
     }
@@ -5005,7 +4984,7 @@ struct ContentView: View {
         .sheet(isPresented: $showMLXModelManager) {
             ManageMLXModelsView(selectedModelID: $mlxModelID)
         }
-        .onChange(of: showAIPanel) { isShowing in
+        .onChange(of: showAIPanel) { _, isShowing in
             if isShowing {
                 syncAIContextSelection()
                 prepareAIContext()
@@ -5030,7 +5009,7 @@ struct ContentView: View {
                 }
             }
         }
-        .onChange(of: aiService.messages) { messages in
+        .onChange(of: aiService.messages) { _, messages in
             guard let last = messages.last, last.role == .assistant else { return }
             if let replacement = pendingAIReplacement,
                !last.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -5601,6 +5580,13 @@ struct ContentView: View {
                             .foregroundColor(thirdPartyCookieBlocker.isEnabled ? .orange : .primary)
                         Text("Block Third-Party Cookies")
                     }
+                }
+                .disabled(!thirdPartyCookieBlocker.isSupported)
+
+                if !thirdPartyCookieBlocker.isSupported {
+                    Text("Unavailable on this iOS version because WebKit cannot enforce it safely without deleting valid site sessions.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
 
                 Button(action: {
@@ -6407,10 +6393,7 @@ struct ContentView: View {
             webView.scrollView.alwaysBounceVertical = true
             webView.scrollView.refreshControl = context.coordinator.refreshControl
             Self.applySiteSpecificTopInset(to: webView, url: webView.url ?? tab.url)
-            if let aiWebView = webView as? AIWebView {
-                aiWebView.onAskAI = onAskAI
-                AIWebView.installAskAIMenu()
-            }
+            webView.onAskAI = onAskAI
             ThirdPartyCookieBlocker.shared.register(webView: webView)
             context.coordinator.installWebProviderMessageHandler(on: webView)
             context.coordinator.installGestures(on: webView)
@@ -6438,9 +6421,7 @@ struct ContentView: View {
                 webView.scrollView.refreshControl = context.coordinator.refreshControl
             }
 
-            if let aiWebView = webView as? AIWebView {
-                aiWebView.onAskAI = onAskAI
-            }
+            webView.onAskAI = onAskAI
 
             ThirdPartyCookieBlocker.shared.register(webView: webView)
 
@@ -6529,7 +6510,7 @@ struct ContentView: View {
                         if AdBlockService.shared.isReady { break }
                         try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
                     }
-                    await MainActor.run {
+                    _ = await MainActor.run {
                         webView.load(URLRequest(url: url))
                     }
                 }
@@ -6999,7 +6980,7 @@ struct ContentView: View {
 
             func webView(_ webView: WKWebView,
                          decidePolicyFor navigationAction: WKNavigationAction,
-                         decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+                         decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
                 let downloadDecision = BrowserDownloadPolicy.navigationActionDecision(
                     shouldPerformDownload: navigationAction.shouldPerformDownload,
                     scheme: navigationAction.request.url?.scheme,
@@ -7031,7 +7012,7 @@ struct ContentView: View {
                         url,
                         idiom: UIDevice.current.userInterfaceIdiom
                     ) {
-                        print("Blocked X app deep link on iPhone: \(url)")
+                        print("Blocked X app deep link on iPhone: \(browserURLForLog(url))")
                         decisionHandler(.cancel)
                         return
                     }
@@ -7040,7 +7021,7 @@ struct ContentView: View {
                     if tab.isIncognito {
                         // Block navigation that tries to open new windows (often external apps)
                         if navigationAction.targetFrame == nil {
-                            print("Blocked new window in incognito: \(url)")
+                            print("Blocked new window in incognito: \(browserURLForLog(url))")
                             // Load it in the current frame instead
                             webView.load(navigationAction.request)
                             decisionHandler(.cancel)
@@ -7049,7 +7030,7 @@ struct ContentView: View {
                         
                         // Only allow http and https URLs
                         if let scheme = url.scheme?.lowercased(), scheme != "http" && scheme != "https" {
-                            print("Blocked non-http scheme in incognito: \(url)")
+                            print("Blocked non-http scheme in incognito: \(browserURLForLog(url))")
                             decisionHandler(.cancel)
                             return
                         }
@@ -7062,7 +7043,7 @@ struct ContentView: View {
                         ]
                         let urlString = url.absoluteString.lowercased()
                         if blockedPatterns.contains(where: { urlString.contains($0) }) {
-                            print("Blocked app-triggering URL in incognito: \(url)")
+                            print("Blocked app-triggering URL in incognito: \(browserURLForLog(url))")
                             decisionHandler(.cancel)
                             return
                         }
@@ -7099,7 +7080,7 @@ struct ContentView: View {
 
             func webView(_ webView: WKWebView,
                          decidePolicyFor navigationResponse: WKNavigationResponse,
-                         decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+                         decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
                 let responseURL = navigationResponse.response.url
                 let downloadDecision = BrowserDownloadPolicy.navigationResponseDecision(
                     canShowMIMEType: navigationResponse.canShowMIMEType,
@@ -7123,7 +7104,7 @@ struct ContentView: View {
                     if let url = navigationResponse.response.url {
                         // Block any non-http(s) responses
                         if let scheme = url.scheme, scheme != "http" && scheme != "https" {
-                            print("Blocked response redirect in incognito: \(url)")
+                            print("Blocked response redirect in incognito: \(browserURLForLog(url))")
                             decisionHandler(.cancel)
                             return
                         }
@@ -7154,7 +7135,6 @@ struct ContentView: View {
                         self.tab.address = u.absoluteString
                         WebViewHost.applySiteSpecificTopInset(to: webView, url: u)
 
-                        ThirdPartyCookieBlocker.shared.updateHost(for: webView, url: u)
                         SitePrivacyStore.shared.applyPolicies(to: webView, url: u, reloadIfChanged: true)
                         
                         // Apply dark mode with per-tab override support
@@ -7171,8 +7151,16 @@ struct ContentView: View {
                         FontSizeService.shared.applyFontSize(to: webView)
                         
                         // Debug: Check if we're on a Microsoft auth completion page
-                        if u.host?.contains("microsoft") == true || u.host?.contains("office") == true {
-                            print("DEBUG: Loaded Microsoft page: \(u)")
+                        let microsoftAccountDomains = [
+                            "microsoft.com",
+                            "microsoftonline.com",
+                            "office.com",
+                            "office365.com",
+                            "live.com",
+                            "outlook.com"
+                        ]
+                        if HostMatchingPolicy.matches(u.host, any: microsoftAccountDomains) {
+                            print("DEBUG: Loaded Microsoft page: \(browserURLForLog(u))")
                             
                             // Inject script to handle window.close() and other auth completion scenarios
                             let script = """
@@ -7206,16 +7194,16 @@ struct ContentView: View {
                                 }, 1000);
                             })();
                             """
-                            webView.evaluateJavaScript(script) { _, error in
-                                if let error = error {
-                                    print("Script injection error: \(error)")
-                                }
+                            do {
+                                _ = try await webView.evaluateJavaScript(script)
+                            } catch {
+                                print("Script injection error: \(error)")
                             }
                         }
 
                         if let provider = self.tab.webAIProvider, provider.matches(u) {
                             let script = self.webProviderBridgeScript(for: provider)
-                            webView.evaluateJavaScript(script, completionHandler: nil)
+                            _ = try? await webView.evaluateJavaScript(script)
                             self.onWebProviderReady?(self.tab)
                         }
                     }
@@ -7249,7 +7237,7 @@ struct ContentView: View {
             func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
                 // Handle window.open() by loading in current view
                 if let url = navigationAction.request.url {
-                    print("DEBUG: window.open intercepted: \(url)")
+                    print("DEBUG: window.open intercepted: \(browserURLForLog(url))")
                     webView.load(navigationAction.request)
                 }
                 return nil
@@ -7551,11 +7539,6 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
-        center.getNotificationSettings { settings in
-            if settings.authorizationStatus == .notDetermined {
-                center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
-            }
-        }
         return true
     }
 

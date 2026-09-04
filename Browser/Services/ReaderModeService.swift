@@ -64,7 +64,7 @@ enum ReaderModeService {
 
         for url in candidates {
             guard let url else { continue }
-            if let source = try? String(contentsOf: url) {
+            if let source = try? String(contentsOf: url, encoding: .utf8) {
                 return source
             }
         }

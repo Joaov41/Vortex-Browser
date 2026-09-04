@@ -7,8 +7,10 @@ import Combine
 final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     static let shared = ThirdPartyCookieBlocker()
 
-    // Keep the iOS 27+ WebKit content-extension path disabled. The cookie
-    // pruning fallback below remains available when this setting is enabled.
+    // Keep the iOS 27+ WebKit content-extension path disabled because that SDK
+    // currently crashes in the native rule-list path. There is deliberately no
+    // shared-cookie-store pruning fallback: it cannot distinguish retained
+    // first-party sessions from third-party cookies safely.
     private static var nativeRuleListsSupported: Bool {
         ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27
     }
@@ -25,25 +27,22 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
         }
     }
 
+    @Published private(set) var isSupported: Bool
+
     private var registeredWebViews: NSHashTable<WKWebView> = NSHashTable.weakObjects()
-    private var webViewHosts: [ObjectIdentifier: String] = [:]
     private let contentRuleListStore: WKContentRuleListStore?
     private let ruleListIdentifier = "thirdPartyCookieBlocker"
     private var ruleList: WKContentRuleList?
-    private var supportsRuleList: Bool = true
-    private static let protectedWebAISessionHosts: Set<String> = [
-        "chatgpt.com",
-        "openai.com",
-        "google.com"
-    ]
 
     override init() {
         self.contentRuleListStore = Self.nativeRuleListsSupported
             ? WKContentRuleListStore.default()
             : nil
+        self.isSupported = Self.nativeRuleListsSupported
         super.init()
-        supportsRuleList = Self.nativeRuleListsSupported
-        if isEnabled {
+        if !isSupported {
+            isEnabled = false
+        } else if isEnabled {
             enableBlocking()
         }
     }
@@ -55,57 +54,24 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
         }
     }
 
-    func updateHost(for webView: WKWebView, url: URL?) {
-        let id = ObjectIdentifier(webView)
-        if let host = url?.host?.lowercased() {
-            webViewHosts[id] = host
-        } else {
-            webViewHosts[id] = nil
-        }
-
-        guard shouldUseFallback,
-              !SitePrivacyStore.shared.isCookieBlockingAllowed(for: url) else { return }
-        let store = webView.configuration.websiteDataStore.httpCookieStore
-        pruneCookies(in: store)
-    }
-
     func setProtectionEnabled(_ enabled: Bool, for webView: WKWebView) {
-        guard isEnabled else { return }
-        if enabled {
+        if enabled && isEnabled && isSupported {
             applyRuleListIfAvailable(to: webView)
-            if shouldUseFallback {
-                pruneCookies(in: webView.configuration.websiteDataStore.httpCookieStore)
-            }
         } else if let ruleList {
             webView.configuration.userContentController.remove(ruleList)
         }
     }
 
-    private var shouldUseFallback: Bool {
-        isEnabled && !supportsRuleList
-    }
-
     private func enableBlocking() {
-        guard Self.nativeRuleListsSupported else {
-            supportsRuleList = false
-            pruneAllStores()
+        guard isSupported else {
+            isEnabled = false
             return
         }
 
-        if supportsRuleList {
-            if let ruleList {
-                applyRuleListToAll(ruleList)
-            } else {
-                Task {
-                    await loadRuleListIfNeeded()
-                    if ruleList == nil {
-                        supportsRuleList = false
-                        pruneAllStores()
-                    }
-                }
-            }
+        if let ruleList {
+            applyRuleListToAll(ruleList)
         } else {
-            pruneAllStores()
+            Task { await loadRuleListIfNeeded() }
         }
     }
 
@@ -116,8 +82,7 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     }
 
     private func applyRuleListIfAvailable(to webView: WKWebView) {
-        guard isEnabled else { return }
-        guard Self.nativeRuleListsSupported else { return }
+        guard isEnabled, isSupported else { return }
         guard let ruleList else {
             Task { await loadRuleListIfNeeded() }
             return
@@ -138,7 +103,7 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     }
 
     private func loadRuleListIfNeeded() async {
-        if ruleList != nil || !supportsRuleList || !Self.nativeRuleListsSupported { return }
+        if ruleList != nil || !isSupported { return }
         do {
             if let cached = try? await lookupContentRuleListAsync(forIdentifier: ruleListIdentifier) {
                 ruleList = cached
@@ -156,11 +121,20 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
             if let ruleList, isEnabled {
                 applyRuleListToAll(ruleList)
             } else if compiled == nil {
-                supportsRuleList = false
+                markUnsupported()
             }
         } catch {
-            supportsRuleList = false
+            markUnsupported()
         }
+    }
+
+    private func markUnsupported() {
+        isSupported = false
+        isEnabled = false
+        if let ruleList {
+            removeRuleListFromAll(ruleList)
+        }
+        ruleList = nil
     }
 
     private func thirdPartyCookieRuleJSON() -> String {
@@ -177,57 +151,6 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
         ]
         let data = (try? JSONSerialization.data(withJSONObject: rules)) ?? Data()
         return String(data: data, encoding: .utf8) ?? "[]"
-    }
-
-    private func pruneAllStores() {
-        let stores = Set(registeredWebViews.allObjects.map { $0.configuration.websiteDataStore.httpCookieStore })
-        for store in stores {
-            pruneCookies(in: store)
-        }
-    }
-
-    private func pruneCookies(in store: WKHTTPCookieStore) {
-        let allowedHosts = allowedHosts(for: store)
-        guard !allowedHosts.isEmpty else { return }
-        store.getAllCookies { [weak self] cookies in
-            guard let self else { return }
-            for cookie in cookies {
-                let domain = self.normalizedCookieDomain(cookie.domain)
-                if !self.isAllowed(domain: domain, allowedHosts: allowedHosts) {
-                    store.delete(cookie)
-                }
-            }
-        }
-    }
-
-    private func allowedHosts(for store: WKHTTPCookieStore) -> Set<String> {
-        var hosts = Self.protectedWebAISessionHosts
-        for webView in registeredWebViews.allObjects {
-            guard webView.configuration.websiteDataStore.httpCookieStore === store else { continue }
-            let id = ObjectIdentifier(webView)
-            if let host = webViewHosts[id], !host.isEmpty {
-                hosts.insert(host)
-            }
-        }
-        return hosts
-    }
-
-    private func normalizedCookieDomain(_ domain: String) -> String {
-        let trimmed = domain.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        if trimmed.hasPrefix(".") {
-            return String(trimmed.dropFirst())
-        }
-        return trimmed
-    }
-
-    private func isAllowed(domain: String, allowedHosts: Set<String>) -> Bool {
-        guard !domain.isEmpty else { return false }
-        for host in allowedHosts {
-            if host == domain { return true }
-            if host.hasSuffix("." + domain) { return true }
-            if domain.hasSuffix("." + host) { return true }
-        }
-        return false
     }
 
     private func lookupContentRuleListAsync(forIdentifier identifier: String) async throws -> WKContentRuleList? {

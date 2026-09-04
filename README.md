@@ -16,7 +16,6 @@ The project includes:
 
 - `Browser/` — main iOS app
 - `BrowserShare/` — share extension
-- `scripts/start-fm-pcc-gateway.command` — optional local Apple Foundation Models gateway
 
 Swift package dependencies are pinned in `Browser.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
 
@@ -34,30 +33,19 @@ Vortex has several independent AI backends. You choose one from **AI panel > Mod
 | Model in Vortex | Where it runs | Extra setup |
 | --- | --- | --- |
 | Local | Apple Foundation Models on the device | Apple Intelligence must be available and enabled |
-| Cloud | The provided Apple Intelligence Shortcut | [Install RSS Reader Cloud Summary](https://www.icloud.com/shortcuts/ffd100c18df34543a2c8ca25c321f6c6) |
-| Apple PCC Gateway | The user's own Mac gateway | TestFlight requires iOS 27 or later |
+| Cloud | Apple Private Cloud Compute directly on iOS 27; the provided Apple Intelligence Shortcut on iOS 26 | On iOS 26, [install RSS Reader Cloud Summary](https://www.icloud.com/shortcuts/ffd100c18df34543a2c8ca25c321f6c6) |
 | MLX | A compatible model downloaded to the device | Configure an MLX model in Vortex |
 | ChatGPT (OpenAI) / Gemini | The provider's website inside Vortex | Sign in inside Vortex |
 
 ### TestFlight on iOS 26 and iOS 27
 
-- **iOS 26:** Apple PCC Gateway is disabled. If it was selected in an earlier build, Vortex switches to **Local**. Local, Cloud, MLX, ChatGPT and Gemini remain available.
-- **iOS 27 or later:** Apple PCC Gateway can be selected and configured. Vortex does not include a developer gateway address or token. Each tester must run and secure their own gateway.
-- **Cloud is separate from Apple PCC Gateway.** Cloud runs the Shortcut named in Vortex. The user decides which model that Shortcut uses.
+- **iOS 26:** Cloud runs the Shortcut named in Vortex. The user decides which model that Shortcut uses.
+- **iOS 27 or later:** Cloud calls Apple's `PrivateCloudComputeLanguageModel` directly. No Mac gateway, host, port, or bearer token is used.
+- A saved selection from the retired Apple PCC Gateway is migrated to **Cloud**.
 
 ChatGPT and Gemini use their normal websites, not an OpenAI or Google API key. Vortex can send your question with selected text or extracted page context, then attempts to bring the provider's response back into the AI panel.
 
 See [Using AI models in Vortex](docs/AI_MODELS.md) for the complete setup and privacy details for every backend.
-
-## Local gateway script
-
-The optional gateway script binds to the local network and generates a fresh bearer token when it starts:
-
-```sh
-./scripts/start-fm-pcc-gateway.command
-```
-
-Keep generated tokens and signing credentials out of source control. Do not expose the gateway to the public internet.
 
 ## License
 

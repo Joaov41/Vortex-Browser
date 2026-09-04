@@ -56,7 +56,7 @@ struct SitePrivacyShieldButton: View {
                 .disabled(!adBlockService.isEnabled || url?.host == nil)
 
             Toggle("Block third-party cookies", isOn: cookieBlockingBinding)
-                .disabled(!cookieBlocker.isEnabled || url?.host == nil)
+                .disabled(!cookieBlocker.isSupported || !cookieBlocker.isEnabled || url?.host == nil)
 
             LabeledContent("Blocked this session", value: "\(adBlockService.blockedCount)")
                 .font(.subheadline)

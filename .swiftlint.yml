@@ -1,0 +1,17 @@
+included:
+  - Browser
+  - BrowserShare
+  - BrowserTests
+
+baseline: .swiftlint-baseline.json
+
+excluded:
+  - .build
+  - .derived
+  - build
+  - .codex-checkpoints
+  - remotion-browser-film
+  - docs
+  - video
+
+reporter: xcode

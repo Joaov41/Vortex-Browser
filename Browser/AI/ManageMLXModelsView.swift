@@ -109,7 +109,7 @@ struct ManageMLXModelsView: View {
             .onAppear {
                 reloadModels()
             }
-            .onChange(of: selectedModelID) { _ in
+            .onChange(of: selectedModelID) { _, _ in
                 reloadModels()
             }
             .fileImporter(

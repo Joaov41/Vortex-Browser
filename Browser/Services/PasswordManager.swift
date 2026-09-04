@@ -13,6 +13,31 @@ enum PasswordBridgePolicy {
             .trimmingCharacters(in: CharacterSet(charactersIn: "."))
         return normalized.isEmpty ? nil : normalized
     }
+
+    static func shouldOfferSave(
+        existingUsername: String?,
+        existingPassword: String?,
+        submittedUsername: String,
+        submittedPassword: String
+    ) -> Bool {
+        existingUsername != submittedUsername || existingPassword != submittedPassword
+    }
+
+    static func allowsMessage(
+        securityOriginScheme: String?,
+        securityOriginHost: String?,
+        webViewURL: URL?,
+        isMainFrame: Bool
+    ) -> Bool {
+        guard isMainFrame,
+              securityOriginScheme?.lowercased() == "https",
+              webViewURL?.scheme?.lowercased() == "https",
+              let originHost = normalizedCredentialHost(securityOriginHost),
+              let pageHost = normalizedCredentialHost(webViewURL?.host) else {
+            return false
+        }
+        return originHost == pageHost
+    }
 }
 
 @MainActor
@@ -57,7 +82,7 @@ class PasswordManager: NSObject, ObservableObject {
         let detectLoginScript = WKUserScript(
             source: loginDetectionJavaScript(),
             injectionTime: .atDocumentEnd,
-            forMainFrameOnly: false
+            forMainFrameOnly: true
         )
         webView.configuration.userContentController.addUserScript(detectLoginScript)
         
@@ -70,23 +95,27 @@ class PasswordManager: NSObject, ObservableObject {
         // Authenticate user first
         guard await authenticateUser() else { return false }
         
-        let passwordData = password.data(using: .utf8)!
+        let passwordData = Data(password.utf8)
         
-        // Create keychain query
-        let query: [String: Any] = [
+        let matchQuery: [String: Any] = [
             kSecClass as String: kSecClassInternetPassword,
             kSecAttrServer as String: website,
-            kSecAttrAccount as String: username,
-            kSecValueData as String: passwordData,
-            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+            kSecAttrAccount as String: username
         ]
-        
-        // Delete existing item if it exists
-        SecItemDelete(query as CFDictionary)
-        
-        // Add new item
-        let status = SecItemAdd(query as CFDictionary, nil)
-        return status == errSecSuccess
+
+        let updateStatus = SecItemUpdate(
+            matchQuery as CFDictionary,
+            [kSecValueData as String: passwordData] as CFDictionary
+        )
+        if updateStatus == errSecSuccess {
+            return true
+        }
+        guard updateStatus == errSecItemNotFound else { return false }
+
+        var addQuery = matchQuery
+        addQuery[kSecValueData as String] = passwordData
+        addQuery[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+        return SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess
     }
     
     func loadCredentials(for website: String) async -> SavedCredential? {
@@ -162,6 +191,22 @@ class PasswordManager: NSObject, ObservableObject {
         return """
         (function() {
             'use strict';
+
+            const configuredForms = new WeakSet();
+
+            window.autofillCredentials = function(username, password) {
+                const form = Array.from(document.querySelectorAll('form')).find(candidate =>
+                    candidate.querySelector('input[type="password"]') &&
+                    candidate.querySelector('input[type="text"], input[type="email"]')
+                );
+                if (!form) { return; }
+                const usernameInput = form.querySelector('input[type="text"], input[type="email"]');
+                const passwordInput = form.querySelector('input[type="password"]');
+                usernameInput.value = username;
+                passwordInput.value = password;
+                usernameInput.dispatchEvent(new Event('input', { bubbles: true }));
+                passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
+            };
             
             function detectLoginForm() {
                 const forms = document.querySelectorAll('form');
@@ -171,20 +216,21 @@ class PasswordManager: NSObject, ObservableObject {
                     const usernameInputs = form.querySelectorAll('input[type="text"], input[type="email"]');
                     
                     if (passwordInputs.length > 0 && usernameInputs.length > 0) {
-                        // Found a login form
-                        const passwordInput = passwordInputs[0];
-                        const usernameInput = usernameInputs[0];
+                        if (configuredForms.has(form)) { continue; }
+                        configuredForms.add(form);
                         
                         // Check for saved credentials and autofill
                         if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passwordManager) {
                             window.webkit.messageHandlers.passwordManager.postMessage({
-                                type: 'checkCredentials',
-                                website: window.location.hostname
+                                type: 'checkCredentials'
                             });
                         }
                         
                         // Listen for form submission
                         form.addEventListener('submit', function(e) {
+                            const usernameInput = form.querySelector('input[type="text"], input[type="email"]');
+                            const passwordInput = form.querySelector('input[type="password"]');
+                            if (!usernameInput || !passwordInput) { return; }
                             const username = usernameInput.value;
                             const password = passwordInput.value;
                             
@@ -192,21 +238,12 @@ class PasswordManager: NSObject, ObservableObject {
                                 if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.passwordManager) {
                                     window.webkit.messageHandlers.passwordManager.postMessage({
                                         type: 'loginDetected',
-                                        website: window.location.hostname,
                                         username: username,
                                         password: password
                                     });
                                 }
                             }
                         });
-                        
-                        // Add autofill functionality
-                        window.autofillCredentials = function(username, password) {
-                            usernameInput.value = username;
-                            passwordInput.value = password;
-                            usernameInput.dispatchEvent(new Event('input', { bubbles: true }));
-                            passwordInput.dispatchEvent(new Event('input', { bubbles: true }));
-                        };
                         
                         break; // Only handle first login form
                     }
@@ -260,9 +297,15 @@ class PasswordManager: NSObject, ObservableObject {
 
 // MARK: - WKScriptMessageHandler
 extension PasswordManager: WKScriptMessageHandler {
-    nonisolated func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any],
               let type = body["type"] as? String,
+              PasswordBridgePolicy.allowsMessage(
+                securityOriginScheme: message.frameInfo.securityOrigin.protocol,
+                securityOriginHost: message.frameInfo.securityOrigin.host,
+                webViewURL: message.webView?.url,
+                isMainFrame: message.frameInfo.isMainFrame
+              ),
               let website = PasswordBridgePolicy.normalizedCredentialHost(message.frameInfo.securityOrigin.host) else {
             return
         }
@@ -279,7 +322,12 @@ extension PasswordManager: WKScriptMessageHandler {
                     
                     // Check if credentials already exist
                     let existing = await self.loadCredentials(for: website)
-                    if existing == nil || existing?.username != username {
+                    if PasswordBridgePolicy.shouldOfferSave(
+                        existingUsername: existing?.username,
+                        existingPassword: existing?.password,
+                        submittedUsername: username,
+                        submittedPassword: password
+                    ) {
                         // New credentials or different username, prompt to save
                         let loginForm = LoginForm(website: website, username: username, password: password)
                         self.promptToSaveCredentials(loginForm)
@@ -297,7 +345,7 @@ extension PasswordManager: WKScriptMessageHandler {
                         }
                         return false;
                         """
-                        try? await webView.callAsyncJavaScript(
+                        _ = try? await webView.callAsyncJavaScript(
                             script,
                             arguments: [
                                 "username": creds.username,

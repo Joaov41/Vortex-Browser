@@ -41,13 +41,15 @@ enum WebAIProvider: String, CaseIterable {
     }
 
     func matches(_ url: URL?) -> Bool {
-        guard let host = url?.host?.lowercased() else { return false }
-        return hostMatches.contains(where: { host == $0 || host.hasSuffix(".\($0)") })
+        HostMatchingPolicy.matches(url?.host, any: hostMatches)
     }
 
     func allowsSessionNavigation(_ url: URL?) -> Bool {
-        guard let host = url?.host?.lowercased() else { return false }
-        return sessionHostMatches.contains(where: { host == $0 || host.hasSuffix(".\($0)") })
+        matchesSessionHost(url?.host)
+    }
+
+    func matchesSessionHost(_ host: String?) -> Bool {
+        HostMatchingPolicy.matches(host, any: sessionHostMatches)
     }
 }
 

@@ -17,10 +17,11 @@ class IncognitoMode: ObservableObject {
     
     private func setupIncognitoConfiguration() {
         // Create non-persistent data store for incognito mode
-        incognitoDataStore = WKWebsiteDataStore.nonPersistent()
+        let dataStore = WKWebsiteDataStore.nonPersistent()
+        incognitoDataStore = dataStore
         
         let config = WKWebViewConfiguration()
-        config.websiteDataStore = incognitoDataStore!
+        config.websiteDataStore = dataStore
         
         // Enhanced privacy settings
         config.preferences.javaScriptCanOpenWindowsAutomatically = false
@@ -53,12 +54,12 @@ class IncognitoMode: ObservableObject {
         )
         config.userContentController.addUserScript(privacyScript)
         
+        let webView = WKWebView(frame: .zero, configuration: config)
+
         // Apply ad blocking if enabled
-        if AdBlockService.shared.isEnabled {
-            AdBlockService.shared.configureWebView(WKWebView(frame: .zero, configuration: config))
-        }
-        
-        return WKWebView(frame: .zero, configuration: config)
+        AdBlockService.shared.configureWebView(webView)
+
+        return webView
     }
     
     func clearIncognitoData() {
@@ -93,23 +94,9 @@ class IncognitoMode: ObservableObject {
                 return window; // Return current window instead of opening new
             };
             
-            // 2. Override location setters to prevent redirects to app schemes
-            const originalLocationSetter = Object.getOwnPropertyDescriptor(window, 'location');
-            Object.defineProperty(window, 'location', {
-                get: function() { return originalLocationSetter.get.call(window); },
-                set: function(url) {
-                    if (typeof url === 'string') {
-                        // Block non-http(s) schemes
-                        if (!url.startsWith('http://') && !url.startsWith('https://') && !url.startsWith('/')) {
-                            console.log('Blocked location change to:', url);
-                            return;
-                        }
-                    }
-                    originalLocationSetter.set.call(window, url);
-                }
-            });
-            
-            // 3. Intercept all link clicks
+            // 2. Intercept all link clicks. window.location is non-configurable in
+            // WebKit, so redefining it would throw and prevent the rest of this
+            // privacy script from installing.
             document.addEventListener('click', function(e) {
                 let target = e.target;
                 while (target && target.tagName !== 'A') {
@@ -136,7 +123,7 @@ class IncognitoMode: ObservableObject {
                 }
             }, true); // Use capture phase to intercept before other handlers
             
-            // 4. Override form submissions to prevent external redirects
+            // 3. Override form submissions to prevent external redirects
             const originalSubmit = HTMLFormElement.prototype.submit;
             HTMLFormElement.prototype.submit = function() {
                 const action = this.action;
@@ -147,7 +134,7 @@ class IncognitoMode: ObservableObject {
                 originalSubmit.call(this);
             };
             
-            // 5. Specifically handle Google consent forms
+            // 4. Specifically handle Google consent forms
             if (window.location.hostname.includes('google.com') || window.location.hostname.includes('consent.google')) {
                 console.log('Google domain detected - Extra protection active');
                 
@@ -162,7 +149,7 @@ class IncognitoMode: ObservableObject {
                 }
             }
             
-            // 6. Block geolocation (privacy)
+            // 5. Block geolocation (privacy)
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition = function(s, error) {
                     if (error) error({ code: 1, message: "Denied in incognito" });
@@ -173,7 +160,7 @@ class IncognitoMode: ObservableObject {
                 };
             }
             
-            // 7. Disable battery API
+            // 6. Disable battery API
             if (navigator.getBattery) {
                 navigator.getBattery = undefined;
             }

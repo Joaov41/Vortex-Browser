@@ -64,7 +64,7 @@ class DarkModeService: ObservableObject {
 
         for url in candidates {
             guard let url else { continue }
-            if let source = try? String(contentsOf: url) {
+            if let source = try? String(contentsOf: url, encoding: .utf8) {
                 self.darkReaderJS = source
                 print("DarkReader loaded from: \(url.lastPathComponent)")
                 return

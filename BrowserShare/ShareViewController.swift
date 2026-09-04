@@ -8,7 +8,9 @@ final class ShareViewController: SLComposeServiceViewController {
     static let notificationName = "com.browser.sharedURL"
     private var didStart = false
     private var hasCompleted = false
+    private var hasFinishedExtensionRequest = false
     private var completionTimer: DispatchSourceTimer?
+    private var openFallbackTimer: DispatchSourceTimer?
     private var pendingOpenURL: URL?
 
     override func viewDidAppear(_ animated: Bool) {
@@ -48,43 +50,57 @@ final class ShareViewController: SLComposeServiceViewController {
         }
 
         if provider.canLoadObject(ofClass: URL.self) {
-            provider.loadObject(ofClass: URL.self) { [weak self] object, _ in
-                if let url = object as? URL {
-                    self?.handleSharedContent(url.absoluteString)
+            _ = provider.loadObject(ofClass: URL.self) { [weak self] object, _ in
+                let content = object?.absoluteString
+                DispatchQueue.main.async {
+                    if let content {
+                        self?.handleSharedContent(content)
+                    }
+                    self?.complete()
                 }
-                self?.complete()
             }
             return
         }
 
         if provider.canLoadObject(ofClass: String.self) {
-            provider.loadObject(ofClass: String.self) { [weak self] object, _ in
-                if let text = object as? String {
-                    self?.handleSharedContent(text)
+            _ = provider.loadObject(ofClass: String.self) { [weak self] object, _ in
+                let content = object
+                DispatchQueue.main.async {
+                    if let content {
+                        self?.handleSharedContent(content)
+                    }
+                    self?.complete()
                 }
-                self?.complete()
             }
             return
         }
 
         provider.loadItem(forTypeIdentifier: typeID, options: nil) { [weak self] data, _ in
-            guard let self else { return }
-            var content: String?
-            if let url = data as? URL {
-                content = url.absoluteString
-            } else if let str = data as? String {
-                content = str
-            } else if let attributed = data as? NSAttributedString {
-                content = attributed.string
-            } else if let data = data as? Data, let str = String(data: data, encoding: .utf8) {
-                content = str
+            let content = Self.contentString(from: data)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                if let content {
+                    self.handleSharedContent(content)
+                }
+                self.complete()
             }
-
-            if let content {
-                self.handleSharedContent(content)
-            }
-            self.complete()
         }
+    }
+
+    nonisolated private static func contentString(from item: NSSecureCoding?) -> String? {
+        if let url = item as? URL {
+            return url.absoluteString
+        }
+        if let string = item as? String {
+            return string
+        }
+        if let attributed = item as? NSAttributedString {
+            return attributed.string
+        }
+        if let data = item as? Data {
+            return String(data: data, encoding: .utf8)
+        }
+        return nil
     }
 
     private func selectProvider(from providers: [NSItemProvider]) -> (NSItemProvider, String)? {
@@ -132,8 +148,8 @@ final class ShareViewController: SLComposeServiceViewController {
     }
 
     private func scheduleCompletionTimeout() {
-        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
-        timer.schedule(deadline: .now() + 2.0)
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 12.0)
         timer.setEventHandler { [weak self] in
             self?.complete()
         }
@@ -146,26 +162,38 @@ final class ShareViewController: SLComposeServiceViewController {
         hasCompleted = true
         completionTimer?.cancel()
         completionTimer = nil
-        let urlToOpen = pendingOpenURL
-        extensionContext?.completeRequest(returningItems: nil) { [weak self] _ in
-            guard let self, let url = urlToOpen else { return }
+        guard let context = extensionContext else { return }
+        guard let urlToOpen = pendingOpenURL else {
+            finishExtensionRequest()
+            return
+        }
+
+        // Ask the extension host to open the app before ending the request. The
+        // shared payload remains in the app group if the host declines, so the
+        // app can consume it on its next ordinary launch.
+        scheduleOpenFallback()
+        context.open(urlToOpen) { [weak self] _ in
             DispatchQueue.main.async {
-                self.openURL(url)
+                self?.finishExtensionRequest()
             }
         }
     }
 
-    private func openURL(_ url: URL) {
-        let selector = NSSelectorFromString("openURL:options:completionHandler:")
-        var responder: UIResponder? = self
-        while let current = responder {
-            if let application = current as? UIApplication, application.responds(to: selector) {
-                typealias OpenURLType = @convention(c) (AnyObject, Selector, URL, [UIApplication.OpenExternalURLOptionsKey: Any], ((Bool) -> Void)?) -> Void
-                let openURL = unsafeBitCast(application.method(for: selector), to: OpenURLType.self)
-                openURL(application, selector, url, [:], nil)
-                return
-            }
-            responder = current.next
+    private func scheduleOpenFallback() {
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 2.0)
+        timer.setEventHandler { [weak self] in
+            self?.finishExtensionRequest()
         }
+        openFallbackTimer = timer
+        timer.resume()
+    }
+
+    private func finishExtensionRequest() {
+        guard !hasFinishedExtensionRequest else { return }
+        hasFinishedExtensionRequest = true
+        openFallbackTimer?.cancel()
+        openFallbackTimer = nil
+        extensionContext?.completeRequest(returningItems: nil)
     }
 }

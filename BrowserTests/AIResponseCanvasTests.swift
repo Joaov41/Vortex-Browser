@@ -2,6 +2,8 @@ import XCTest
 import WebKit
 @testable import Browser
 
+private struct TimeoutProbeError: Error {}
+
 final class AIResponseCanvasTests: XCTestCase {
     func testAIPanelIncidentalDismissalIsBlockedOnlyWhileProcessing() {
         XCTAssertTrue(
@@ -422,7 +424,6 @@ final class AIResponseCanvasTests: XCTestCase {
 
         XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .localApple), 18_750)
         XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .mlxLocal), 8_000)
-        XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .applePCCGateway), 80_000)
         XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .webChatGPT), 76_000)
         XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .webGemini), 76_000)
         XCTAssertEqual(RedditSummaryPlanner.characterBudget(for: .cloudShortcuts), 60_000)
@@ -485,7 +486,6 @@ final class AIResponseCanvasTests: XCTestCase {
 
         for backend in [
             AIModelBackend.cloudShortcuts,
-            .applePCCGateway,
             .webChatGPT,
             .webGemini
         ] {
@@ -508,6 +508,18 @@ final class AIResponseCanvasTests: XCTestCase {
                 backend: .mlxLocal
             )
         )
+    }
+
+    func testLegacyPCCGatewaySelectionMigratesToSupportedCloudBackend() {
+        XCTAssertEqual(
+            AIBackendPersistence.restoredBackend(rawValue: "applePCCGateway"),
+            .cloudShortcuts
+        )
+        XCTAssertEqual(
+            AIBackendPersistence.restoredBackend(rawValue: AIModelBackend.localApple.rawValue),
+            .localApple
+        )
+        XCTAssertNil(AIBackendPersistence.restoredBackend(rawValue: "unknown-backend"))
     }
 
     func testRedditWebCompactionSamplesFirstMiddleAndFinalComments() {
@@ -568,6 +580,58 @@ final class AIResponseCanvasTests: XCTestCase {
         )
         XCTAssertNil(PasswordBridgePolicy.normalizedCredentialHost(nil))
         XCTAssertNil(PasswordBridgePolicy.normalizedCredentialHost(" ... "))
+
+        XCTAssertTrue(
+            PasswordBridgePolicy.allowsMessage(
+                securityOriginScheme: "https",
+                securityOriginHost: "login.example.com",
+                webViewURL: URL(string: "https://login.example.com/account"),
+                isMainFrame: true
+            )
+        )
+        XCTAssertFalse(
+            PasswordBridgePolicy.allowsMessage(
+                securityOriginScheme: "https",
+                securityOriginHost: "login.example.com",
+                webViewURL: URL(string: "https://evil.example/"),
+                isMainFrame: true
+            )
+        )
+        XCTAssertFalse(
+            PasswordBridgePolicy.allowsMessage(
+                securityOriginScheme: "https",
+                securityOriginHost: "login.example.com",
+                webViewURL: URL(string: "https://login.example.com/account"),
+                isMainFrame: false
+            )
+        )
+        XCTAssertFalse(
+            PasswordBridgePolicy.allowsMessage(
+                securityOriginScheme: "http",
+                securityOriginHost: "login.example.com",
+                webViewURL: URL(string: "http://login.example.com/account"),
+                isMainFrame: true
+            )
+        )
+    }
+
+    func testPasswordBridgePromptsForChangedPassword() {
+        XCTAssertFalse(
+            PasswordBridgePolicy.shouldOfferSave(
+                existingUsername: "person@example.com",
+                existingPassword: "old-secret",
+                submittedUsername: "person@example.com",
+                submittedPassword: "old-secret"
+            )
+        )
+        XCTAssertTrue(
+            PasswordBridgePolicy.shouldOfferSave(
+                existingUsername: "person@example.com",
+                existingPassword: "old-secret",
+                submittedUsername: "person@example.com",
+                submittedPassword: "new-secret"
+            )
+        )
     }
 
     func testWebAIBridgeAcceptsOnlyProviderMainFrames() {
@@ -623,26 +687,140 @@ final class AIResponseCanvasTests: XCTestCase {
         )
     }
 
+    func testTrustedHostMatchingRejectsLookalikes() {
+        XCTAssertTrue(HostMatchingPolicy.matches("login.microsoftonline.com", any: ["microsoftonline.com"]))
+        XCTAssertTrue(HostMatchingPolicy.matches(".auth.openai.com", any: ["openai.com"]))
+        XCTAssertFalse(HostMatchingPolicy.matches("microsoftonline.com.evil.example", any: ["microsoftonline.com"]))
+        XCTAssertFalse(HostMatchingPolicy.matches("notopenai.com", any: ["openai.com"]))
+        XCTAssertFalse(WebAIProvider.chatgpt.matchesSessionHost("chatgpt.com.evil.example"))
+    }
+
     func testIncognitoTabsNeverRequestRemoteFavicons() {
         let pageURL = URL(string: "https://example.com/private")
         XCTAssertNil(
-            BrowserFaviconPolicy.remoteFaviconURL(for: pageURL, isIncognito: true)
+            BrowserFaviconPolicy.sameOriginFaviconURL(for: pageURL, isIncognito: true)
         )
 
-        guard let faviconURL = BrowserFaviconPolicy.remoteFaviconURL(
+        guard let faviconURL = BrowserFaviconPolicy.sameOriginFaviconURL(
             for: pageURL,
             isIncognito: false
         ) else {
             return XCTFail("Expected a favicon URL for a normal tab")
         }
-        XCTAssertEqual(faviconURL.host, "www.google.com")
-        XCTAssertEqual(
-            URLComponents(url: faviconURL, resolvingAgainstBaseURL: false)?
-                .queryItems?
-                .first(where: { $0.name == "domain" })?
-                .value,
-            "example.com"
+        XCTAssertEqual(faviconURL.absoluteString, "https://example.com/favicon.ico")
+        XCTAssertNil(URLComponents(url: faviconURL, resolvingAgainstBaseURL: false)?.query)
+    }
+
+    func testRedditHostMatchingRejectsLookalikeDomains() {
+        XCTAssertTrue(PageContentExtractor.isRedditURL(URL(string: "https://reddit.com/r/swift")!))
+        XCTAssertTrue(PageContentExtractor.isRedditURL(URL(string: "https://www.reddit.com/r/swift")!))
+        XCTAssertTrue(PageContentExtractor.isRedditURL(URL(string: "https://old.reddit.com/r/swift")!))
+        XCTAssertFalse(PageContentExtractor.isRedditURL(URL(string: "https://notreddit.com/r/swift")!))
+        XCTAssertFalse(PageContentExtractor.isRedditURL(URL(string: "https://reddit.com.evil.example/r/swift")!))
+    }
+
+    func testAdBlockRuntimePolicyHonorsGlobalAndPerSiteControls() {
+        XCTAssertTrue(AdBlockRuntimePolicy.isProtectionActive(globalEnabled: true, sitePaused: false))
+        XCTAssertFalse(AdBlockRuntimePolicy.isProtectionActive(globalEnabled: false, sitePaused: false))
+        XCTAssertFalse(AdBlockRuntimePolicy.isProtectionActive(globalEnabled: true, sitePaused: true))
+    }
+
+    func testAdBlockContentRulesKeepHostAndPathBoundaries() throws {
+        let endpoint = try XCTUnwrap(
+            AdBlockContentRulePolicy.target(from: "reddit.com/api/v2/ad")
         )
+        XCTAssertEqual(endpoint.host, "reddit.com")
+        XCTAssertEqual(endpoint.path, "/api/v2/ad")
+        let endpointFilter = AdBlockContentRulePolicy.urlFilter(for: endpoint)
+        XCTAssertNotNil(
+            "https://www.reddit.com/api/v2/ad?slot=1".range(
+                of: endpointFilter,
+                options: .regularExpression
+            )
+        )
+        XCTAssertNil(
+            "https://www.reddit.com/r/swift".range(of: endpointFilter, options: .regularExpression)
+        )
+        XCTAssertNil(
+            "https://reddit.com.evil.example/api/v2/ad".range(
+                of: endpointFilter,
+                options: .regularExpression
+            )
+        )
+
+        let host = try XCTUnwrap(AdBlockContentRulePolicy.target(from: "doubleclick.net"))
+        let hostFilter = AdBlockContentRulePolicy.urlFilter(for: host)
+        XCTAssertNotNil(
+            "https://ads.doubleclick.net/banner.js".range(of: hostFilter, options: .regularExpression)
+        )
+        XCTAssertNil(
+            "https://doubleclick.net.evil.example/banner.js".range(of: hostFilter, options: .regularExpression)
+        )
+    }
+
+    func testCloudShortcutCallbackRequiresMatchingRequestID() throws {
+        let requestID = UUID()
+        let callback = try XCTUnwrap(
+            CloudShortcutCallbackPolicy.callbackURL(path: "success", requestID: requestID)
+        )
+        var components = try XCTUnwrap(URLComponents(url: callback, resolvingAgainstBaseURL: false))
+        components.queryItems = (components.queryItems ?? []) + [
+            URLQueryItem(name: "result", value: "  secure response  ")
+        ]
+        let resultURL = try XCTUnwrap(components.url)
+
+        XCTAssertEqual(
+            CloudShortcutCallbackPolicy.outcome(from: resultURL, expectedRequestID: requestID),
+            .success("secure response")
+        )
+        XCTAssertNil(
+            CloudShortcutCallbackPolicy.outcome(from: resultURL, expectedRequestID: UUID())
+        )
+        XCTAssertNil(
+            CloudShortcutCallbackPolicy.outcome(
+                from: URL(string: "webmebrowser://shortcut/success?requestID=not-a-match&result=stolen")!,
+                expectedRequestID: requestID
+            )
+        )
+
+        let prompt = "Summarize A&B? #private"
+        let runURL = try XCTUnwrap(
+            CloudShortcutCallbackPolicy.runURL(
+                shortcutName: "RSS Reader Cloud Summary",
+                text: prompt,
+                requestID: requestID
+            )
+        )
+        let runComponents = try XCTUnwrap(URLComponents(url: runURL, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(runURL.scheme, "shortcuts")
+        XCTAssertEqual(runURL.host, "x-callback-url")
+        XCTAssertEqual(runComponents.queryItems?.first(where: { $0.name == "text" })?.value, prompt)
+        XCTAssertTrue(
+            runComponents.queryItems?.first(where: { $0.name == "x-success" })?.value?
+                .contains(requestID.uuidString) == true
+        )
+    }
+
+    func testAsyncTimeoutDoesNotWaitForAnUncooperativeOperation() async {
+        let startedAt = Date()
+        do {
+            let _: String = try await AsyncTimeout.run(
+                seconds: 0.03,
+                timeoutError: { TimeoutProbeError() },
+                operation: {
+                    await withCheckedContinuation { continuation in
+                        DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) {
+                            continuation.resume(returning: "late")
+                        }
+                    }
+                }
+            )
+            XCTFail("Expected the timeout to win")
+        } catch is TimeoutProbeError {
+            XCTAssertLessThan(Date().timeIntervalSince(startedAt), 0.25)
+        } catch {
+            XCTFail("Unexpected error: \(error)")
+        }
     }
 
     func testMoreCommentsRetryCountIsBounded() {

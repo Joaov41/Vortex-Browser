@@ -82,8 +82,6 @@ enum RedditSummaryPlanner {
             return appleLocalRedditSourceCharacterBudget
         case .mlxLocal:
             return 8_000
-        case .applePCCGateway:
-            return 80_000
         case .webChatGPT, .webGemini:
             return 76_000
         case .cloudShortcuts:
@@ -101,8 +99,6 @@ enum RedditSummaryPlanner {
             return appleLocalRedditSourceCharacterBudget
         case .mlxLocal:
             return 8_000
-        case .applePCCGateway:
-            return 80_000
         case .webChatGPT, .webGemini:
             return 76_000
         case .cloudShortcuts:

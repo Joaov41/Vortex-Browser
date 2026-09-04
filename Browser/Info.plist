@@ -41,7 +41,7 @@
 		<true/>
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>Browser connects to your Mac on the local network for Apple PCC Gateway summaries.</string>
+	<string>Vortex can connect to local websites you choose to open.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
