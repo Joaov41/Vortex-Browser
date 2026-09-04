@@ -58,6 +58,16 @@ struct SitePrivacyShieldButton: View {
             Toggle("Block third-party cookies", isOn: cookieBlockingBinding)
                 .disabled(!cookieBlocker.isSupported || !cookieBlocker.isEnabled || url?.host == nil)
 
+            if !cookieBlocker.isSupported {
+                Text(cookieBlocker.unavailabilityReason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if !cookieBlocker.isEnabled {
+                Text("Turn on Block Third-Party Cookies in the main settings menu first.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             LabeledContent("Blocked this session", value: "\(adBlockService.blockedCount)")
                 .font(.subheadline)
 
@@ -85,7 +95,9 @@ struct SitePrivacyShieldButton: View {
 
     private var cookieBlockingBinding: Binding<Bool> {
         Binding(
-            get: { !privacyStore.isCookieBlockingAllowed(for: url) },
+            get: {
+                cookieBlocker.isSupported && cookieBlocker.isEnabled && !privacyStore.isCookieBlockingAllowed(for: url)
+            },
             set: { enabled in
                 privacyStore.setCookieBlockingAllowed(!enabled, for: url, webView: webView)
             }

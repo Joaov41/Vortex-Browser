@@ -7,12 +7,12 @@ import Combine
 final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     static let shared = ThirdPartyCookieBlocker()
 
-    // Keep the iOS 27+ WebKit content-extension path disabled because that SDK
-    // currently crashes in the native rule-list path. There is deliberately no
+    // Use only verified OS/SDK combinations after the historical iOS 27 crash.
+    // This does not enable the separate, larger ad-block rule-list path. There is no
     // shared-cookie-store pruning fallback: it cannot distinguish retained
     // first-party sessions from third-party cookies safely.
     private static var nativeRuleListsSupported: Bool {
-        ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27
+        NativeCookieRuleCompatibility.isSupported
     }
 
     @AppStorage("blockThirdPartyCookies") var isEnabled: Bool = false {
@@ -29,10 +29,21 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
 
     @Published private(set) var isSupported: Bool
 
+    var unavailabilityReason: String {
+        if !Self.nativeRuleListsSupported {
+            return "Disabled pending compatibility verification after an earlier iOS 27 WebKit crash. "
+                + "Vortex does not delete saved login cookies as a workaround."
+        }
+        return "WebKit could not load the cookie-blocking rules. Saved login cookies have not been deleted."
+    }
+
     private var registeredWebViews: NSHashTable<WKWebView> = NSHashTable.weakObjects()
     private let contentRuleListStore: WKContentRuleListStore?
     private let ruleListIdentifier = "thirdPartyCookieBlocker"
     private var ruleList: WKContentRuleList?
+    private var isLoadingRuleList = false
+    private var exemptWebViews: NSHashTable<WKWebView> = NSHashTable.weakObjects()
+    private var protectedWebViews: NSHashTable<WKWebView> = NSHashTable.weakObjects()
 
     override init() {
         self.contentRuleListStore = Self.nativeRuleListsSupported
@@ -48,6 +59,7 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     }
 
     func register(webView: WKWebView) {
+        guard !registeredWebViews.contains(webView) else { return }
         registeredWebViews.add(webView)
         if isEnabled {
             applyRuleListIfAvailable(to: webView)
@@ -55,10 +67,16 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     }
 
     func setProtectionEnabled(_ enabled: Bool, for webView: WKWebView) {
+        if enabled {
+            exemptWebViews.remove(webView)
+        } else {
+            exemptWebViews.add(webView)
+        }
         if enabled && isEnabled && isSupported {
             applyRuleListIfAvailable(to: webView)
         } else if let ruleList {
             webView.configuration.userContentController.remove(ruleList)
+            protectedWebViews.remove(webView)
         }
     }
 
@@ -82,17 +100,19 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     }
 
     private func applyRuleListIfAvailable(to webView: WKWebView) {
-        guard isEnabled, isSupported else { return }
+        guard isEnabled, isSupported, !exemptWebViews.contains(webView) else { return }
         guard let ruleList else {
             Task { await loadRuleListIfNeeded() }
             return
         }
+        guard !protectedWebViews.contains(webView) else { return }
         webView.configuration.userContentController.add(ruleList)
+        protectedWebViews.add(webView)
     }
 
     private func applyRuleListToAll(_ ruleList: WKContentRuleList) {
         for webView in registeredWebViews.allObjects {
-            webView.configuration.userContentController.add(ruleList)
+            applyRuleListIfAvailable(to: webView)
         }
     }
 
@@ -100,10 +120,13 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
         for webView in registeredWebViews.allObjects {
             webView.configuration.userContentController.remove(ruleList)
         }
+        protectedWebViews.removeAllObjects()
     }
 
     private func loadRuleListIfNeeded() async {
-        if ruleList != nil || !isSupported { return }
+        if ruleList != nil || !isSupported || isLoadingRuleList { return }
+        isLoadingRuleList = true
+        defer { isLoadingRuleList = false }
         do {
             if let cached = try? await lookupContentRuleListAsync(forIdentifier: ruleListIdentifier) {
                 ruleList = cached

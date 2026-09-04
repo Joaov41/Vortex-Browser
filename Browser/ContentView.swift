@@ -5584,7 +5584,7 @@ struct ContentView: View {
                 .disabled(!thirdPartyCookieBlocker.isSupported)
 
                 if !thirdPartyCookieBlocker.isSupported {
-                    Text("Unavailable on this iOS version because WebKit cannot enforce it safely without deleting valid site sessions.")
+                    Text(thirdPartyCookieBlocker.unavailabilityReason)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -7054,6 +7054,10 @@ struct ContentView: View {
                             return
                         }
                     }
+                }
+                if navigationAction.targetFrame?.isMainFrame == true {
+                    let enabled = !SitePrivacyStore.shared.isCookieBlockingAllowed(for: navigationAction.request.url)
+                    ThirdPartyCookieBlocker.shared.setProtectionEnabled(enabled, for: webView)
                 }
                 decisionHandler(.allow)
             }
