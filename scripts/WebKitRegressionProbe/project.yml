@@ -1,0 +1,32 @@
+name: VortexWebKitProbe
+options:
+  deploymentTarget:
+    iOS: "26.0"
+targets:
+  VortexWebKitProbe:
+    type: application
+    platform: iOS
+    sources:
+      - Probe.swift
+      - ../../Browser/Services/ThirdPartyCookieBlocker.swift
+      - ../../Browser/Utilities/NativeCookieRuleCompatibility.swift
+    info:
+      path: ../../.codex-checkpoints/WebKitProbeInfo.plist
+      properties:
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoadsInWebContent: true
+          NSAllowsLocalNetworking: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.web.me.VortexWebKitProbe
+        DEVELOPMENT_TEAM: HNG8WV554B
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
