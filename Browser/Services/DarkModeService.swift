@@ -19,21 +19,21 @@ class DarkModeService: ObservableObject {
     @Published var brightness: Int {
         didSet {
             UserDefaults.standard.set(brightness, forKey: "darkModeBrightness")
-            if isDarkMode { updateAllWebViews() }
+            updateAllWebViews()
         }
     }
 
     @Published var contrast: Int {
         didSet {
             UserDefaults.standard.set(contrast, forKey: "darkModeContrast")
-            if isDarkMode { updateAllWebViews() }
+            updateAllWebViews()
         }
     }
 
     @Published var sepia: Int {
         didSet {
             UserDefaults.standard.set(sepia, forKey: "darkModeSepia")
-            if isDarkMode { updateAllWebViews() }
+            updateAllWebViews()
         }
     }
 
@@ -41,6 +41,8 @@ class DarkModeService: ObservableObject {
     private var overriddenWebViews: WeakSet<WKWebView> = WeakSet()  // WebViews with per-tab overrides
     private var darkReaderJS: String?
     private var scriptLoaded: Bool = false
+    private var effectiveStates = NSMapTable<WKWebView, NSNumber>.weakToStrongObjects()
+    private var documentScripts: [String: String] = [:]
 
     init() {
         self.isDarkMode = UserDefaults.standard.bool(forKey: "darkModeEnabled")
@@ -74,21 +76,11 @@ class DarkModeService: ObservableObject {
         print("Warning: darkreader.js not found in bundle. Add it to your project.")
     }
 
-    func configureWebView(_ webView: WKWebView) {
+    func configureWebView(_ webView: WKWebView, enabled: Bool? = nil, hasOverride: Bool = false) {
         webViews.insert(webView)
-
-        // Lazy load script on first WebView configuration
+        setOverride(for: webView, hasOverride: hasOverride)
         loadDarkReaderScriptIfNeeded()
-
-        // Inject DarkReader at document start for all frames
-        if let darkReaderJS = darkReaderJS {
-            let userScript = WKUserScript(
-                source: darkReaderJS,
-                injectionTime: .atDocumentStart,
-                forMainFrameOnly: false
-            )
-            webView.configuration.userContentController.addUserScript(userScript)
-        }
+        updateDocumentScript(in: webView, enabled: enabled ?? isDarkMode)
     }
 
     func applyDarkMode(to webView: WKWebView) {
@@ -103,9 +95,9 @@ class DarkModeService: ObservableObject {
     func setOverride(for webView: WKWebView, hasOverride: Bool) {
         if hasOverride {
             overriddenWebViews.insert(webView)
+        } else {
+            overriddenWebViews.remove(webView)
         }
-        // Note: WeakSet doesn't have remove, but that's OK - if user wants to
-        // reset to global behavior they can just follow the global state
     }
 
     /// Enable dark mode for a specific webview (used for per-tab control)
@@ -119,13 +111,13 @@ class DarkModeService: ObservableObject {
     }
 
     private func updateAllWebViews() {
+        documentScripts.removeAll()
         let overridden = Set(overriddenWebViews.allObjects.map { ObjectIdentifier($0) })
         for webView in webViews.allObjects {
-            // Skip webviews that have per-tab overrides
-            if overridden.contains(ObjectIdentifier(webView)) {
-                continue
-            }
-            if isDarkMode {
+            let enabled = overridden.contains(ObjectIdentifier(webView))
+                ? effectiveStates.object(forKey: webView)?.boolValue ?? isDarkMode
+                : isDarkMode
+            if enabled {
                 enableDarkReader(in: webView)
             } else {
                 disableDarkReader(in: webView)
@@ -134,24 +126,13 @@ class DarkModeService: ObservableObject {
     }
 
     private func enableDarkReader(in webView: WKWebView) {
+        updateDocumentScript(in: webView, enabled: true)
         // If we have the bundled script, inject it first then enable
         // Otherwise, load from CDN as fallback
         let enableScript: String
 
         if darkReaderJS != nil {
-            enableScript = """
-            (function() {
-                if (typeof DarkReader === 'undefined') {
-                    console.log('DarkReader not loaded yet');
-                    return;
-                }
-                DarkReader.enable({
-                    brightness: \(brightness),
-                    contrast: \(contrast),
-                    sepia: \(sepia)
-                });
-            })();
-            """
+            enableScript = activationScript(enabled: true)
         } else {
             // Fallback: load DarkReader from CDN
             enableScript = """
@@ -187,19 +168,60 @@ class DarkModeService: ObservableObject {
     }
 
     private func disableDarkReader(in webView: WKWebView) {
-        let disableScript = """
-        (function() {
-            if (typeof DarkReader !== 'undefined') {
-                DarkReader.disable();
-            }
-        })();
-        """
+        updateDocumentScript(in: webView, enabled: false)
+        let disableScript = activationScript(enabled: false)
 
         webView.evaluateJavaScript(disableScript) { _, error in
             if let error = error {
                 print("DarkReader disable error: \(error.localizedDescription)")
             }
         }
+    }
+
+    private func updateDocumentScript(in webView: WKWebView, enabled: Bool) {
+        loadDarkReaderScriptIfNeeded()
+        effectiveStates.setObject(NSNumber(value: enabled), forKey: webView)
+        // DarkReader owns page theming; asking WebKit for native dark styling too
+        // can double-theme sites. Only the empty/loading surface changes here.
+        webView.overrideUserInterfaceStyle = .light
+        let background: UIColor = enabled
+            ? UIColor(red: 24 / 255, green: 26 / 255, blue: 27 / 255, alpha: 1)
+            : .white
+        webView.backgroundColor = background
+        webView.scrollView.backgroundColor = background
+        webView.underPageBackgroundColor = background
+
+        guard let darkReaderJS else { return }
+        let activation = activationScript(enabled: enabled)
+        let source: String
+        if let cached = documentScripts[activation] {
+            source = cached
+        } else {
+            source = darkReaderJS + "\n;\n" + activation
+            documentScripts[activation] = source
+        }
+        ManagedUserScript.install(
+            source: source, identifier: "dark-mode", in: webView.configuration.userContentController
+        )
+    }
+
+    /// Both document-start activation and didFinish recovery use the same
+    /// idempotent operation, avoiding a second expensive DarkReader.enable().
+    func activationScript(enabled: Bool) -> String {
+        """
+        (function() {
+            if (typeof DarkReader === 'undefined') { return; }
+            const enabled = \(enabled ? "true" : "false");
+            const key = '\(enabled)-\(brightness)-\(contrast)-\(sepia)';
+            if (window.__vortexDarkModeKey === key && DarkReader.isEnabled() === enabled) { return; }
+            if (enabled) {
+                DarkReader.enable({brightness: \(brightness), contrast: \(contrast), sepia: \(sepia)});
+            } else if (DarkReader.isEnabled()) {
+                DarkReader.disable();
+            }
+            window.__vortexDarkModeKey = key;
+        })();
+        """
     }
 }
 
@@ -209,6 +231,10 @@ private class WeakSet<T: AnyObject> {
     
     func insert(_ object: T) {
         objects.add(object)
+    }
+
+    func remove(_ object: T) {
+        objects.remove(object)
     }
     
     var allObjects: [T] {

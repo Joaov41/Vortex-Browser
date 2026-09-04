@@ -101,7 +101,11 @@ final class BrowserTab: ObservableObject, Identifiable {
         if !isIncognito {
             PasswordManager.shared.configureWebView(created)
         }
-        DarkModeService.shared.configureWebView(created)
+        DarkModeService.shared.configureWebView(
+            created,
+            enabled: hasDarkModeOverride ? isDarkMode : DarkModeService.shared.isDarkMode,
+            hasOverride: hasDarkModeOverride
+        )
         FontSizeService.shared.configureWebView(created)
 
         canGoBackObserver = created.observe(\.canGoBack, options: [.new]) { [weak self] webView, _ in
