@@ -100,6 +100,7 @@ class AdBlockService: NSObject, ObservableObject {
 
     // Cached JavaScript needs regeneration when cosmetic selectors change
     private var cachedBlockingJavaScriptStorage: String?
+    private var isPreparing = false
 
     private let contentRuleListStore: WKContentRuleListStore?
     private var activeRuleList: WKContentRuleList?
@@ -521,15 +522,17 @@ class AdBlockService: NSObject, ObservableObject {
     /// Call this after the app UI is ready to start downloading filters and compiling rules.
     /// This prevents blocking app startup with network requests and CPU-intensive operations.
     func prepareAsync() {
-        guard !isReady else { return }
+        guard !isReady, !isPreparing else { return }
+        isPreparing = true
         Task {
+            defer { isPreparing = false }
             await downloadMissingFilterLists()
             cachedBlockingJavaScriptStorage = nil
             if Self.nativeContentRuleListsSupported {
                 await loadContentBlockingRules()
                 await compileCustomRules()
             }
-            refreshJavaScriptConfiguration(reloadPages: true)
+            refreshJavaScriptConfiguration(reloadPages: false)
             isReady = true
         }
     }
@@ -983,15 +986,13 @@ class AdBlockService: NSObject, ObservableObject {
         applyNativeRuleState(to: webView, siteProtectionEnabled: true)
         guard isNewRegistration else { return }
 
-        // Install the runtime even while blocking is disabled. Later setting
-        // changes append a small, newer configuration script and reload, so
-        // the same WebView can turn protection on without being recreated.
-        let blockingScript = WKUserScript(
+        // Keep one owned script. Disabled tabs retain a cheap runtime that can
+        // be enabled later without accumulating old configurations.
+        ManagedUserScript.install(
             source: cachedBlockingJavaScript,
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
+            identifier: "ad-block",
+            in: webView.configuration.userContentController
         )
-        webView.configuration.userContentController.addUserScript(blockingScript)
 
         // Add message handler for blocked count
         webView.configuration.userContentController.add(self, name: "adBlockHandler")
@@ -1019,13 +1020,11 @@ class AdBlockService: NSObject, ObservableObject {
 
     private func refreshJavaScriptConfiguration(reloadPages: Bool) {
         let source = cachedBlockingJavaScript
-        let userScript = WKUserScript(
-            source: source,
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: false
-        )
         for webView in registeredWebViews.allObjects {
-            webView.configuration.userContentController.addUserScript(userScript)
+            let changed = ManagedUserScript.install(
+                source: source, identifier: "ad-block", in: webView.configuration.userContentController
+            )
+            guard changed else { continue }
             webView.evaluateJavaScript(source, completionHandler: nil)
             if reloadPages, webView.url != nil {
                 webView.reload()
@@ -1104,7 +1103,7 @@ class AdBlockService: NSObject, ObservableObject {
             }
         }
         // Deduplicate selectors
-        let uniqueSelectors = Array(Set(allSelectors))
+        let uniqueSelectors = Array(Set(allSelectors)).sorted()
         // Generate additional CSS rules from cosmetic selectors for persistent hiding
         let cosmeticCSS = uniqueSelectors
             .filter { !$0.contains(":") || $0.contains("[") } // Skip pseudo-selectors that might fail
@@ -1136,6 +1135,7 @@ class AdBlockService: NSObject, ObservableObject {
                 return;
             }
             const runtime = Object.assign({}, nextConfiguration);
+            runtime.configurationKey = JSON.stringify(nextConfiguration);
             window.__vortexAdBlockRuntime = runtime;
 
             let blockedCount = 0;
@@ -1231,6 +1231,7 @@ class AdBlockService: NSObject, ObservableObject {
             let selectorGroups = [];
             let networkRuleExpressions = [];
             let customRuleExpressions = [];
+            let compiledRulesKey = null;
 
             function protectionEnabled() {
                 if (!runtime.enabled) { return false; }
@@ -1242,6 +1243,10 @@ class AdBlockService: NSObject, ObservableObject {
             }
 
             function rebuildRuntimeRules() {
+                if (!protectionEnabled()) { return; }
+                const rulesKey = JSON.stringify([runtime.adSelectors, runtime.networkRules, runtime.customRules]);
+                if (compiledRulesKey === rulesKey) { return; }
+                compiledRulesKey = rulesKey;
                 const validAdSelectors = [];
                 (runtime.adSelectors || []).forEach(selector => {
                     try {
@@ -1271,6 +1276,7 @@ class AdBlockService: NSObject, ObservableObject {
             }
 
             function shouldBlockURL(url) {
+                if (!protectionEnabled()) { return false; }
                 const parsed = parsedURL(url);
                 if (!protectionEnabled() || !parsed || isWhitelisted(parsed.href)) {
                     return false;
@@ -1344,11 +1350,15 @@ class AdBlockService: NSObject, ObservableObject {
             }
 
             function applyHiddenStyles(element) {
-                element.style.setProperty('display', 'none', 'important');
-                element.style.setProperty('visibility', 'hidden', 'important');
-                element.style.setProperty('height', '0', 'important');
-                element.style.setProperty('overflow', 'hidden', 'important');
-                element.style.setProperty('pointer-events', 'none', 'important');
+                const properties = {
+                    display: 'none', visibility: 'hidden', height: '0px', overflow: 'hidden', 'pointer-events': 'none'
+                };
+                Object.entries(properties).forEach(([name, value]) => {
+                    if (element.style.getPropertyValue(name) !== value
+                        || element.style.getPropertyPriority(name) !== 'important') {
+                        element.style.setProperty(name, value, 'important');
+                    }
+                });
             }
 
             function markAndHide(element) {
@@ -1524,9 +1534,20 @@ class AdBlockService: NSObject, ObservableObject {
             }
 
             // Inject persistent CSS (includes cosmetic filter selectors from EasyList)
+            let cssInsertionPending = false;
             const injectAdBlockCSS = () => {
                 if (!protectionEnabled()) return;
                 if (document.getElementById('adblock-css-rules')) return;
+                if (!document.head) {
+                    if (!cssInsertionPending) {
+                        cssInsertionPending = true;
+                        document.addEventListener('DOMContentLoaded', () => {
+                            cssInsertionPending = false;
+                            injectAdBlockCSS();
+                        }, { once: true });
+                    }
+                    return;
+                }
                 const style = document.createElement('style');
                 style.id = 'adblock-css-rules';
                 style.textContent = `
@@ -1561,13 +1582,7 @@ class AdBlockService: NSObject, ObservableObject {
                         pointer-events: none !important;
                     }
                 `;
-                if (document.head) {
-                    document.head.appendChild(style);
-                } else {
-                    document.addEventListener('DOMContentLoaded', () => {
-                        document.head.appendChild(style);
-                    });
-                }
+                document.head.appendChild(style);
             };
 
             // Combined function
@@ -1577,6 +1592,7 @@ class AdBlockService: NSObject, ObservableObject {
                     restoreHiddenElements();
                     return;
                 }
+                rebuildRuntimeRules();
                 injectAdBlockCSS();
                 addDirtyRoot(document);
                 runPendingScans();
@@ -1611,6 +1627,7 @@ class AdBlockService: NSObject, ObservableObject {
             });
 
             const startObserver = () => {
+                if (!protectionEnabled()) { return; }
                 const target = document.documentElement || document.body;
                 if (target) {
                     observer.observe(target, {
@@ -1630,6 +1647,15 @@ class AdBlockService: NSObject, ObservableObject {
             }
 
             runtime.applyConfiguration = function(configuration) {
+                const key = JSON.stringify(configuration);
+                if (runtime.configurationKey === key) { return; }
+                runtime.configurationKey = key;
+                observer.disconnect();
+                dirtyRoots.clear();
+                if (mutationCoalesceTimer !== null) {
+                    clearTimeout(mutationCoalesceTimer);
+                    mutationCoalesceTimer = null;
+                }
                 runtime.enabled = configuration.enabled;
                 runtime.blockedDomains = configuration.blockedDomains || [];
                 runtime.networkRules = configuration.networkRules || [];
@@ -1641,6 +1667,7 @@ class AdBlockService: NSObject, ObservableObject {
                 restoreHiddenElements();
                 if (protectionEnabled()) {
                     runAdBlocking();
+                    startObserver();
                 }
             };
             // Re-scan when page becomes visible and on bfcache restore.
