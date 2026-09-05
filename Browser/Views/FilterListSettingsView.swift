@@ -38,8 +38,18 @@ struct FilterListSettingsView: View {
                     Text("\(adBlockService.blockedCount)")
                         .foregroundColor(.secondary)
                 }
+                LabeledContent("Indexed domains", value: "\(adBlockService.indexedDomainCount)")
+                LabeledContent("Scoped/pattern rules", value: "\(adBlockService.indexedPatternCount)")
+                if adBlockService.indexedOmittedCount > 0 {
+                    LabeledContent("Unsupported / over budget", value: "\(adBlockService.indexedOmittedCount)")
+                }
+                if let error = adBlockService.filterUpdateError {
+                    Text(error).font(.caption).foregroundStyle(.orange)
+                }
             } header: {
                 Text("Statistics")
+            } footer: {
+                Text("Domain index: up to 100,000 shared entries. Complex rules have separate limits. On iPadOS/iOS 27, JavaScript filtering cannot intercept every image or script load.")
             }
 
             // MARK: - Filter Lists
@@ -196,7 +206,7 @@ struct FilterListRow: View {
 
                 HStack(spacing: 8) {
                     if list.ruleCount > 0 {
-                        Text("\(list.ruleCount) rules")
+                        Text("\(list.ruleCount) cached rules")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }

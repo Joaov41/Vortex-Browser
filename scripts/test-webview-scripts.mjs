@@ -7,7 +7,9 @@ import vm from 'node:vm';
 
 const adPath = 'Browser/Services/AdBlockService.swift';
 const current = readFileSync(adPath, 'utf8');
-const baseline = execFileSync('git', ['show', '72dbb02:' + adPath], {encoding: 'utf8'});
+const baseline = process.env.VORTEX_BASELINE_SOURCE
+    ? readFileSync(process.env.VORTEX_BASELINE_SOURCE, 'utf8')
+    : execFileSync('git', ['show', '72dbb02:' + adPath], {encoding: 'utf8'});
 function blocker(source, enabled) {
     const start = source.indexOf('return """', source.indexOf('private func generateBlockingJavaScript')) + 10;
     const end = source.indexOf('\n        """', start);
@@ -16,7 +18,13 @@ function blocker(source, enabled) {
         enabledJavaScript: String(enabled), domainsJSON: JSON.stringify(['ads.invalid']),
         networkRulesJSON: JSON.stringify(Array.from({length: 5000}, (_, i) => 'tracker' + i + '\\.invalid')),
         selectorsJSON: JSON.stringify(['.fixture-ad', ...Array.from({length: 3000}, (_, i) => '.fixture-ad-' + i)]),
-        customRulesJSON: '[]', cosmeticCSSJSON: JSON.stringify('.fixture-ad')
+        customRulesJSON: '[]', cosmeticCSSJSON: JSON.stringify('.fixture-ad'),
+        indexedRulesJSON: JSON.stringify({domains: 'ads.indexed.invalid', hosts: {
+            'ads.indexed.invalid': [{h:'ads.indexed.invalid',p:'/allowed',i:[],x:[],t:1,n:0,f:0,a:true,c:false,d:false}],
+            'beacon.indexed.invalid': [{h:'beacon.indexed.invalid',p:'',i:[],x:[],t:128,n:0,f:1,a:false,c:false,d:false}]
+        }, generic:[], documentExceptions:[]}),
+        indexedEngineJavaScript: readFileSync('Browser/indexed-adblock.js', 'utf8'),
+        configurationVersionJSON: JSON.stringify('fixture-' + enabled)
     };
     const js = source.slice(start, end).replaceAll('\\\\', '\\').replace(/\\\((\w+)\)/g, (_, name) => {
         assert(name in values, 'Unknown Swift interpolation: ' + name);
@@ -76,7 +84,7 @@ Task { @MainActor in
             let config = WKWebViewConfiguration()
             config.websiteDataStore = .nonPersistent()
             let controller = config.userContentController
-            let measure = "window.probeQueries=0; const query=document.querySelector.bind(document); document.querySelector=function(s){window.probeQueries++;return query(s)}; window.probePeer=true;"
+            let measure = "window.probeQueries=0; const query=document.querySelector.bind(document); document.querySelector=function(s){window.probeQueries++;return query(s)}; window.probePeer=true; window.fetch=()=>Promise.resolve('passed'); navigator.sendBeacon=()=>false; XMLHttpRequest.prototype.open=function(){window.xhrPassed=true}; window.WebSocket=function(){this.passed=true};"
             let peer = WKUserScript(source: measure, injectionTime: .atDocumentStart, forMainFrameOnly: false)
             controller.addUserScript(peer)
             let old = name.hasPrefix("before")
@@ -106,7 +114,7 @@ Task { @MainActor in
             window.orderFront(nil)
             let nav = Navigation()
             webView.navigationDelegate = nav
-            let html = "<html><head><script>window.darkAtFirstInline = typeof DarkReader !== 'undefined' && DarkReader.isEnabled();requestAnimationFrame(()=>window.firstFrameBackground=getComputedStyle(document.documentElement).backgroundColor);</script></head><body>" + String(repeating: "<article><div>Normal text</div><div class='fixture-ad'>Ad</div></article>", count: 100) + "</body></html>"
+            let html = "<html><head><script>window.darkAtFirstInline = typeof DarkReader !== 'undefined' && DarkReader.isEnabled();requestAnimationFrame(()=>window.firstFrameBackground=getComputedStyle(document.documentElement).backgroundColor); window.blockProbe={}; fetch('https://ads.indexed.invalid/ad').then(()=>blockProbe.fetch=false,()=>blockProbe.fetch=true); fetch('https://ads.indexed.invalid/allowed').then(()=>blockProbe.allowed=true,()=>blockProbe.allowed=false); blockProbe.beacon=navigator.sendBeacon('https://beacon.indexed.invalid/ping'); try{new XMLHttpRequest().open('GET','https://ads.indexed.invalid/ad');blockProbe.xhr=false}catch(e){blockProbe.xhr=true} try{new WebSocket('wss://ads.indexed.invalid/socket');blockProbe.socket=false}catch(e){blockProbe.socket=true}</script></head><body>" + String(repeating: "<article><div>Normal text</div><div class='fixture-ad'>Ad</div></article>", count: 100) + "</body></html>"
             let started = Date()
             try await withCheckedThrowingContinuation { continuation in
                 nav.continuation = continuation
@@ -117,6 +125,9 @@ Task { @MainActor in
             print("METRIC \\(name): load_ms=\\(loadMS), \\(values)")
             try check(values["peer"] as? Bool == true, "Other browser script did not run")
             if !old {
+                let blocked = try await webView.evaluateJavaScript("window.blockProbe") as! [String: Bool]
+                try check(blocked["fetch"] == !off && blocked["xhr"] == !off && blocked["socket"] == !off && blocked["beacon"] == !off, "Indexed interception did not match enabled state at first inline script")
+                try check(blocked["allowed"] == true, "Indexed request exception was ignored")
                 try check(values["css"] as? Int == (off ? 0 : 1), "Wrong ad stylesheet count")
                 if off { try check(values["queries"] as? Int == 0, "Disabled blocker compiled selectors") }
                 let queryCount = values["queries"] as! Int
@@ -147,7 +158,7 @@ Task { @MainActor in
             webView.navigationDelegate = nil
             window.orderOut(nil)
         }
-        print("PASS: managed ownership, 50 refreshes, CSS uniqueness, disabled fast path, re-enable, early dark and idempotent fallback")
+        print("PASS: indexed fetch/XHR/WebSocket/beacon interception and exception at first inline script, managed ownership, 50 refreshes, CSS uniqueness, disabled fast path, re-enable, early dark and idempotent fallback")
         exit(0)
     } catch { print("FAIL: \\(error)"); exit(1) }
 }

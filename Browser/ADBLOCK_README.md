@@ -14,9 +14,9 @@ The default configuration includes EasyList, with EasyPrivacy and Fanboy's Annoy
 
 Supported list syntax is intentionally bounded:
 
-- network patterns that can be converted to WebKit/JavaScript regular expressions;
+- an indexed JavaScript network subset: domain/URL patterns, request and document exceptions, resource types, party restrictions, document-domain scopes, and case-sensitive patterns;
 - generic `##` cosmetic selectors;
-- exception and procedural cosmetic rules are skipped.
+- unsupported network modifiers, raw regular-expression filters, cosmetic exceptions and procedural cosmetic rules are skipped. The older iOS 26 native converter is unchanged.
 
 This is not a complete implementation of the Adblock Plus grammar.
 
@@ -24,7 +24,11 @@ This is not a complete implementation of the Adblock Plus grammar.
 
 Call `prepareAsync()` after the initial UI is responsive. Call `configureWebView(_:)` for every new normal or incognito WebView. The service weakly tracks those WebViews so global, per-site, filter-list, and custom-rule changes apply to live tabs.
 
-The JavaScript runtime intercepts `fetch`, `XMLHttpRequest`, and `WebSocket`, performs bounded DOM scans, and reports its blocked count through `adBlockHandler`. Configuration data is JSON encoded before injection.
+The JavaScript runtime intercepts `fetch`, `XMLHttpRequest`, `WebSocket`, and `sendBeacon`, performs bounded DOM scans, and reports its blocked count through `adBlockHandler`. It cannot intercept every browser-loaded script, image, iframe, or service-worker request. Configuration data is JSON encoded before injection.
+
+Simple third-party domains use a sorted text index with a shared 100,000-domain capacity, not 100,000 regular expressions. Host-scoped patterns (12,000), generic patterns (1,000), and exceptions (5,000) have separate budgets. Enabled lists share each budget round-robin. Request decisions and scoped regex caches are bounded. Supported exceptions are retained as a complete set; an exception/payload budget failure keeps the previous snapshot. Default first-party safety remains in place.
+
+Versioned caches trigger a one-time download of previously truncated lists. Parsing and index construction run off the main actor. Failed downloads preserve cached rules; lists without a new cache keep the bounded legacy fallback during migration. Settings reports indexed counts, omitted/unsupported rules, and update errors. No website data is cleared for this migration.
 
 Each web view retains one managed ad-block script. Configuration replacement preserves other features' user scripts and their order. Unchanged refreshes do not reload pages; startup preparation updates the current page without forcing a second navigation. Disabled protection skips selector/regex compilation, and unchanged rules are reused within the current document.
 

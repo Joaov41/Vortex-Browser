@@ -4,7 +4,7 @@ import Combine
 import CryptoKit
 
 // MARK: - Filter List Model
-struct FilterList: Codable, Identifiable {
+struct FilterList: Codable, Identifiable, Sendable {
     var id: String { url }
     let name: String
     let url: String
@@ -94,6 +94,18 @@ class AdBlockService: NSObject, ObservableObject {
     @Published var isUpdatingFilters: Bool = false
     @Published var customRules: [String] = []
     @Published private(set) var isReady: Bool = false
+    @Published private(set) var indexedDomainCount = 0
+    @Published private(set) var indexedPatternCount = 0
+    @Published private(set) var indexedOmittedCount = 0
+    @Published private(set) var filterUpdateError: String?
+    private var indexedSnapshot = IndexedAdBlockRules.Snapshot()
+    private var indexedListURLs = Set<String>()
+    private var indexedBuildGeneration = 0
+    private static let indexedEngineJavaScript: String = {
+        guard let url = Bundle.main.url(forResource: "indexed-adblock", withExtension: "js"),
+              let source = try? String(contentsOf: url, encoding: .utf8) else { return "" }
+        return source
+    }()
 
     // Cosmetic selectors parsed from filter lists (## rules)
     private var cosmeticSelectors: [String] = []
@@ -526,7 +538,9 @@ class AdBlockService: NSObject, ObservableObject {
         isPreparing = true
         Task {
             defer { isPreparing = false }
+            await rebuildIndexedRules()
             await downloadMissingFilterLists()
+            await rebuildIndexedRules()
             cachedBlockingJavaScriptStorage = nil
             if Self.nativeContentRuleListsSupported {
                 await loadContentBlockingRules()
@@ -638,14 +652,47 @@ class AdBlockService: NSObject, ObservableObject {
         try? fileManager.removeItem(at: ruleCacheFileURL(for: list, kind: .cosmetic))
         defaults.removeObject(forKey: legacyRuleCacheKey(for: list, kind: .network))
         defaults.removeObject(forKey: legacyRuleCacheKey(for: list, kind: .cosmetic))
+        try? fileManager.removeItem(at: IndexedAdBlockRules.cacheURL(directory: ruleCacheDirectoryURL, listURL: list.url))
     }
 
     private func downloadMissingFilterLists() async {
         for list in filterLists where list.isEnabled {
-            let cachedRules = loadRuleCache(for: list, kind: .network)
-            if cachedRules == nil || cachedRules?.isEmpty == true {
+            let directory = ruleCacheDirectoryURL
+            let exists = await Task.detached(priority: .utility) {
+                IndexedAdBlockRules.load(directory: directory, listURL: list.url) != nil
+            }.value
+            if !exists {
                 await updateFilterList(list)
             }
+        }
+    }
+
+    private func rebuildIndexedRules() async {
+        indexedBuildGeneration += 1
+        let generation = indexedBuildGeneration
+        let urls = filterLists.filter(\.isEnabled).map(\.url)
+        let directory = ruleCacheDirectoryURL
+        do {
+            let result = try await Task.detached(priority: .utility) {
+                let loaded = urls.compactMap { url in
+                    IndexedAdBlockRules.load(directory: directory, listURL: url).map { (url, $0) }
+                }
+                let documents = loaded.map { $0.1 }
+                var snapshot = try IndexedAdBlockRules.merge(documents)
+                snapshot.omitted += documents.reduce(0) { $0 + $1.unsupported }
+                return (snapshot, Set(loaded.map { $0.0 }))
+            }.value
+            guard generation == indexedBuildGeneration,
+                  urls == filterLists.filter(\.isEnabled).map(\.url) else { return }
+            indexedSnapshot = result.0
+            indexedListURLs = result.1
+            indexedDomainCount = result.0.domains
+            indexedPatternCount = result.0.patterns
+            indexedOmittedCount = result.0.omitted
+            cachedBlockingJavaScriptStorage = nil
+        } catch {
+            guard generation == indexedBuildGeneration else { return }
+            filterUpdateError = "The new rule index exceeded its safety budget. Previous protection is retained."
         }
     }
 
@@ -700,14 +747,15 @@ class AdBlockService: NSObject, ObservableObject {
         if let index = filterLists.firstIndex(where: { $0.id == list.id }) {
             filterLists[index].isEnabled.toggle()
             saveFilterLists()
-            cachedBlockingJavaScriptStorage = nil
-            refreshJavaScriptConfiguration(reloadPages: true)
             let updatedList = filterLists[index]
             Task {
-                if updatedList.isEnabled,
-                   loadRuleCache(for: updatedList, kind: .network) == nil {
+                await rebuildIndexedRules()
+                cachedBlockingJavaScriptStorage = nil
+                refreshJavaScriptConfiguration(reloadPages: true)
+                if updatedList.isEnabled {
                     await updateFilterList(updatedList)
                 }
+                await rebuildIndexedRules()
                 await loadContentBlockingRules()
                 cachedBlockingJavaScriptStorage = nil
                 refreshJavaScriptConfiguration(reloadPages: true)
@@ -723,6 +771,7 @@ class AdBlockService: NSObject, ObservableObject {
         refreshJavaScriptConfiguration(reloadPages: true)
         Task {
             await updateFilterList(newList)
+            await rebuildIndexedRules()
             await loadContentBlockingRules()
             cachedBlockingJavaScriptStorage = nil
             refreshJavaScriptConfiguration(reloadPages: true)
@@ -735,17 +784,23 @@ class AdBlockService: NSObject, ObservableObject {
         // Remove cached rules (both network and cosmetic)
         removeRuleCaches(for: list)
         // Invalidate JavaScript cache
-        cachedBlockingJavaScriptStorage = nil
-        refreshJavaScriptConfiguration(reloadPages: true)
-        updateContentBlockingRules()
+        Task {
+            await rebuildIndexedRules()
+            cachedBlockingJavaScriptStorage = nil
+            refreshJavaScriptConfiguration(reloadPages: true)
+            await loadContentBlockingRules()
+        }
     }
 
     func updateAllFilterLists() async {
+        guard !isUpdatingFilters else { return }
         isUpdatingFilters = true
+        filterUpdateError = nil
         for list in filterLists where list.isEnabled {
             await updateFilterList(list)
         }
         isUpdatingFilters = false
+        await rebuildIndexedRules()
         await loadContentBlockingRules()
         await compileCustomRules()
         cachedBlockingJavaScriptStorage = nil
@@ -755,7 +810,9 @@ class AdBlockService: NSObject, ObservableObject {
     /// Clears all cached compiled rules and forces fresh recompilation.
     /// Use this to fix inconsistent blocking issues across devices.
     func clearCacheAndRecompile() async {
+        guard !isUpdatingFilters else { return }
         isUpdatingFilters = true
+        await rebuildIndexedRules()
 
         guard Self.nativeContentRuleListsSupported,
               let contentRuleListStore else {
@@ -814,16 +871,34 @@ class AdBlockService: NSObject, ObservableObject {
         guard let url = URL(string: list.url) else { return }
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            if let content = String(data: data, encoding: .utf8) {
-                let parsed = parseFilterList(content)
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 30
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let response = response as? HTTPURLResponse,
+                  (200...299).contains(response.statusCode), data.count <= 12_000_000,
+                  let content = String(data: data, encoding: .utf8),
+                  !content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") else {
+                throw IndexedAdBlockRules.IndexError.invalidDownload
+            }
+            let directory = ruleCacheDirectoryURL
+            let result = try await Task.detached(priority: .utility) {
+                let document = IndexedAdBlockRules.parse(content)
+                let legacy = Self.parseFilterList(content)
+                guard document.supportedCount > 0 || !legacy.cosmeticRules.isEmpty else {
+                    throw IndexedAdBlockRules.IndexError.invalidDownload
+                }
+                try IndexedAdBlockRules.store(document, directory: directory, listURL: list.url)
+                return (document, legacy)
+            }.value
+            if filterLists.contains(where: { $0.id == list.id }) {
+                let (document, parsed) = result
                 storeRuleCache(parsed.networkRules, for: list, kind: .network)
                 storeRuleCache(parsed.cosmeticRules, for: list, kind: .cosmetic)
 
                 // Update list metadata
                 if let index = filterLists.firstIndex(where: { $0.id == list.id }) {
                     filterLists[index].lastUpdated = Date()
-                    filterLists[index].ruleCount = parsed.networkRules.count + parsed.cosmeticRules.count
+                    filterLists[index].ruleCount = document.supportedCount + min(parsed.cosmeticRules.count, maxStoredCosmeticRules)
                     saveFilterLists()
                 }
 
@@ -831,11 +906,12 @@ class AdBlockService: NSObject, ObservableObject {
                 cachedBlockingJavaScriptStorage = nil
             }
         } catch {
+            filterUpdateError = "Could not update \(list.name). Previous cached rules are retained."
             print("Failed to update filter list \(list.name): \(error)")
         }
     }
 
-    private func parseFilterList(_ content: String) -> (networkRules: [String], cosmeticRules: [String]) {
+    nonisolated private static func parseFilterList(_ content: String) -> (networkRules: [String], cosmeticRules: [String]) {
         // Parse EasyList/AdBlock Plus format filter lists
         var networkRules: [String] = []
         var cosmeticRules: [String] = []
@@ -869,7 +945,7 @@ class AdBlockService: NSObject, ObservableObject {
         return (networkRules, cosmeticRules)
     }
 
-    private func extractCosmeticSelector(_ rule: String) -> String? {
+    nonisolated private static func extractCosmeticSelector(_ rule: String) -> String? {
         // Handle generic cosmetic rules: ##selector
         if let range = rule.range(of: "##") {
             // Skip domain-specific rules for now (domain##selector) to keep it simple
@@ -887,7 +963,7 @@ class AdBlockService: NSObject, ObservableObject {
         return nil
     }
 
-    private func validateAndCleanSelector(_ selector: String) -> String? {
+    nonisolated private static func validateAndCleanSelector(_ selector: String) -> String? {
         let trimmed = selector.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
 
@@ -912,7 +988,7 @@ class AdBlockService: NSObject, ObservableObject {
             .replacingOccurrences(of: "\r", with: "")
     }
 
-    private func convertToRegex(_ rule: String) -> String? {
+    nonisolated private static func convertToRegex(_ rule: String) -> String? {
         var pattern = rule
 
         // Handle domain anchors
@@ -1111,17 +1187,27 @@ class AdBlockService: NSObject, ObservableObject {
             .joined(separator: ",\n                    ")
 
         let domainsJSON = javaScriptJSON(adNetworkDomains)
+        // Keep the bounded legacy fallback only for lists not yet migrated (including offline
+        // partial updates). A migrated list no longer pays for thousands of legacy regexes.
         let networkRulesJSON = javaScriptJSON(enabledJavaScriptNetworkRules())
+        let indexedRulesJSON = indexedSnapshot.json
+        let indexedEngineJavaScript = Self.indexedEngineJavaScript
         let selectorsJSON = javaScriptJSON(uniqueSelectors)
         let customRulesJSON = javaScriptJSON(customRules)
         let cosmeticCSSJSON = javaScriptJSON(cosmeticCSS)
         let enabledJavaScript = isEnabled ? "true" : "false"
+        let versionData = Data((enabledJavaScript + indexedSnapshot.identity + selectorsJSON + customRulesJSON + networkRulesJSON).utf8)
+        let configurationVersionJSON = javaScriptJSON(SHA256.hash(data: versionData).map { String(format: "%02x", $0) }.joined())
 
         return """
         (function() {
             'use strict';
 
+            \(indexedEngineJavaScript)
+
             const nextConfiguration = {
+                version: \(configurationVersionJSON),
+                indexedRules: \(indexedRulesJSON),
                 enabled: \(enabledJavaScript),
                 blockedDomains: \(domainsJSON),
                 networkRules: \(networkRulesJSON),
@@ -1135,7 +1221,7 @@ class AdBlockService: NSObject, ObservableObject {
                 return;
             }
             const runtime = Object.assign({}, nextConfiguration);
-            runtime.configurationKey = JSON.stringify(nextConfiguration);
+            runtime.configurationKey = nextConfiguration.version;
             window.__vortexAdBlockRuntime = runtime;
 
             let blockedCount = 0;
@@ -1162,15 +1248,6 @@ class AdBlockService: NSObject, ObservableObject {
                 'outlook.com',
                 'apple.com',
                 'icloud.com',
-                'reddit.com',
-                'redditmedia.com',
-                'redditstatic.com',
-                // X relies on both current and legacy Twitter hosts. Keep its
-                // network APIs intact and hide promoted posts cosmetically.
-                'x.com',
-                'twitter.com',
-                'twimg.com',
-                't.co',
                 // AI providers
                 'chatgpt.com',
                 'chat.openai.com',
@@ -1208,7 +1285,14 @@ class AdBlockService: NSObject, ObservableObject {
             function isWhitelisted(url) {
                 const parsed = parsedURL(url);
                 if (!parsed) { return false; }
-                return whitelist.some(domain => hostMatches(parsed.hostname.toLowerCase(), domain));
+                const host = parsed.hostname.toLowerCase();
+                if (whitelist.some(domain => hostMatches(host, domain))) { return true; }
+                // Preserve social-site functionality only on those sites, not their
+                // tracking endpoints embedded on unrelated pages.
+                const groups = [['x.com', 'twitter.com', 'twimg.com', 't.co'],
+                                ['reddit.com', 'redditmedia.com', 'redditstatic.com']];
+                return groups.some(group => group.some(domain => hostMatches(window.location.hostname, domain))
+                    && group.some(domain => hostMatches(host, domain)));
             }
 
             function matchesBlockedDomain(url) {
@@ -1232,6 +1316,7 @@ class AdBlockService: NSObject, ObservableObject {
             let networkRuleExpressions = [];
             let customRuleExpressions = [];
             let compiledRulesKey = null;
+            let indexedMatcher = null;
 
             function protectionEnabled() {
                 if (!runtime.enabled) { return false; }
@@ -1244,9 +1329,11 @@ class AdBlockService: NSObject, ObservableObject {
 
             function rebuildRuntimeRules() {
                 if (!protectionEnabled()) { return; }
-                const rulesKey = JSON.stringify([runtime.adSelectors, runtime.networkRules, runtime.customRules]);
+                const rulesKey = runtime.version;
                 if (compiledRulesKey === rulesKey) { return; }
                 compiledRulesKey = rulesKey;
+                indexedMatcher = typeof createVortexRuleIndex === 'function'
+                    ? createVortexRuleIndex(runtime.indexedRules || {}) : null;
                 const validAdSelectors = [];
                 (runtime.adSelectors || []).forEach(selector => {
                     try {
@@ -1275,13 +1362,16 @@ class AdBlockService: NSObject, ObservableObject {
                 });
             }
 
-            function shouldBlockURL(url) {
+            function shouldBlockURL(url, resourceType = 1) {
                 if (!protectionEnabled()) { return false; }
                 const parsed = parsedURL(url);
                 if (!protectionEnabled() || !parsed || isWhitelisted(parsed.href)) {
                     return false;
                 }
-                if (matchesBlockedDomain(parsed.href)) {
+                const indexedDecision = indexedMatcher
+                    ? indexedMatcher.decide(parsed, new URL(window.location.href), resourceType, !isSameSite(parsed)) : 0;
+                if (indexedDecision === -1) { return false; }
+                if (indexedDecision === 1 || matchesBlockedDomain(parsed.href)) {
                     return true;
                 }
                 return (!isSameSite(parsed)
@@ -1314,12 +1404,23 @@ class AdBlockService: NSObject, ObservableObject {
             // Block WebSocket connections to ad domains
             const OriginalWebSocket = window.WebSocket;
             window.WebSocket = function(url, protocols) {
-                if (shouldBlockURL(url)) {
+                if (shouldBlockURL(url, 64)) {
                     incrementBlockedCount(1);
                     throw new Error('Blocked by ad blocker');
                 }
                 return new OriginalWebSocket(url, protocols);
             };
+
+            if (typeof navigator.sendBeacon === 'function') {
+                const originalBeacon = navigator.sendBeacon;
+                navigator.sendBeacon = function(url, data) {
+                    if (shouldBlockURL(url, 128)) {
+                        incrementBlockedCount(1);
+                        return true;
+                    }
+                    return originalBeacon.call(this, url, data);
+                };
+            }
 
             function flushBlockedNotification() {
                 if (blockedCount === lastReportedBlockedCount) {
@@ -1647,9 +1748,11 @@ class AdBlockService: NSObject, ObservableObject {
             }
 
             runtime.applyConfiguration = function(configuration) {
-                const key = JSON.stringify(configuration);
+                const key = configuration.version;
                 if (runtime.configurationKey === key) { return; }
                 runtime.configurationKey = key;
+                runtime.version = configuration.version;
+                runtime.indexedRules = configuration.indexedRules || {};
                 observer.disconnect();
                 dirtyRoots.clear();
                 if (mutationCoalesceTimer !== null) {
@@ -1705,7 +1808,7 @@ class AdBlockService: NSObject, ObservableObject {
     private func enabledJavaScriptNetworkRules() -> [String] {
         var rules: [String] = []
         var seen = Set<String>()
-        for list in filterLists where list.isEnabled {
+        for list in filterLists where list.isEnabled && !indexedListURLs.contains(list.url) {
             guard let cached = loadRuleCache(for: list, kind: .network) else { continue }
             for rule in cached where seen.insert(rule).inserted {
                 rules.append(rule)
@@ -1897,6 +2000,8 @@ class AdBlockService: NSObject, ObservableObject {
         ) else { return }
 
         for fileURL in cachedFiles where fileURL.pathExtension.lowercased() == "json" {
+            // Versioned indexed caches have a separate, larger byte budget and validation.
+            if fileURL.lastPathComponent.hasPrefix("indexed_v") { continue }
             let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
             let isRegularFile = values?.isRegularFile ?? false
             let byteSize = values?.fileSize ?? 0
