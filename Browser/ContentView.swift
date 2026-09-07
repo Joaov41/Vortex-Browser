@@ -1795,6 +1795,7 @@ struct ContentView: View {
                     x: 0,
                     y: 4
                 )
+                .contentShape(.interaction, Capsule())
         }
         .buttonStyle(.plain)
         .ios26ButtonHitTargetCompat()
@@ -1833,6 +1834,7 @@ struct ContentView: View {
                     x: 0,
                     y: 4
                 )
+                .contentShape(.interaction, Capsule())
         }
         .buttonStyle(.plain)
         .ios26ButtonHitTargetCompat()
