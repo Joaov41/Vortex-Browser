@@ -48,7 +48,7 @@ struct Fixture {
   let docs = try ["easylist","easyprivacy"].map { name in
    IndexedAdBlockRules.parse(try String(contentsOfFile:${JSON.stringify(directory)}+"/"+name+".txt",encoding:.utf8))
   }
-  let index = try IndexedAdBlockRules.merge(docs)
+  let index = try IndexedAdBlockRules.merge(docs, policy: .ios27Scripts)
   let result = try NativeAdResourceRules.make(indexJSON:index.json,preferredHosts:adNetworkDomains)
   try Data(result.json.utf8).write(to:URL(fileURLWithPath:${JSON.stringify(output)}),options:.atomic)
   print("Native indexed fixture: \\(result.blocks) blocks, \\(result.omitted) omitted, \\(result.json.utf8.count) bytes")

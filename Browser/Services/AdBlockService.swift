@@ -551,6 +551,13 @@ class AdBlockService: NSObject, ObservableObject {
             }
             refreshJavaScriptConfiguration(reloadPages: false)
             isReady = true
+            // A v1 indexed cache is still installed above with its conservative
+            // semantics. Refresh its provenance only after startup is ready so an
+            // offline/slow list cannot delay the first navigation; a successful
+            // refresh rebuilds and reapplies the iOS 27 layers in the background.
+            Task { [weak self] in
+                await self?.refreshProvenanceFilterLists()
+            }
         }
     }
 
@@ -664,10 +671,30 @@ class AdBlockService: NSObject, ObservableObject {
             let exists = await Task.detached(priority: .utility) {
                 IndexedAdBlockRules.load(directory: directory, listURL: list.url) != nil
             }.value
-            if !exists {
-                await updateFilterList(list)
-            }
+            if !exists { _ = await updateFilterList(list) }
         }
+    }
+
+    /// Refresh old indexed documents without making cached protection part of
+    /// first-run latency. The old document remains on disk if the request fails.
+    private func refreshProvenanceFilterLists() async {
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27 else { return }
+        var refreshed = false
+        for list in filterLists where list.isEnabled {
+            let directory = ruleCacheDirectoryURL
+            let needsRefresh = await Task.detached(priority: .utility) {
+                IndexedAdBlockRules.load(directory: directory, listURL: list.url)?.needsProvenanceRefresh ?? false
+            }.value
+            guard needsRefresh else { continue }
+            refreshed = (await updateFilterList(list)) || refreshed
+        }
+        guard refreshed else { return }
+        await rebuildIndexedRules()
+        cachedBlockingJavaScriptStorage = nil
+        if Self.nativeContentRuleListsSupported {
+            await loadContentBlockingRules()
+        }
+        refreshJavaScriptConfiguration(reloadPages: false)
     }
 
     private func rebuildIndexedRules() async {
@@ -681,7 +708,11 @@ class AdBlockService: NSObject, ObservableObject {
                     IndexedAdBlockRules.load(directory: directory, listURL: url).map { (url, $0) }
                 }
                 let documents = loaded.map { $0.1 }
-                var snapshot = try IndexedAdBlockRules.merge(documents)
+                let policy: IndexedAdBlockRules.Policy =
+                    ProcessInfo.processInfo.operatingSystemVersion.majorVersion == 27
+                        ? .ios27Scripts
+                        : .legacy
+                var snapshot = try IndexedAdBlockRules.merge(documents, policy: policy)
                 snapshot.omitted += documents.reduce(0) { $0 + $1.unsupported }
                 return (snapshot, Set(loaded.map { $0.0 }))
             }.value
@@ -826,7 +857,7 @@ class AdBlockService: NSObject, ObservableObject {
 
         if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
             // Rebuild only our own layer, without deleting website cache or other services' rules.
-            defaults.removeObject(forKey: "nativeAdResourcesHashV1")
+            defaults.removeObject(forKey: NativeAdResourceRules.hashKey)
             await loadContentBlockingRules()
             cachedBlockingJavaScriptStorage = nil
             refreshJavaScriptConfiguration(reloadPages: true)
@@ -887,8 +918,9 @@ class AdBlockService: NSObject, ObservableObject {
         print("DEBUG: Cache cleared and rules recompiled successfully")
     }
 
-    private func updateFilterList(_ list: FilterList) async {
-        guard let url = URL(string: list.url) else { return }
+    @discardableResult
+    private func updateFilterList(_ list: FilterList) async -> Bool {
+        guard let url = URL(string: list.url) else { return false }
 
         do {
             var request = URLRequest(url: url)
@@ -924,10 +956,13 @@ class AdBlockService: NSObject, ObservableObject {
 
                 // Invalidate JavaScript cache since cosmetic rules changed
                 cachedBlockingJavaScriptStorage = nil
+                return true
             }
+            return false
         } catch {
             filterUpdateError = "Could not update \(list.name). Previous cached rules are retained."
             print("Failed to update filter list \(list.name): \(error)")
+            return false
         }
     }
 
@@ -2037,13 +2072,13 @@ class AdBlockService: NSObject, ObservableObject {
         }
         let token = UUID()
         let task = Task { @MainActor [defaults] () throws -> WKContentRuleList? in
-            if defaults.string(forKey: "nativeAdResourcesHashV1") == snapshot.identity,
+            if defaults.string(forKey: NativeAdResourceRules.hashKey) == snapshot.identity,
                let cached = try? await store.lookupContentRuleListAsync(forIdentifier: NativeAdResourceRules.identifier) {
                 return cached
             }
             let rule = try await store.compileContentRuleListAsync(forIdentifier: NativeAdResourceRules.identifier, encodedContentRuleList: snapshot.json)
             guard rule != nil else { throw NativeAdResourceRules.BuildError.safetyBudget }
-            defaults.set(snapshot.identity, forKey: "nativeAdResourcesHashV1")
+            defaults.set(snapshot.identity, forKey: NativeAdResourceRules.hashKey)
             return rule
         }
         nativeResourceWork = (token, snapshot.identity, task)

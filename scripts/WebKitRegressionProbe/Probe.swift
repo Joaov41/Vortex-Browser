@@ -121,6 +121,7 @@ final class RuleProbe: NSObject, ObservableObject, WKNavigationDelegate {
                 webView.navigationDelegate = nil
             }
             try await runNativeAdProbe(store: store, server: server, port: port, cookieRule: rule)
+            try await runScopedScriptProbe(store: store, server: server, port: port)
             report("PASS: lifecycle, cookie and native script fixtures. Real-site compatibility remains a manual smoke test.")
             exit(0)
         } catch { report("FAIL: \(error)"); exit(1) }
@@ -128,6 +129,67 @@ final class RuleProbe: NSObject, ObservableObject, WKNavigationDelegate {
 
     private func require(_ condition: Bool, _ message: String) throws {
         if !condition { throw NSError(domain: "Probe", code: 4, userInfo: [NSLocalizedDescriptionKey: message]) }
+    }
+
+    // Production parser/policy/converter, not hand-written positive-control JSON.
+    private func runScopedScriptProbe(store: WKContentRuleListStore, server: LoopbackServer, port: UInt16) async throws {
+        let raw = #"""
+        /\/vortex-scope\/stat[a-z]{2}\.js/$script,domain=127.0.0.1
+        /\/vortex-scope\/dynam[a-z]{2}\.js/$script,domain=127.0.0.1
+        /vortex-scope/excluded.js$script,domain=~127.0.0.1
+        /vortex-scope/third.js$script,third-party,domain=127.0.0.1
+        /\/vortex-scope\/except\.js/$script,domain=127.0.0.1
+        @@/\/vortex-scope\/except\.js/$script,domain=127.0.0.1
+        /vortex-scope/pagead.js$domain=127.0.0.1
+        /vortex-scope/path.js$script
+        /vortex-scope/image-only.js$image,domain=127.0.0.1
+        ordinary$script
+        """#
+        let document = IndexedAdBlockRules.parse(raw)
+        try require(document.unsupported == 0, "Scoped fixture contains unsupported syntax")
+        let index = try IndexedAdBlockRules.merge([document], policy: .ios27Scripts)
+        let native = try NativeAdResourceRules.make(indexJSON: index.json, preferredHosts: [])
+        let rule: WKContentRuleList = try await withCheckedThrowingContinuation { c in
+            store.compileContentRuleList(forIdentifier: "isolated-scoped-scripts-v1", encodedContentRuleList: native.json) { value, error in
+                if let value { c.resume(returning: value) }
+                else { c.resume(throwing: error ?? NSError(domain: "Probe.ScopeCompile", code: 20)) }
+            }
+        }
+        let all: Set<String> = ["static", "dynamic", "excluded", "third", "cross", "except", "pagead", "path", "image-only", "ordinary"]
+        let allowed: Set<String> = ["third", "except", "ordinary", "excluded", "image-only"]
+        for persistent in [false, true] {
+            let config = WKWebViewConfiguration()
+            config.websiteDataStore = persistent ? .default() : .nonPersistent()
+            let view = WKWebView(frame: CGRect(x: 0, y: 0, width: 800, height: 600), configuration: config)
+            view.navigationDelegate = self
+            let prefix = persistent ? "persistent-" : "private-"
+            for phase in ["before", "protected", "outside", "removed"] {
+                if phase == "protected" { config.userContentController.add(rule) }
+                if phase == "removed" { config.userContentController.remove(rule) }
+                let host = phase == "outside" ? "localhost" : "127.0.0.1"
+                let token = prefix + phase
+                let url = URL(string: "http://\(host):\(port)/scoped-page?phase=\(token)")!
+                try await withCheckedThrowingContinuation { c in
+                    navigation = c
+                    view.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+                }
+                var executed: Set<String>?
+                for _ in 0..<100 {
+                    if let result = try await view.evaluateJavaScript("window.scopedDone ? window.scopedRuns : null") as? [String] {
+                        executed = Set(result); break
+                    }
+                    try await Task.sleep(for: .milliseconds(50))
+                }
+                let expected = phase == "protected" ? allowed : (phase == "outside" ? all.subtracting(["excluded", "path"]) : all)
+                try require(executed == expected, "Scoped script execution mismatch \(token): \(String(describing: executed))")
+                for name in all {
+                    let count = server.scopedRequests[token + ":" + name, default: 0]
+                    try require(count == (expected.contains(name) ? 1 : 0), "Scoped script reached server unexpectedly: \(token):\(name) count=\(count)")
+                }
+                report("PASS scoped \(token): static/dynamic execution and pre-request counts, source scope, party, exception, ordinary scripts")
+            }
+            view.navigationDelegate = nil
+        }
     }
 
     private func runNativeAdProbe(store: WKContentRuleListStore, server: LoopbackServer, port: UInt16, cookieRule: WKContentRuleList) async throws {
@@ -281,6 +343,7 @@ final class RuleProbe: NSObject, ObservableObject, WKNavigationDelegate {
 final class LoopbackServer {
     private var listener: NWListener?
     private(set) var blockedScriptRequests = 0
+    private(set) var scopedRequests: [String: Int] = [:]
     func start() async throws -> UInt16 {
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
@@ -334,7 +397,31 @@ final class LoopbackServer {
                   .then(r=>r.text()).then(t=>window.cookieResults.third=t);
                 </script></body></html>
                 """
-                if path.hasPrefix("/supplement-page") {
+                if path.hasPrefix("/scoped-page") {
+                    let components = URLComponents(string: "http://127.0.0.1" + path)
+                    let phase = components?.queryItems?.first { $0.name == "phase" }?.value ?? ""
+                    let opposite = lines.contains { $0.lowercased().hasPrefix("host: localhost:") } ? "127.0.0.1" : "localhost"
+                    let suffix = "?phase=" + phase
+                    let tags = ["static", "excluded", "third", "cross", "except", "pagead", "path", "image-only", "ordinary"].map { name in
+                        let source = name == "cross" ? "http://\(opposite):\(port)/vortex-scope/third.js\(suffix)&cross=1" : "/vortex-scope/\(name).js\(suffix)"
+                        return "<script src='\(source)'></script>"
+                    }.joined()
+                    body = """
+                    <html><head><script>window.scopedRuns=[];window.scopedDone=false;</script>\(tags)</head><body><script>
+                    let s=document.createElement('script');s.src='/vortex-scope/dynamic.js\(suffix)';
+                    s.onload=s.onerror=()=>window.scopedDone=true;document.head.appendChild(s);
+                    </script></body></html>
+                    """
+                } else if path.hasPrefix("/vortex-scope/") {
+                    let components = URLComponents(string: "http://127.0.0.1" + path)!
+                    let phase = components.queryItems?.first { $0.name == "phase" }?.value ?? ""
+                    let cross = components.queryItems?.contains { $0.name == "cross" } ?? false
+                    let name = cross ? "cross" : String(components.path.split(separator: "/").last!).replacingOccurrences(of: ".js", with: "")
+                    self.scopedRequests[phase + ":" + name, default: 0] += 1
+                    let encoded = String(decoding: try! JSONEncoder().encode(name), as: UTF8.self)
+                    contentType = "application/javascript"
+                    body = "window.scopedRuns.push(\(encoded));"
+                } else if path.hasPrefix("/supplement-page") {
                     body = "<html><body>Isolated supplemental URL probe</body></html>"
                 } else if path.hasPrefix("/resource-page") {
                     body = """

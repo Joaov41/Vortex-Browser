@@ -13,8 +13,10 @@ nonisolated enum SupplementalAdResourceRules {
     }
     static let entries: [Entry] = [
         Entry(host: "ads.google.com", firstPartySites: ["google.com", "youtube.com"]),
+        Entry(host: "click.googleanalytics.com", firstPartySites: ["google.com", "google-analytics.com", "googleanalytics.com"]),
         Entry(host: "analyticsengine.s3.amazonaws.com", firstPartySites: ["amazonaws.com", "amazon.com"]),
         Entry(host: "affiliationjs.s3.amazonaws.com", firstPartySites: ["amazonaws.com", "amazon.com"]),
+        Entry(host: "analytics.s3.amazonaws.com", firstPartySites: ["amazonaws.com", "amazon.com"]),
         Entry(host: "advertising-api-eu.amazon.com", firstPartySites: ["amazon.com"]),
         Entry(host: "ads.facebook.com", firstPartySites: ["facebook.com", "facebook.net", "instagram.com"]),
         Entry(host: "ads.reddit.com", firstPartySites: ["reddit.com", "redditmedia.com", "redditstatic.com"]),
@@ -36,7 +38,11 @@ nonisolated enum NativeAdResourceRules {
     static let domainLimit = 20_000
     static let patternLimit = 2_000
     static let byteLimit = 8_000_000
-    static let identifier = "vortex-native-resources-v1"
+    // A distinct identity prevents a compiled iOS 27 v1 policy from being
+    // reused after scoped source conditions and party semantics change.
+    static let policyVersion = 2
+    static let identifier = "vortex-native-resources-v2"
+    static let hashKey = "nativeAdResourcesHashV2"
     static let essentialHosts = ["microsoft.com", "microsoftonline.com", "office.com", "office365.com", "live.com", "outlook.com", "apple.com", "icloud.com", "chatgpt.com", "chat.openai.com", "openai.com", "gemini.google.com", "bard.google.com"]
     static let socialGroups = [["x.com", "twitter.com", "twimg.com", "t.co"], ["reddit.com", "redditmedia.com", "redditstatic.com"]]
     static let resourceTypes = ["script", "image", "style-sheet", "font", "media", "raw"]
@@ -157,21 +163,75 @@ nonisolated enum NativeAdResourceRules {
         return result
     }
 
+    enum SourceScope: Equatable {
+        case none
+        case include([String])
+        case exclude([String])
+        case unsupported
+    }
+
+    /// WebKit accepts one source-URL condition per trigger. Multiple values in
+    /// one `if-top-url`/`unless-top-url` array are an OR, but combining include
+    /// and exclude keys is rejected on the verified iOS 27 build. Callers must
+    /// retain a JS fallback rather than dropping one side of the condition.
+    static func sourceScope(for rule: IndexedAdBlockRules.Rule) -> SourceScope {
+        if !rule.i.isEmpty && !rule.x.isEmpty { return .unsupported }
+        if !rule.i.isEmpty {
+            return .include(rule.i.map { hostPattern($0, allowingUserInfo: true) })
+        }
+        if !rule.x.isEmpty {
+            return .exclude(rule.x.map { hostPattern($0, allowingUserInfo: true) })
+        }
+        return .none
+    }
+
+    private struct PatternCandidate {
+        let rule: IndexedAdBlockRules.Rule
+        let filters: [String]
+        let types: [String]
+        let scope: SourceScope
+        let preferred: Bool
+        let sortKey: String
+    }
+
     static func make(indexJSON: String, preferredHosts: [String]) throws -> Snapshot {
         let payload = try JSONDecoder().decode(IndexedAdBlockRules.Payload.self, from: Data(indexJSON.utf8))
         var rules: [[String: Any]] = []
         var domains = Set<String>()
         let available = payload.domains.split(separator: "\n").map(String.init)
         let availableSet = Set(available)
+        let exactPreferredHosts = Set(preferredHosts.map { $0.lowercased() })
+        let preferredDomainHosts = Set(preferredHosts.compactMap { raw -> String? in
+            let value = raw.lowercased()
+            let host = value.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: true).first
+            return host.map(String.init)
+        })
+        // This is a retention priority only. It never manufactures a rule when
+        // the enabled list does not contain the endpoint.
+        let retainedEndpointHosts: Set<String> = ["adtago.s3.amazonaws.com"]
         // Prioritize common, already-indexed destinations. Never manufacture a block
         // solely because a test expects one, or revive a disabled downloaded list.
-        for host in preferredHosts where availableSet.contains(host) && domains.count < domainLimit { domains.insert(host) }
+        // Keep the original exact-preferred sampler stable. Additional normalized
+        // priorities are promoted only after sampling, replacing the same number
+        // of non-priority slots instead of reshuffling the full 20k selection.
+        for host in exactPreferredHosts.sorted()
+            where availableSet.contains(host) && domains.count < domainLimit {
+            domains.insert(host)
+        }
         // Deterministic sampling distributes the bounded native budget across the index.
         let capacity = domainLimit - domains.count
         let remaining = available.filter { !domains.contains($0) }
         if capacity > 0 {
             let count = min(capacity, remaining.count)
             for i in 0..<count { domains.insert(remaining[i * remaining.count / count]) }
+        }
+        let additionalPriorities = preferredDomainHosts.union(retainedEndpointHosts)
+            .subtracting(exactPreferredHosts)
+        for host in additionalPriorities.sorted() where availableSet.contains(host) && !domains.contains(host) {
+            let removable = domains.sorted().reversed().first { !exactPreferredHosts.contains($0) && !additionalPriorities.contains($0) }
+            guard let removable else { continue }
+            domains.remove(removable)
+            domains.insert(host)
         }
         // Keep the original sample stable. Reserve only the small supplement's
         // slots, evicting non-priority domains from the native layer (not JS).
@@ -180,7 +240,7 @@ nonisolated enum NativeAdResourceRules {
         let indexedCapacity = domainLimit - supplement.count
         guard indexedCapacity >= 0 else { throw BuildError.safetyBudget }
         if domains.count > indexedCapacity {
-            let preferred = Set(preferredHosts)
+            let preferred = exactPreferredHosts.union(additionalPriorities)
             let removable = domains.sorted {
                 if preferred.contains($0) != preferred.contains($1) { return !preferred.contains($0) }
                 return $0 > $1
@@ -192,26 +252,83 @@ nonisolated enum NativeAdResourceRules {
         }
         let all = payload.hosts.keys.sorted().flatMap { payload.hosts[$0] ?? [] } + payload.generic
         var omitted = available.count - domains.count
-        var patternCount = 0
         let maskTypes = [(1,"raw"), (2,"script"), (4,"image"), (8,"style-sheet"), (16,"font"), (32,"media")]
+        var candidates: [[PatternCandidate]] = Array(repeating: [], count: 4)
         for rule in all where !rule.a {
             if !rule.h.isEmpty, !rule.p.isEmpty {
                 let hostPathPrefix = "^(?:https?|wss?)://([^/:]+\\.)?" + NSRegularExpression.escapedPattern(for: rule.h + "/")
                 // A slash after the host cannot be confused with a username followed by @.
                 guard rule.p.lowercased().hasPrefix(hostPathPrefix.lowercased()) else { omitted += 1; continue }
             }
-            // Frame vs top-page domain scoping differs; leave those blocks to JS.
-            guard rule.i.isEmpty, rule.x.isEmpty,
-                  let filters = rule.p.isEmpty ? [hostPattern(rule.h)] : patterns(rule.p),
-                  patternCount + filters.count <= patternLimit else { omitted += 1; continue }
+            let scope = sourceScope(for: rule)
+            // A mixed source include/exclude cannot be expressed by a single
+            // WebKit trigger. Keep this rule in the full JS index instead of
+            // widening it into an unrelated top-page condition.
+            guard scope != .unsupported,
+                  let filters = rule.p.isEmpty ? [hostPattern(rule.h)] : patterns(rule.p) else {
+                omitted += 1
+                continue
+            }
             let types = maskTypes.filter { (rule.t == 0 || rule.t & $0.0 != 0) && rule.n & $0.0 == 0 }.map(\.1)
             guard !types.isEmpty else { omitted += 1; continue }
-            for filter in filters {
-                var trigger: [String: Any] = ["url-filter": filter, "resource-type": types, "load-context": ["top-frame"], "url-filter-is-case-sensitive": rule.c]
-                if rule.f != 0 { trigger["load-type"] = [rule.f == 1 ? "third-party" : "first-party"] }
-                rules.append(["trigger": trigger, "action": ["type": "block"]])
-                patternCount += 1
+            let bucket: Int
+            switch scope {
+            case .include, .exclude: bucket = 0
+            case .none: bucket = rule.t & 2 != 0 ? 1 : (rule.p.isEmpty ? 3 : 2)
+            case .unsupported: bucket = 3 // guarded above
             }
+            let preferred = !rule.h.isEmpty && preferredDomainHosts.contains(rule.h)
+            let sortKey = [rule.h, rule.p, rule.i.joined(separator: "|"), rule.x.joined(separator: "|"),
+                           String(rule.f), String(rule.t), String(rule.n), rule.c ? "1" : "0"].joined(separator: "\u{1F}")
+            candidates[bucket].append(PatternCandidate(rule: rule, filters: filters,
+                                                        types: types, scope: scope,
+                                                        preferred: preferred, sortKey: sortKey))
+        }
+        for index in candidates.indices {
+            candidates[index].sort {
+                if $0.preferred != $1.preferred { return $0.preferred }
+                return $0.sortKey < $1.sortKey
+            }
+        }
+        // Round-robin categories so source-scoped and script/path rules cannot
+        // be permanently starved behind alphabetically ordered host patterns.
+        var patternCount = 0
+        var positions = Array(repeating: 0, count: candidates.count)
+        var madeProgress = true
+        while patternCount < patternLimit && madeProgress {
+            madeProgress = false
+            for bucket in candidates.indices {
+                guard patternCount < patternLimit, positions[bucket] < candidates[bucket].count else { continue }
+                let candidate = candidates[bucket][positions[bucket]]
+                positions[bucket] += 1
+                // Consuming an unrepresentable/too-large candidate is progress:
+                // the next candidate in this bucket may still fit the remaining
+                // budget on the next round.
+                madeProgress = true
+                guard patternCount + candidate.filters.count <= patternLimit else {
+                    omitted += 1
+                    continue
+                }
+                for filter in candidate.filters {
+                    var trigger: [String: Any] = ["url-filter": filter, "resource-type": candidate.types,
+                                                   "load-context": ["top-frame"],
+                                                   "url-filter-is-case-sensitive": candidate.rule.c]
+                    if candidate.rule.f != 0 {
+                        trigger["load-type"] = [candidate.rule.f == 1 ? "third-party" : "first-party"]
+                    }
+                    switch candidate.scope {
+                    case .none: break
+                    case .include(let values): trigger["if-top-url"] = values
+                    case .exclude(let values): trigger["unless-top-url"] = values
+                    case .unsupported: continue
+                    }
+                    rules.append(["trigger": trigger, "action": ["type": "block"]])
+                    patternCount += 1
+                }
+            }
+        }
+        for bucket in candidates.indices {
+            omitted += candidates[bucket].count - positions[bucket]
         }
         for entry in supplement {
             rules.append(["trigger": ["url-filter": hostPattern(entry.host),
@@ -236,8 +353,9 @@ nonisolated enum NativeAdResourceRules {
         }
         let data = try JSONSerialization.data(withJSONObject: rules, options: [.sortedKeys])
         guard data.count <= byteLimit, rules.count <= 30_000 else { throw BuildError.safetyBudget }
+        let identityInput = Data(("native-policy-\(policyVersion):").utf8) + data
         return Snapshot(json: String(decoding: data, as: UTF8.self),
-                        identity: SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined(),
+                        identity: SHA256.hash(data: identityInput).map { String(format: "%02x", $0) }.joined(),
                         blocks: blocks, omitted: omitted)
     }
 }

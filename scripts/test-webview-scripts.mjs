@@ -10,7 +10,7 @@ const current = readFileSync(adPath, 'utf8');
 const supplemental = [...readFileSync('Browser/Utilities/NativeAdResourceRules.swift', 'utf8')
     .matchAll(/Entry\(host: "([^"]+)", firstPartySites: (\[[^\n]+\])\)/g)]
     .map(([,host,sites]) => ({host,firstPartySites:JSON.parse(sites)}));
-assert.equal(supplemental.length,12);
+assert.equal(supplemental.length,14);
 const baseline = process.env.VORTEX_BASELINE_SOURCE
     ? readFileSync(process.env.VORTEX_BASELINE_SOURCE, 'utf8')
     : execFileSync('git', ['show', '72dbb02:' + adPath], {encoding: 'utf8'});

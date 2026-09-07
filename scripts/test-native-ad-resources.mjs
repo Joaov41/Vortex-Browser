@@ -25,12 +25,38 @@ const fixture=`
 @@||exempt.invalid^$document
 @@||path-exempt.invalid/allowed/$document
 |https://terminal.fixture.invalid/ad^$script
+||same-site.fixture.invalid/assets/ads.js$script
+||scoped-script.fixture.invalid/assets/ads.js$script,domain=news.invalid
+||explicit-third.fixture.invalid/assets/ads.js$script,third-party
+||explicit-first.fixture.invalid/assets/ads.js$script,~third-party
+|https://anchored.fixture.invalid/vortex-scope/path.js$script
+ads.js$script,domain=~news.invalid
 `;
 const code=fs.readFileSync('Browser/Utilities/IndexedAdBlockRules.swift','utf8')+'\n'+fs.readFileSync('Browser/Utilities/NativeAdResourceRules.swift','utf8')+`
 func check(_ value:Bool,_ text:String){if !value{fatalError(text)}}
 let raw=String(data:Data(base64Encoded:"${Buffer.from(fixture).toString('base64')}")!,encoding:.utf8)!
-let index=try IndexedAdBlockRules.merge([IndexedAdBlockRules.parse(raw)])
+let parsed=IndexedAdBlockRules.parse(raw)
+let legacyIndex=try IndexedAdBlockRules.merge([parsed])
+let index=try IndexedAdBlockRules.merge([parsed],policy:.ios27Scripts)
 let native=try NativeAdResourceRules.make(indexJSON:index.json,preferredHosts:[])
+let legacyPayload=try JSONDecoder().decode(IndexedAdBlockRules.Payload.self,from:Data(legacyIndex.json.utf8))
+let ios27Payload=try JSONDecoder().decode(IndexedAdBlockRules.Payload.self,from:Data(index.json.utf8))
+func find(_ payload:IndexedAdBlockRules.Payload,_ host:String)->IndexedAdBlockRules.Rule? { payload.hosts[host]?.first }
+check(find(legacyPayload,"same-site.fixture.invalid")?.f == 1,"Legacy path remains third-party")
+check(find(ios27Payload,"same-site.fixture.invalid")?.f == 0,"iOS27 path is first-party eligible")
+check(find(ios27Payload,"scoped-script.fixture.invalid")?.f == 0,"iOS27 source-scoped script is first-party eligible")
+check(find(ios27Payload,"explicit-third.fixture.invalid")?.f == 1,"Explicit third-party remains third-party")
+check(find(ios27Payload,"explicit-first.fixture.invalid")?.f == 2,"Explicit first-party remains first-party")
+let genericRule = IndexedAdBlockRules.parseRule("ads.js$script")!
+check(IndexedAdBlockRules.applying(.ios27Scripts,to:IndexedAdBlockRules.Document(rules:[genericRule])).rules[0].f == 1,"Unscoped generic script remains third-party")
+check(ios27Payload.generic.first(where: {$0.p.contains("anchored")})?.f == 0,"Anchored URL path becomes first-party eligible")
+check(ios27Payload.generic.first(where: {$0.x == ["news.invalid"]})?.f == 1,"Exclusion-only generic scope remains third-party")
+let wildcardRule = IndexedAdBlockRules.parseRule("/*$script")!
+check(IndexedAdBlockRules.applying(.ios27Scripts,to:IndexedAdBlockRules.Document(rules:[wildcardRule])).rules[0].f == 1,"Wildcard-only path remains third-party")
+let oldRuleJSON = #"{"h":"legacy.fixture.invalid","p":"^https?://legacy.fixture.invalid/assets/ads.js","i":[],"x":[],"t":2,"n":0,"f":1,"a":false,"c":false,"d":false}"#
+let migratedRule = try JSONDecoder().decode(IndexedAdBlockRules.Rule.self,from:Data(oldRuleJSON.utf8))
+check(migratedRule.q,"Old cache without provenance must remain conservative")
+check(IndexedAdBlockRules.applying(.ios27Scripts,to:IndexedAdBlockRules.Document(rules:[migratedRule])).rules[0].f == 1,"Old cache must retain its prior party semantics")
 check(NativeAdResourceRules.supports(majorVersion:27,osBuild:"24A5430a",sdkBuild:"24A5380g"),"Verified pair")
 check(!NativeAdResourceRules.supports(majorVersion:26,osBuild:"24A5430a",sdkBuild:"24A5380g"),"iOS26 must use existing path")
 check(!NativeAdResourceRules.supports(majorVersion:28,osBuild:"24A5430a",sdkBuild:"24A5380g"),"Unknown major")
@@ -39,8 +65,21 @@ check(!NativeAdResourceRules.supports(majorVersion:27,osBuild:"24A5430a",sdkBuil
 let large=try IndexedAdBlockRules.merge([IndexedAdBlockRules.Document(domains:(0..<100000).map{"host\\($0).invalid"}.sorted())])
 let bounded=try NativeAdResourceRules.make(indexJSON:large.json,preferredHosts:["host99999.invalid"])
 check(bounded.blocks==20000 && bounded.omitted==80000+SupplementalAdResourceRules.entries.count,"Supplement must fit the existing native budget")
+let absentData=Data(bounded.json.utf8)
+check(!String(decoding:absentData,as:UTF8.self).contains("adtago"),"Retention priority must not manufacture an absent endpoint")
+let withEndpointDomains=(0..<100000).map{"host\\($0).invalid"}+["adtago.s3.amazonaws.com"]
+let withEndpoint=try NativeAdResourceRules.make(indexJSON:try IndexedAdBlockRules.merge([IndexedAdBlockRules.Document(domains:withEndpointDomains.sorted())]).json,preferredHosts:[])
+check(String(decoding:Data(withEndpoint.json.utf8),as:UTF8.self).contains("adtago"),"Indexed endpoint should be retained under the fixed budget")
+var roundRobinFiller=(0..<1999).map { String(format:"||fill%04d.invalid/path.js$script,domain=scope.invalid",$0) }
+roundRobinFiller.append("||zz-two.invalid/path.js^$script,domain=scope.invalid")
+roundRobinFiller.append("||zzz-later.invalid/path.js$script,domain=scope.invalid")
+let roundRobinIndex=try IndexedAdBlockRules.merge([IndexedAdBlockRules.parse(roundRobinFiller.joined(separator:"\\n"))],policy:.ios27Scripts)
+let roundRobinNative=try NativeAdResourceRules.make(indexJSON:roundRobinIndex.json,preferredHosts:[])
+let roundRobinHasTwo=roundRobinNative.json.contains("zz-two")
+let roundRobinHasLater=roundRobinNative.json.contains("zzz-later")
+check(roundRobinHasLater,"Round-robin must advance past an oversized candidate so a later fitting candidate can fill the final slot; blocks="+String(roundRobinNative.blocks)+", patterns="+String(roundRobinIndex.patterns)+", hasTwo="+String(roundRobinHasTwo))
 check(SupplementalAdResourceRules.entries(forMajorVersion:26).isEmpty,"Supplement must not alter iOS26")
-check(SupplementalAdResourceRules.entries(forMajorVersion:27).count==12,"Expected reviewed supplement")
+check(SupplementalAdResourceRules.entries(forMajorVersion:27).count==14,"Expected reviewed supplement")
 check(SupplementalAdResourceRules.entries(forMajorVersion:28).isEmpty,"Unknown major must not inherit supplement")
 var unsafeAllow=IndexedAdBlockRules.Rule();unsafeAllow.p="foo|bar";unsafeAllow.a=true
 let unsafe=try IndexedAdBlockRules.merge([IndexedAdBlockRules.Document(rules:[unsafeAllow])])
@@ -106,10 +145,21 @@ assert(blocked('https://tracker.fixture.invalid/ad','https://path-exempt.invalid
 assert(blocked('https://tracker.fixture.invalid/ad','https://notexempt.invalid/'));
 assert(!blocked('https://typed.fixture.invalid/pixel',undefined,'script'));
 assert(blocked('https://typed.fixture.invalid/pixel',undefined,'image'));
-assert(!blocked('https://scoped.fixture.invalid/ad'));
+assert(blocked('https://scoped.fixture.invalid/ad'));
+assert(blocked('https://scoped.fixture.invalid/ad','https://news.invalid/'));
+assert(!blocked('https://scoped.fixture.invalid/ad','https://other.invalid/'));
 assert(!blocked('https://socket.fixture.invalid/ad'));
 assert(blocked('https://first.fixture.invalid/ad.js',undefined,'script','first-party'));
 assert(!blocked('https://first.fixture.invalid/ad.js',undefined,'script','third-party'));
+assert(blocked('https://same-site.fixture.invalid/assets/ads.js',undefined,'script','first-party'));
+assert(blocked('https://same-site.fixture.invalid/assets/ads.js',undefined,'script','third-party'));
+assert(blocked('https://scoped-script.fixture.invalid/assets/ads.js','https://news.invalid/','script','first-party'));
+assert(!blocked('https://scoped-script.fixture.invalid/assets/ads.js','https://other.invalid/','script','first-party'));
+assert(blocked('https://explicit-third.fixture.invalid/assets/ads.js',undefined,'script','third-party'));
+assert(!blocked('https://explicit-third.fixture.invalid/assets/ads.js',undefined,'script','first-party'));
+assert(!blocked('https://explicit-first.fixture.invalid/assets/ads.js',undefined,'script','third-party'));
+assert(blocked('https://explicit-first.fixture.invalid/assets/ads.js',undefined,'script','first-party'));
+assert(!blocked('https://same-site.fixture.invalid/assets/ads.js',undefined,'image','first-party'));
 assert(blocked('https://terminal.fixture.invalid/ad'));
 assert(blocked('https://terminal.fixture.invalid/ad?key=1'));
 assert(!blocked('https://terminal.fixture.invalid/advice'));
@@ -130,4 +180,4 @@ for(const entry of supplement) {
  }
 }
 for(const {trigger:t} of rules)assert(!t['url-filter'].includes('|'),'WebKit does not support disjunction');
-console.log('PASS: unchanged 20k native domain budget; 12 cross-site supplements and own-service/navigation safety; host boundaries; scoped exceptions; social/essential compatibility; unsupported condition fail-safe; OS/SDK guard');
+console.log('PASS: unchanged 20k native domain budget; 14 cross-site supplements and own-service/navigation safety; scoped iOS27 party policy; host boundaries; scoped exceptions; social/essential compatibility; unsupported condition fail-safe; OS/SDK guard');

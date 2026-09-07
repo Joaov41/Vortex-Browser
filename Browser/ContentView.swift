@@ -4700,6 +4700,11 @@ struct ContentView: View {
 
         return ZStack(alignment: .topTrailing) {
             Menu {
+                if let url = tab.currentURL {
+                    ShareLink(item: url) {
+                        Label("Share Link", systemImage: "square.and.arrow.up")
+                    }
+                }
                 if vm.isFavorite(tab.url) {
                     Button("Remove from Favorites") {
                         if let favorite = vm.favorites.first(where: { $0.url == tab.url }) {

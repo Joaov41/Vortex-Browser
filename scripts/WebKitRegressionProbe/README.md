@@ -28,9 +28,21 @@ Coverage:
 - A script exception permits only its matching path on the specified source website; the same URL fetched as data is blocked, and navigating to another source website does not inherit the exception.
 - Source include or exclude conditions are compiled separately. Mixed include/exclude exceptions safely fall back to JavaScript because this WebKit build rejects multiple URL conditions in one trigger. All native block contexts remain main-frame only.
 
-The coverage script checks actual Google tag, Hotjar, Yandex, Google Ads, AWS and Facebook URLs plus all 12 hardcoded supplemental endpoints against generated rules without contacting those endpoints. It includes unrelated-source, own-service and document-navigation controls. These local matching assertions are distinct from the device probe and from the final public-site score.
+The coverage script checks actual Google tag, Hotjar, Yandex, Google Ads, AWS and Facebook URLs plus all 14 hardcoded supplemental endpoints against generated rules without contacting those endpoints. It includes unrelated-source, own-service and document-navigation controls. These local matching assertions are distinct from the device probe and from the final public-site score.
 
-For explicitly authorized endpoint testing, launch with the application argument `--live-supplement-urls`. That opt-in mode performs HEAD requests to the 12 public supplemental addresses from an isolated loopback page, with a fresh private data store, credentials omitted, no referrer and an 8-second timeout. It compares before attachment, native blocking, and removal. Only a reachable -> rejected -> reachable result is credited as a demonstrated block; baseline failures/timeouts are reported as inconclusive. The default mode remains loopback-only. This mode sends real network requests but never exports or reads Browser's app data.
+For explicitly authorized endpoint testing, launch with the application argument `--live-supplement-urls`. That opt-in mode performs HEAD requests to the 14 public supplemental addresses from an isolated loopback page, with a fresh private data store, credentials omitted, no referrer and an 8-second timeout. It compares before attachment, native blocking, and removal. Only a reachable -> rejected -> reachable result is credited as a demonstrated block; baseline failures/timeouts are reported as inconclusive. The default mode remains loopback-only. This mode sends real network requests but never exports or reads Browser's app data.
+
+The scoped-script follow-up uses the production parser, `.ios27Scripts` shared policy, and native converter to compile synthetic URL/source rules. Private and persistent cycles check static and dynamically inserted scripts, a concrete unscoped script path, included and excluded sources, explicit third-party-only rules, an image-only negative control, ordinary scripts, a script exception and removal. Both execution markers and server request counts are asserted. The synthetic filenames are test fixtures, not production hardcodes.
+
+Independent local checks from the repository root:
+
+```sh
+node scripts/test-scoped-policy-compatibility.mjs /path/to/public-fixtures
+node scripts/test-scoped-cache-migration.mjs /path/to/public-fixtures
+node scripts/test-scoped-native-webkit.mjs /path/to/public-fixtures .codex-checkpoints/native-ad-rules.json
+```
+
+The last command runs an isolated macOS WKWebView with loopback-only HTTP and a private store; it compiles the full production fixture and verifies synthetic script requests before attachment, while protected, on an out-of-scope source, and after removal. This is actual native WebKit behavior, but does not replace a fresh physical-iPad run or real browsing acceptance.
 
 Generate with an optional final `legacy` argument to reproduce the unchanged old converter's negative-control compilation failure. Pure builder tests emulate rule matching; they are not a substitute for the physical-device probe. The probe confirms native engine behavior with test-only URLs, not matching of every public test-site URL. Keep the exact OS and SDK build in validation evidence; do not generalize to untested beta builds.
 
