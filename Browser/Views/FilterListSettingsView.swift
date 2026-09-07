@@ -40,6 +40,10 @@ struct FilterListSettingsView: View {
                 }
                 LabeledContent("Indexed domains", value: "\(adBlockService.indexedDomainCount)")
                 LabeledContent("Scoped/pattern rules", value: "\(adBlockService.indexedPatternCount)")
+                if #available(iOS 27.0, *) {
+                    LabeledContent("Native resource rules", value: "\(adBlockService.nativeResourceRuleCount)")
+                    Text(adBlockService.nativeResourceStatus).font(.caption).foregroundStyle(.secondary)
+                }
                 if adBlockService.indexedOmittedCount > 0 {
                     LabeledContent("Unsupported / over budget", value: "\(adBlockService.indexedOmittedCount)")
                 }
@@ -49,7 +53,7 @@ struct FilterListSettingsView: View {
             } header: {
                 Text("Statistics")
             } footer: {
-                Text("Domain index: up to 100,000 shared entries. Complex rules have separate limits. On iPadOS/iOS 27, JavaScript filtering cannot intercept every image or script load.")
+                Text("Domain index: up to 100,000 shared entries. On verified iPadOS/iOS 27 builds, a bounded native layer blocks matching main-page resources before loading. Embedded frames and unverified builds retain JavaScript filtering. Native blocks are not included in the JavaScript session counter.")
             }
 
             // MARK: - Filter Lists

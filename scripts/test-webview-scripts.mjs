@@ -7,6 +7,10 @@ import vm from 'node:vm';
 
 const adPath = 'Browser/Services/AdBlockService.swift';
 const current = readFileSync(adPath, 'utf8');
+const supplemental = [...readFileSync('Browser/Utilities/NativeAdResourceRules.swift', 'utf8')
+    .matchAll(/Entry\(host: "([^"]+)", firstPartySites: (\[[^\n]+\])\)/g)]
+    .map(([,host,sites]) => ({host,firstPartySites:JSON.parse(sites)}));
+assert.equal(supplemental.length,12);
 const baseline = process.env.VORTEX_BASELINE_SOURCE
     ? readFileSync(process.env.VORTEX_BASELINE_SOURCE, 'utf8')
     : execFileSync('git', ['show', '72dbb02:' + adPath], {encoding: 'utf8'});
@@ -16,6 +20,7 @@ function blocker(source, enabled) {
     assert(start > 10 && end > start);
     const values = {
         enabledJavaScript: String(enabled), domainsJSON: JSON.stringify(['ads.invalid']),
+        supplementalRulesJSON: JSON.stringify(supplemental),
         networkRulesJSON: JSON.stringify(Array.from({length: 5000}, (_, i) => 'tracker' + i + '\\.invalid')),
         selectorsJSON: JSON.stringify(['.fixture-ad', ...Array.from({length: 3000}, (_, i) => '.fixture-ad-' + i)]),
         customRulesJSON: '[]', cosmeticCSSJSON: JSON.stringify('.fixture-ad'),
@@ -47,7 +52,9 @@ function activation(enabled) {
 const payload = Buffer.from(JSON.stringify({
     oldOn: blocker(baseline, true), oldOff: blocker(baseline, false),
     newOn: blocker(current, true), newOff: blocker(current, false),
-    dark: readFileSync('Browser/darkreader.js', 'utf8'), enable: activation(true), disable: activation(false)
+    dark: readFileSync('Browser/darkreader.js', 'utf8'), enable: activation(true), disable: activation(false),
+    supplementalEntries: JSON.stringify(supplemental),
+    supplementalChecks: `window.supplementChecks={};for(const e of ${JSON.stringify(supplemental)})fetch('https://'+e.host+'/').then(()=>supplementChecks[e.host]=false,()=>supplementChecks[e.host]=true);true;`
 })).toString('base64');
 const helper = readFileSync('Browser/Utilities/ManagedUserScript.swift', 'utf8');
 const compatibility = readFileSync('Browser/Utilities/NativeCookieRuleCompatibility.swift', 'utf8');
@@ -80,7 +87,7 @@ Task { @MainActor in
         try check(!NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "old", sdkBuild: "24A5380g"), "Untested OS enabled")
         try check(!NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "24A5430a", sdkBuild: "unknown"), "Untested SDK enabled")
         try check(!NativeCookieRuleCompatibility.supports(majorVersion: 28, osBuild: "24A5430a", sdkBuild: "24A5380g"), "Untested major enabled")
-        for name in ["before-on-two", "after-on-50-refreshes", "before-off-two", "after-off", "after-early-dark"] {
+        for name in ["before-on-two", "after-on-50-refreshes", "before-off-two", "after-off", "after-early-dark", "after-reddit", "after-google", "after-amazon", "after-facebook", "after-pinterest", "after-twitter"] {
             let config = WKWebViewConfiguration()
             config.websiteDataStore = .nonPersistent()
             let controller = config.userContentController
@@ -115,16 +122,28 @@ Task { @MainActor in
             let nav = Navigation()
             webView.navigationDelegate = nav
             let html = "<html><head><script>window.darkAtFirstInline = typeof DarkReader !== 'undefined' && DarkReader.isEnabled();requestAnimationFrame(()=>window.firstFrameBackground=getComputedStyle(document.documentElement).backgroundColor); window.blockProbe={}; fetch('https://ads.indexed.invalid/ad').then(()=>blockProbe.fetch=false,()=>blockProbe.fetch=true); fetch('https://ads.indexed.invalid/allowed').then(()=>blockProbe.allowed=true,()=>blockProbe.allowed=false); blockProbe.beacon=navigator.sendBeacon('https://beacon.indexed.invalid/ping'); try{new XMLHttpRequest().open('GET','https://ads.indexed.invalid/ad');blockProbe.xhr=false}catch(e){blockProbe.xhr=true} try{new WebSocket('wss://ads.indexed.invalid/socket');blockProbe.socket=false}catch(e){blockProbe.socket=true}</script></head><body>" + String(repeating: "<article><div>Normal text</div><div class='fixture-ad'>Ad</div></article>", count: 100) + "</body></html>"
+            let pageHost = ["after-reddit":"www.reddit.com", "after-google":"www.google.com", "after-amazon":"www.amazon.com", "after-facebook":"www.facebook.com", "after-pinterest":"www.pinterest.com", "after-twitter":"x.com"][name] ?? "fixture.invalid"
             let started = Date()
             try await withCheckedThrowingContinuation { continuation in
                 nav.continuation = continuation
-                webView.loadHTMLString(html, baseURL: URL(string: "https://fixture.invalid"))
+                webView.loadHTMLString(html, baseURL: URL(string: "https://" + pageHost))
             }
             let loadMS = Int(Date().timeIntervalSince(started) * 1000)
             let values = try await webView.evaluateJavaScript("({css:document.querySelectorAll('#adblock-css-rules').length, queries:window.probeQueries, peer:window.probePeer, earlyDark:window.darkAtFirstInline})") as! [String: Any]
             print("METRIC \\(name): load_ms=\\(loadMS), \\(values)")
             try check(values["peer"] as? Bool == true, "Other browser script did not run")
             if !old {
+                _ = try await webView.evaluateJavaScript(payload["supplementalChecks"]!)
+                let supplementResults = try await webView.evaluateJavaScript("window.supplementChecks") as! [String: Bool]
+                let supplementEntries = try JSONSerialization.jsonObject(with: Data(payload["supplementalEntries"]!.utf8)) as! [[String: Any]]
+                for entry in supplementEntries {
+                    let host = entry["host"] as! String
+                    let ownsSource = (entry["firstPartySites"] as! [String]).contains { pageHost == $0 || pageHost.hasSuffix("." + $0) }
+                    try check(supplementResults[host] == (!off && !ownsSource), "Supplement/source scope mismatch: " + host + " from " + pageHost)
+                }
+                _ = try await webView.evaluateJavaScript("document.body.insertAdjacentHTML('beforeend','<shreddit-ad-post id=reddit-ad-fixture>Promoted</shreddit-ad-post>');true")
+                let redditHidden = try await webView.evaluateJavaScript("getComputedStyle(document.getElementById('reddit-ad-fixture')).display === 'none'") as! Bool
+                try check(redditHidden == !off, "Reddit ad hiding changed")
                 let blocked = try await webView.evaluateJavaScript("window.blockProbe") as! [String: Bool]
                 try check(blocked["fetch"] == !off && blocked["xhr"] == !off && blocked["socket"] == !off && blocked["beacon"] == !off, "Indexed interception did not match enabled state at first inline script")
                 try check(blocked["allowed"] == true, "Indexed request exception was ignored")
@@ -135,6 +154,9 @@ Task { @MainActor in
                 let repeated = try await webView.evaluateJavaScript("window.probeQueries") as! Int
                 try check(repeated == queryCount, "Unchanged configuration rebuilt rules")
                 _ = try await webView.evaluateJavaScript(payload["newOff"]!)
+                _ = try await webView.evaluateJavaScript(payload["supplementalChecks"]!)
+                let disabledSupplement = try await webView.evaluateJavaScript("Object.values(window.supplementChecks).every(value=>value===false)") as! Bool
+                try check(disabledSupplement, "Supplement ignored the disabled state")
                 let restored = try await webView.evaluateJavaScript("document.querySelectorAll('[data-codex-adblocked]').length") as! Int
                 try check(restored == 0, "Disabled blocker left elements hidden")
                 _ = try await webView.evaluateJavaScript(payload["newOn"]!)

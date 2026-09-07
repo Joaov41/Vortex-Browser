@@ -73,11 +73,10 @@ nonisolated enum AdBlockContentRulePolicy {
 class AdBlockService: NSObject, ObservableObject {
     static let shared = AdBlockService()
 
-    // iOS 27 currently crashes inside WebKit while initializing or tearing down
-    // native content-extension rule trees. Keep the JavaScript blocker enabled
-    // there until that WebKit path is safe to use again.
+    // iOS 26 retains its existing converter. iOS 27 uses only the separately
+    // probed bounded resource layer on the exact tested OS/SDK pair.
     private static var nativeContentRuleListsSupported: Bool {
-        ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27 || NativeAdResourceRules.isSupported
     }
 
     @Published var isEnabled: Bool {
@@ -98,6 +97,10 @@ class AdBlockService: NSObject, ObservableObject {
     @Published private(set) var indexedPatternCount = 0
     @Published private(set) var indexedOmittedCount = 0
     @Published private(set) var filterUpdateError: String?
+    @Published private(set) var nativeResourceRuleCount = 0
+    @Published private(set) var nativeResourceStatus = "JavaScript protection"
+    private var nativeResourceGeneration = 0
+    private var nativeResourceWork: (token: UUID, identity: String, task: Task<WKContentRuleList?, Error>)?
     private var indexedSnapshot = IndexedAdBlockRules.Snapshot()
     private var indexedListURLs = Set<String>()
     private var indexedBuildGeneration = 0
@@ -684,6 +687,13 @@ class AdBlockService: NSObject, ObservableObject {
             }.value
             guard generation == indexedBuildGeneration,
                   urls == filterLists.filter(\.isEnabled).map(\.url) else { return }
+            if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27,
+               indexedSnapshot.identity != result.0.identity {
+                // A disabled/removed list must not remain effective while replacement compiles.
+                nativeResourceGeneration += 1
+                replaceActiveRuleList(with: nil)
+                nativeResourceRuleCount = 0
+            }
             indexedSnapshot = result.0
             indexedListURLs = result.1
             indexedDomainCount = result.0.domains
@@ -813,6 +823,16 @@ class AdBlockService: NSObject, ObservableObject {
         guard !isUpdatingFilters else { return }
         isUpdatingFilters = true
         await rebuildIndexedRules()
+
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+            // Rebuild only our own layer, without deleting website cache or other services' rules.
+            defaults.removeObject(forKey: "nativeAdResourcesHashV1")
+            await loadContentBlockingRules()
+            cachedBlockingJavaScriptStorage = nil
+            refreshJavaScriptConfiguration(reloadPages: true)
+            isUpdatingFilters = false
+            return
+        }
 
         guard Self.nativeContentRuleListsSupported,
               let contentRuleListStore else {
@@ -1017,7 +1037,9 @@ class AdBlockService: NSObject, ObservableObject {
     }
 
     private func compileCustomRules() async {
-        guard Self.nativeContentRuleListsSupported,
+        // Arbitrary native custom regexes remain on the unchanged iOS 26 path.
+        // iOS 27 custom rules keep the JavaScript fallback until separately validated.
+        guard ProcessInfo.processInfo.operatingSystemVersion.majorVersion < 27,
               let contentRuleListStore else { return }
 
         // Convert custom rules to WebKit content blocker format
@@ -1187,6 +1209,8 @@ class AdBlockService: NSObject, ObservableObject {
             .joined(separator: ",\n                    ")
 
         let domainsJSON = javaScriptJSON(adNetworkDomains)
+        let supplementalRulesJSON = javaScriptJSON(SupplementalAdResourceRules.entries(
+            forMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion))
         // Keep the bounded legacy fallback only for lists not yet migrated (including offline
         // partial updates). A migrated list no longer pays for thousands of legacy regexes.
         let networkRulesJSON = javaScriptJSON(enabledJavaScriptNetworkRules())
@@ -1196,7 +1220,7 @@ class AdBlockService: NSObject, ObservableObject {
         let customRulesJSON = javaScriptJSON(customRules)
         let cosmeticCSSJSON = javaScriptJSON(cosmeticCSS)
         let enabledJavaScript = isEnabled ? "true" : "false"
-        let versionData = Data((enabledJavaScript + indexedSnapshot.identity + selectorsJSON + customRulesJSON + networkRulesJSON).utf8)
+        let versionData = Data((enabledJavaScript + indexedSnapshot.identity + selectorsJSON + customRulesJSON + networkRulesJSON + domainsJSON + supplementalRulesJSON).utf8)
         let configurationVersionJSON = javaScriptJSON(SHA256.hash(data: versionData).map { String(format: "%02x", $0) }.joined())
 
         return """
@@ -1210,6 +1234,7 @@ class AdBlockService: NSObject, ObservableObject {
                 indexedRules: \(indexedRulesJSON),
                 enabled: \(enabledJavaScript),
                 blockedDomains: \(domainsJSON),
+                supplementalRules: \(supplementalRulesJSON),
                 networkRules: \(networkRulesJSON),
                 adSelectors: \(selectorsJSON),
                 customRules: \(customRulesJSON),
@@ -1310,6 +1335,15 @@ class AdBlockService: NSObject, ObservableObject {
                 });
             }
 
+            function matchesSupplementalDomain(parsed) {
+                const host = parsed.hostname.toLowerCase();
+                const pageHost = window.location.hostname.toLowerCase();
+                return (runtime.supplementalRules || []).some(entry =>
+                    hostMatches(host, entry.host)
+                    && !isSameSite(parsed)
+                    && !entry.firstPartySites.some(site => hostMatches(pageHost, site)));
+            }
+
             const selectorGroupSize = 60;
             const networkRuleGroupSize = 80;
             let selectorGroups = [];
@@ -1371,7 +1405,7 @@ class AdBlockService: NSObject, ObservableObject {
                 const indexedDecision = indexedMatcher
                     ? indexedMatcher.decide(parsed, new URL(window.location.href), resourceType, !isSameSite(parsed)) : 0;
                 if (indexedDecision === -1) { return false; }
-                if (indexedDecision === 1 || matchesBlockedDomain(parsed.href)) {
+                if (indexedDecision === 1 || matchesBlockedDomain(parsed.href) || matchesSupplementalDomain(parsed)) {
                     return true;
                 }
                 return (!isSameSite(parsed)
@@ -1761,6 +1795,7 @@ class AdBlockService: NSObject, ObservableObject {
                 }
                 runtime.enabled = configuration.enabled;
                 runtime.blockedDomains = configuration.blockedDomains || [];
+                runtime.supplementalRules = configuration.supplementalRules || [];
                 runtime.networkRules = configuration.networkRules || [];
                 runtime.adSelectors = configuration.adSelectors || [];
                 runtime.customRules = configuration.customRules || [];
@@ -1827,6 +1862,10 @@ class AdBlockService: NSObject, ObservableObject {
     }
 
     private func loadContentBlockingRules() async {
+        if ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27 {
+            await loadNativeResourceRules()
+            return
+        }
         guard Self.nativeContentRuleListsSupported,
               let contentRuleListStore else {
             activeRuleList = nil
@@ -1939,6 +1978,79 @@ class AdBlockService: NSObject, ObservableObject {
         }
     }
     
+    private func loadNativeResourceRules() async {
+        nativeResourceGeneration += 1
+        let generation = nativeResourceGeneration
+        guard NativeAdResourceRules.isSupported, let store = contentRuleListStore else {
+            replaceActiveRuleList(with: nil)
+            nativeResourceRuleCount = 0
+            nativeResourceStatus = "JavaScript only: unverified OS/SDK"
+            return
+        }
+        guard isEnabled else {
+            removeNativeRulesFromAllWebViews()
+            nativeResourceStatus = "Paused"
+            return
+        }
+        let indexIdentity = indexedSnapshot.identity
+        let indexJSON = indexedSnapshot.json
+        let preferred = adNetworkDomains
+        guard indexJSON != "{}" else {
+            replaceActiveRuleList(with: nil)
+            nativeResourceRuleCount = 0
+            nativeResourceStatus = "Waiting for filter index"
+            return
+        }
+        do {
+            let snapshot = try await Task.detached(priority: .utility) {
+                try NativeAdResourceRules.make(indexJSON: indexJSON, preferredHosts: preferred)
+            }.value
+            guard generation == nativeResourceGeneration, indexIdentity == indexedSnapshot.identity else { return }
+            guard snapshot.blocks > 0 else {
+                replaceActiveRuleList(with: nil)
+                nativeResourceRuleCount = 0
+                nativeResourceStatus = "No native resource rules"
+                return
+            }
+            let rule = try await compiledNativeResources(snapshot, store: store)
+            guard generation == nativeResourceGeneration, indexIdentity == indexedSnapshot.identity else { return }
+            replaceActiveRuleList(with: rule)
+            nativeResourceRuleCount = snapshot.blocks
+            nativeResourceStatus = isEnabled ? "Active: pre-load resource blocking" : "Paused"
+        } catch {
+            guard generation == nativeResourceGeneration else { return }
+            // Fail to JS-only, rather than attach an incomplete exception set or stale rules.
+            replaceActiveRuleList(with: nil)
+            nativeResourceRuleCount = 0
+            nativeResourceStatus = "JavaScript only: native rules unavailable"
+            print("Native resource rules unavailable: \(error)")
+        }
+    }
+
+    /// Serialize compilation under our own identifier; concurrent list edits share work
+    /// but only the latest requested snapshot may be attached to live WebViews.
+    private func compiledNativeResources(_ snapshot: NativeAdResourceRules.Snapshot, store: WKContentRuleListStore) async throws -> WKContentRuleList? {
+        while let work = nativeResourceWork {
+            if work.identity == snapshot.identity { return try await work.task.value }
+            _ = try? await work.task.value
+            if nativeResourceWork?.token == work.token { nativeResourceWork = nil }
+        }
+        let token = UUID()
+        let task = Task { @MainActor [defaults] () throws -> WKContentRuleList? in
+            if defaults.string(forKey: "nativeAdResourcesHashV1") == snapshot.identity,
+               let cached = try? await store.lookupContentRuleListAsync(forIdentifier: NativeAdResourceRules.identifier) {
+                return cached
+            }
+            let rule = try await store.compileContentRuleListAsync(forIdentifier: NativeAdResourceRules.identifier, encodedContentRuleList: snapshot.json)
+            guard rule != nil else { throw NativeAdResourceRules.BuildError.safetyBudget }
+            defaults.set(snapshot.identity, forKey: "nativeAdResourcesHashV1")
+            return rule
+        }
+        nativeResourceWork = (token, snapshot.identity, task)
+        defer { if nativeResourceWork?.token == token { nativeResourceWork = nil } }
+        return try await task.value
+    }
+
     private func calculateContentHash() -> String {
         var combinedString = ""
         
