@@ -63,6 +63,10 @@ final class UBlockLiteProbe: NSObject, ObservableObject, WKNavigationDelegate {
                 try await auditSites(service: service, context: regular)
                 return
             }
+            if ProcessInfo.processInfo.arguments.contains("--ubol-rules-update-audit") {
+                try await auditRulesUpdate(service: service)
+                return
+            }
             record("loaded", true)
             record("version", service.version)
             record("builtinDisabled", !AdBlockService.shared.isEnabled)
@@ -375,6 +379,55 @@ final class UBlockLiteProbe: NSObject, ObservableObject, WKNavigationDelegate {
         record("privateTabReadinessMs", await timedReadiness(privateView))
         record("regularRefreshCount", service.regular.rulesRefreshCount)
         record("auditComplete", true)
+    }
+
+    /// Exercises the network-rules update pipeline against the release fixture named by `--ubol-releases-url`.
+    /// The synthetic release adds a rule blocking adblock-tester.com's own `head.inject` script, so a
+    /// successful apply is observable as that fetch failing. The package store is reset afterwards.
+    private func auditRulesUpdate(service: UBlockLiteService) async throws {
+        let updater = service.rulesUpdater
+        record("loadsFromPackageStore", service.loadsFromPackageStore)
+        record("rulesVersionBefore", service.rulesVersion)
+        record("activeManifestVersion", (try? UBOLPackageStore.readManifest(at: service.packageStore.activeURL).version) ?? "unreadable")
+        let model = BrowserViewModel(userDefaults: UserDefaults(suiteName: "VortexLiteRulesUpdate")!)
+        self.model = model
+        service.attach(model)
+        let tab = BrowserTab(title: "Rules update audit", url: nil)
+        model.tabs.append(tab)
+        model.selectTab(tab)
+        var view = tab.activateWebView()
+        self.page = view
+        func probeFetch(_ label: String) async throws {
+            try await load(view, url: URL(string: "https://adblock-tester.com/")!)
+            let outcome = try await view.callAsyncJavaScript("try { const r = await fetch('https://adblock-tester.com/head.inject.8b1bdd48.js', {cache: 'no-store'}); return {status: r.status}; } catch (e) { return {error: String(e)}; }", contentWorld: .page)
+            record(label, outcome ?? [:])
+        }
+        try await probeFetch("headInjectBeforeUpdate")
+        await updater.check()
+        record("checkStatus", updater.statusMessage ?? "")
+        record("availableRelease", updater.availableRelease?.tag ?? "none")
+        guard updater.availableRelease != nil else { record("rulesUpdateAuditComplete", false); return }
+        await updater.downloadAndStage()
+        record("downloadStatus", updater.statusMessage ?? "")
+        record("pendingRulesVersion", service.packageStore.loadState()?.pendingRulesVersion ?? "none")
+        let start = Date()
+        await service.applyRulesUpdate()
+        record("applyMs", Date().timeIntervalSince(start) * 1000)
+        record("applyStatus", updater.statusMessage ?? "")
+        record("rulesVersionAfter", service.rulesVersion)
+        record("engineAfterApply", service.engine.rawValue)
+        record("contextErrorsAfterApply", service.regular.context?.errors.map(\.localizedDescription) ?? [])
+        record("rejectedReleases", service.packageStore.loadState()?.rejectedReleases ?? [])
+        view = tab.activateWebView()
+        try await probeFetch("headInjectAfterUpdate")
+        if let context = service.regular.context, context.isLoaded {
+            let settings = try await dashboard(context)
+            record("enabledRulesetsAfterApply", try await settings.callAsyncJavaScript("return await browser.declarativeNetRequest.getEnabledRulesets();", contentWorld: .page) ?? [])
+        }
+        // Leave the device on the bundled rules: remove the store so the next launch re-extracts the package.
+        try? FileManager.default.removeItem(at: service.packageStore.root)
+        record("storeResetForNextLaunch", !FileManager.default.fileExists(atPath: service.packageStore.root.path))
+        record("rulesUpdateAuditComplete", true)
     }
 
     /// Time the navigation gate for a freshly created view, exactly as the browser's policy delegate awaits it.

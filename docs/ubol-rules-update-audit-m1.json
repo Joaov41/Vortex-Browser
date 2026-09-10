@@ -1,0 +1,41 @@
+{
+  "activeManifestVersion" : "2026.907.2003",
+  "applyMs" : 17830.878973007202,
+  "applyStatus" : "Rules 2026.999.0001 are active.",
+  "availableRelease" : "2026.999.0001",
+  "checkStatus" : "Rules update 2026.999.0001 is available.",
+  "compiledRulesCachedAtStartup" : false,
+  "contextErrorsAfterApply" : [
+
+  ],
+  "downloadStatus" : "Update 2026.999.0001 verified and ready to apply (8 WebKit-incompatible rules omitted).",
+  "enabledRulesetsAfterApply" : [
+    "ublock-filters",
+    "annoyances-social",
+    "easylist",
+    "ubol-tests",
+    "adguard-mobile",
+    "annoyances-others",
+    "annoyances-cookies",
+    "easyprivacy",
+    "annoyances-overlays"
+  ],
+  "engineAfterApply" : "ublockLite",
+  "headInjectAfterUpdate" : {
+    "error" : "TypeError: Load failed"
+  },
+  "headInjectBeforeUpdate" : {
+    "status" : 200
+  },
+  "loadsFromPackageStore" : true,
+  "pendingRulesVersion" : "2026.999.0001",
+  "prepareMs" : 2681.2599897384644,
+  "privateRuntimeDeferredAtStartup" : true,
+  "rejectedReleases" : [
+
+  ],
+  "rulesUpdateAuditComplete" : true,
+  "rulesVersionAfter" : "2026.999.0001",
+  "rulesVersionBefore" : "2026.907.2003",
+  "storeResetForNextLaunch" : true
+}

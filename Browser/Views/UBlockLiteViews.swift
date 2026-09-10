@@ -47,9 +47,60 @@ struct UBlockLiteControls: View {
             if let error = blocker.errorMessage {
                 Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
             }
-            Text("Vortex Lite Lab · uBOL \(blocker.version)")
+            if blocker.engine == .ublockLite, blocker.loadsFromPackageStore {
+                UBlockLiteRulesUpdateControls(blocker: blocker)
+            }
+            Text("Vortex Lite Lab · uBOL \(blocker.version)" + (blocker.rulesVersion == blocker.version ? "" : " · rules \(blocker.rulesVersion)"))
                 .font(.caption2).foregroundStyle(.secondary)
         }
+    }
+}
+
+/// Manual network-rules updates: a daily availability check, then download and apply only on request.
+struct UBlockLiteRulesUpdateControls: View {
+    @ObservedObject var blocker: UBlockLiteService
+    @ObservedObject private var updater: UBOLRulesUpdater
+
+    init(blocker: UBlockLiteService) {
+        self.blocker = blocker
+        updater = blocker.rulesUpdater
+    }
+
+    private var pendingVersion: String? { blocker.packageStore.loadState()?.pendingRulesVersion }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                Button("Check for rule updates", systemImage: "arrow.triangle.2.circlepath") {
+                    Task { await updater.check() }
+                }
+                .disabled(updater.phase != .idle || blocker.isChanging)
+                if updater.phase != .idle { ProgressView().controlSize(.small) }
+            }
+            if let release = updater.availableRelease {
+                Button("Download rules \(release.tag) (\(release.size / 1_048_576) MB)", systemImage: "arrow.down.circle") {
+                    Task { await updater.downloadAndStage() }
+                }
+                .disabled(updater.phase != .idle)
+            }
+            if let pendingVersion, updater.phase == .idle {
+                Button("Apply rules \(pendingVersion) now (reloads open tabs)", systemImage: "checkmark.circle") {
+                    Task { await blocker.applyRulesUpdate() }
+                }
+                .disabled(blocker.isChanging)
+            }
+            if let status = updater.statusMessage {
+                Text(status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            if let lastCheck = updater.lastCheck {
+                Text("Last check: \(lastCheck.formatted(date: .abbreviated, time: .shortened)). Only the filter rule data is updated; the extension code stays pinned.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Text("Checks GitHub for new uBlock Origin Lite releases once a day. Downloads and applying happen only when you tap.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.bordered)
     }
 }
 

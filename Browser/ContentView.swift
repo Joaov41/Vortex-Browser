@@ -53,11 +53,9 @@ enum BrowserExternalNavigationPolicy {
 
     static func shouldForceXHTTPSNavigationInWebView(
         _ url: URL?,
-        idiom: UIUserInterfaceIdiom,
         navigationType: WKNavigationType
     ) -> Bool {
-        guard idiom == .phone,
-              navigationType == .linkActivated,
+        guard navigationType == .linkActivated,
               let url,
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https" else {
@@ -66,14 +64,8 @@ enum BrowserExternalNavigationPolicy {
         return isXWebHost(url.host)
     }
 
-    static func shouldCancelXAppDeepLink(
-        _ url: URL?,
-        idiom: UIUserInterfaceIdiom
-    ) -> Bool {
-        guard idiom == .phone,
-              let scheme = url?.scheme?.lowercased() else {
-            return false
-        }
+    static func shouldCancelXAppDeepLink(_ url: URL?) -> Bool {
+        guard let scheme = url?.scheme?.lowercased() else { return false }
         return scheme == "x" || scheme == "twitter"
     }
 }
@@ -7013,7 +7005,6 @@ struct ContentView: View {
                 if let url = navigationAction.request.url {
                     if BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
                         url,
-                        idiom: UIDevice.current.userInterfaceIdiom,
                         navigationType: navigationAction.navigationType
                     ) {
                         webView.load(navigationAction.request)
@@ -7021,11 +7012,8 @@ struct ContentView: View {
                         return
                     }
 
-                    if BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
-                        url,
-                        idiom: UIDevice.current.userInterfaceIdiom
-                    ) {
-                        print("Blocked X app deep link on iPhone: \(browserURLForLog(url))")
+                    if BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(url) {
+                        print("Blocked X app deep link: \(browserURLForLog(url))")
                         decisionHandler(.cancel)
                         return
                     }
@@ -7334,6 +7322,7 @@ struct ContentView: View {
                 if UIDevice.current.userInterfaceIdiom != .phone {
                     let navigationPan = UIPanGestureRecognizer(target: self, action: #selector(handleIPadNavigationPan(_:)))
                     navigationPan.maximumNumberOfTouches = 1
+                    navigationPan.allowedScrollTypesMask = .continuous
                     navigationPan.cancelsTouchesInView = false
                     navigationPan.delegate = self
                     webView.addGestureRecognizer(navigationPan)
@@ -7425,10 +7414,13 @@ struct ContentView: View {
                           horizontalTravel > abs(translation.y) * 1.25 else { return }
 
                     let webView = tab.activateWebView()
-                    if translation.x > 0, webView.canGoBack {
+                    let isIndirectScroll = gesture.numberOfTouches == 0
+                    if translation.x > 0, webView.canGoBack,
+                       !isIndirectScroll || Self.isScrolledToLeadingEdge(webView.scrollView) {
                         iPadNavigationTriggered = true
                         tab.navigateBack()
-                    } else if translation.x < 0, webView.canGoForward {
+                    } else if translation.x < 0, webView.canGoForward,
+                              !isIndirectScroll || Self.isScrolledToTrailingEdge(webView.scrollView) {
                         iPadNavigationTriggered = true
                         tab.navigateForward()
                     }
@@ -7437,6 +7429,15 @@ struct ContentView: View {
                             || gesture.state == .failed {
                     iPadNavigationTriggered = false
                 }
+            }
+
+            private static func isScrolledToLeadingEdge(_ scrollView: UIScrollView) -> Bool {
+                scrollView.contentOffset.x <= -scrollView.adjustedContentInset.left + 1
+            }
+
+            private static func isScrolledToTrailingEdge(_ scrollView: UIScrollView) -> Bool {
+                let maxOffsetX = scrollView.contentSize.width + scrollView.adjustedContentInset.right - scrollView.bounds.width
+                return scrollView.contentOffset.x >= max(maxOffsetX, 0) - 1
             }
 
             @objc private func handleInteractionTap(_ g: UITapGestureRecognizer) {

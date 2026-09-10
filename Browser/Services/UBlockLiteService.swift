@@ -23,10 +23,16 @@ final class UBlockLiteService: ObservableObject {
     @Published private(set) var isChanging = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var version = "2026.907.2003"
+    /// Version of the network rule data currently loaded; equals `version` until an update is applied.
+    @Published private(set) var rulesVersion = "2026.907.2003"
+    /// True while the extension loads from the extracted package directory rather than the bundled zip.
+    private(set) var loadsFromPackageStore = false
     /// Wall-clock duration of the startup preparation that gates the first UI frame.
     private(set) var prepareDuration: TimeInterval?
     let regular = UBlockLiteRuntime(isPrivate: false)
     let privateRuntime = UBlockLiteRuntime(isPrivate: true)
+    let packageStore = UBOLPackageStore()
+    lazy var rulesUpdater = UBOLRulesUpdater(store: packageStore)
     private var preparation: Task<Void, Never>?
     private var extensionResource: WKWebExtension?
     /// The private runtime is nonpersistent, so WebKit recompiles its rule list on every load. It starts
@@ -67,15 +73,11 @@ final class UBlockLiteService: ObservableObject {
         errorMessage = nil
         do {
             if value == .ublockLite {
-                if extensionResource == nil {
-                    guard let url = Bundle.main.url(forResource: "UBOLite.webkit", withExtension: "zip") else {
-                        throw failure("The bundled uBlock Origin Lite package is missing.")
-                    }
-                    extensionResource = try await WKWebExtension(resourceBaseURL: url)
-                }
+                if extensionResource == nil { extensionResource = try await loadExtensionResource() }
                 guard let extensionResource else { throw failure("Could not load the extension.") }
                 try await regular.load(extensionResource)
                 AdBlockService.shared.isEnabled = false
+                Task { await rulesUpdater.checkIfDue() }
             } else {
                 await cancelPrivateRuntimeLoad()
                 try regular.unload()
@@ -102,6 +104,92 @@ final class UBlockLiteService: ObservableObject {
                 }
             }
         }
+    }
+
+    /// Loads the extension from the extracted, policy-filtered official package so rule data can be updated.
+    /// Falls back to the bundled pre-filtered zip if the package directory cannot be prepared.
+    private func loadExtensionResource() async throws -> WKWebExtension {
+        if let official = Bundle.main.url(forResource: "UBOLite.safari", withExtension: "zip") {
+            do {
+                let state = try packageStore.prepareActivePackage(bundledArchive: official, packageVersion: version)
+                let resource = try await WKWebExtension(resourceBaseURL: packageStore.activeURL)
+                rulesVersion = state.rulesVersion
+                loadsFromPackageStore = true
+                return resource
+            } catch {
+                print("uBOL package store unavailable, using bundled package: \(error.localizedDescription)")
+            }
+        }
+        guard let url = Bundle.main.url(forResource: "UBOLite.webkit", withExtension: "zip") else {
+            throw failure("The bundled uBlock Origin Lite package is missing.")
+        }
+        rulesVersion = version
+        loadsFromPackageStore = false
+        return try await WKWebExtension(resourceBaseURL: url)
+    }
+
+    /// Applies a staged network-rules update: swaps the rule files, reloads the extension from the updated
+    /// package, waits for WebKit to compile and re-enable the rulesets, and rolls back if that fails.
+    func applyRulesUpdate() async {
+        guard engine == .ublockLite, !isChanging, loadsFromPackageStore else { return }
+        isChanging = true
+        rulesUpdater.markApplying(true)
+        defer { isChanging = false; rulesUpdater.markApplying(false) }
+        errorMessage = nil
+        await cancelPrivateRuntimeLoad()
+        try? regular.unload()
+        try? privateRuntime.unload()
+        regular.discardContext()
+        privateRuntime.discardContext()
+        var appliedVersion: String?
+        do {
+            let state = try packageStore.applyPending()
+            appliedVersion = state.rulesVersion
+            rulesUpdater.setStatus("Applying \(state.rulesVersion)…")
+            try await reloadRegularRuntime(expectedRulesets: Self.expectedRulesetCount())
+            rulesVersion = state.rulesVersion
+            rulesUpdater.setStatus("Rules \(state.rulesVersion) are active.")
+        } catch {
+            let failed = appliedVersion ?? "update"
+            var message = "Rules update \(failed) failed to load and was rolled back: \(error.localizedDescription)"
+            if let appliedVersion {
+                _ = try? packageStore.rollback(rejecting: appliedVersion)
+            }
+            do {
+                try await reloadRegularRuntime(expectedRulesets: nil)
+                rulesVersion = packageStore.loadState()?.rulesVersion ?? version
+            } catch {
+                message += " Restoring the previous rules also failed; Vortex protection is active."
+                await failOver(error)
+            }
+            rulesUpdater.setStatus(message)
+        }
+        for runtime in [regular, privateRuntime] {
+            for window in runtime.windows {
+                for tab in window.tabBridges.values { tab.tab?.liveWebView?.reload() }
+            }
+        }
+    }
+
+    /// Recreates the extension from the package directory and requires the refreshed rulesets to load cleanly.
+    private func reloadRegularRuntime(expectedRulesets: Int?) async throws {
+        let resource = try await WKWebExtension(resourceBaseURL: packageStore.activeURL)
+        extensionResource = resource
+        try await regular.load(resource)
+        let enabled = try await regular.awaitRulesRefresh()
+        if let context = regular.context, !context.errors.isEmpty {
+            throw failure(context.errors.map(\.localizedDescription).joined(separator: " "))
+        }
+        if let expectedRulesets, enabled.count != expectedRulesets {
+            throw failure("Expected \(expectedRulesets) enabled rulesets, found \(enabled.count).")
+        }
+    }
+
+    private static func expectedRulesetCount() -> Int? {
+        UserDefaults.standard.object(forKey: "experimental.ubolEnabledRulesetCount") as? Int
+    }
+    func recordEnabledRulesetCount(_ count: Int) {
+        UserDefaults.standard.set(count, forKey: "experimental.ubolEnabledRulesetCount")
     }
 
     /// Hold navigation until this view has native rules from the current controller load.
@@ -167,7 +255,7 @@ final class UBlockLiteService: ObservableObject {
     /// the translated rules, so it stays valid until the package, app build or OS changes.
     private var compiledRulesMarker: String {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-        return "\(version)|\(build)|\(ProcessInfo.processInfo.operatingSystemVersionString)"
+        return "\(version)|\(rulesVersion)|\(build)|\(ProcessInfo.processInfo.operatingSystemVersionString)"
     }
     var compiledRulesAreCurrent: Bool { UserDefaults.standard.string(forKey: Self.compiledRulesKey) == compiledRulesMarker }
     func markCompiledRulesCurrent() { UserDefaults.standard.set(compiledRulesMarker, forKey: Self.compiledRulesKey) }
@@ -231,7 +319,7 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
     private(set) var rulesRefreshCount = 0
     private(set) var bridgePageCreationCount = 0
     #endif
-    private var refreshTask: Task<Void, Error>?
+    private var refreshTask: Task<[String], Error>?
     private var bridgePage: UBlockLiteBridgePage?
     private var generation = 0
     weak var owner: UBlockLiteService?
@@ -292,17 +380,27 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
                     bridgePageCreationCount += 1
                     #endif
                 }
-                try await page.refreshRules()
+                let enabled = try await page.refreshRules()
                 guard generation == currentGeneration else { throw CancellationError() }
                 #if DEBUG
                 rulesRefreshCount += 1
                 #endif
-                if !isPrivate { owner?.markCompiledRulesCurrent() }
+                if !isPrivate {
+                    owner?.markCompiledRulesCurrent()
+                    owner?.recordEnabledRulesetCount(enabled.count)
+                }
+                return enabled
             } catch {
                 if generation == currentGeneration, !(error is CancellationError) { owner?.runtimeFailed(error) }
                 throw error
             }
         }
+    }
+
+    /// Waits for this load's ruleset refresh and returns the enabled ruleset identifiers.
+    func awaitRulesRefresh() async throws -> [String] {
+        guard let refreshTask else { throw NSError(domain: "VortexLite", code: 6, userInfo: [NSLocalizedDescriptionKey: "The extension is not loaded."]) }
+        return try await refreshTask.value
     }
 
     func unload() throws {
@@ -313,6 +411,12 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
         refreshTask = nil
         bridgePage = nil
         try controller.unload(context)
+    }
+
+    /// Drops an unloaded context so the next load binds to a new `WKWebExtension` (after a package update).
+    func discardContext() {
+        guard context?.isLoaded != true else { return }
+        context = nil
     }
 
     func preparePage(_ webView: WKWebView) async throws {
@@ -538,7 +642,8 @@ final class UBlockLiteBridgePage: NSObject, WKNavigationDelegate {
         webView.navigationDelegate = self
     }
 
-    func refreshRules() async throws {
+    /// Re-enables the enabled rulesets and returns their identifiers.
+    func refreshRules() async throws -> [String] {
         if !hasLoaded {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 self.continuation = continuation
@@ -551,19 +656,20 @@ final class UBlockLiteBridgePage: NSObject, WKNavigationDelegate {
             hasLoaded = true
         }
         try Task.checkCancellation()
-        _ = try await webView.callAsyncJavaScript("""
+        let result = try await webView.callAsyncJavaScript("""
         return await Promise.race([
             (async () => {
                 await browser.runtime.sendMessage({what: 'getDefaultFilteringMode'});
                 const ids = await browser.declarativeNetRequest.getEnabledRulesets();
-                if (ids.length === 0) return true; // Respect an intentionally empty list selection.
+                if (ids.length === 0) return ids; // Respect an intentionally empty list selection.
                 await browser.declarativeNetRequest.updateEnabledRulesets({disableRulesetIds: ids, enableRulesetIds: ids});
-                return true;
+                return ids;
             })(),
             new Promise((_, reject) => setTimeout(() => reject(new Error('Filter initialization timed out.')), 60000))
         ]);
         """, contentWorld: .page)
         try Task.checkCancellation()
+        return result as? [String] ?? []
     }
     private func finish(_ error: Error? = nil) {
         timeout?.cancel(); timeout = nil

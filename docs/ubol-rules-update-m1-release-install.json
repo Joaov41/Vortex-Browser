@@ -1,0 +1,37 @@
+{
+  "info" : {
+    "arguments" : [
+      "devicectl",
+      "device",
+      "install",
+      "app",
+      "--device",
+      "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+      ".derived/Build/Products/Release-iphoneos/Browser.app",
+      "--json-output",
+      "/tmp/ubol-updater-release-install.json"
+    ],
+    "commandType" : "devicectl.device.install.app",
+    "environment" : {
+
+    },
+    "jsonVersion" : 5,
+    "outcome" : "success",
+    "version" : "642.0.1"
+  },
+  "result" : {
+    "deviceIdentifier" : "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+    "installedApplications" : [
+      {
+        "bundleID" : "com.web.me.Browser",
+        "databaseSequenceNumber" : 2140,
+        "databaseUUID" : "D2D137B3-7D29-4108-AEB6-E5BB2450DDD3",
+        "installationURL" : "file:///private/var/containers/Bundle/Application/F7F80867-E193-4A32-B16A-8CF12BABFDEC/Browser.app/",
+        "launchServicesIdentifier" : "unknown",
+        "options" : {
+
+        }
+      }
+    ]
+  }
+}

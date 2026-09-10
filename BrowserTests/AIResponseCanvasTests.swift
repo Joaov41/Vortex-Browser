@@ -116,72 +116,46 @@ final class AIResponseCanvasTests: XCTestCase {
         )
     }
 
-    func testIPhoneCancelsOnlyXAppDeepLinks() {
+    func testCancelsOnlyXAppDeepLinks() {
         XCTAssertTrue(
-            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
-                URL(string: "x://timeline"),
-                idiom: .phone
-            )
+            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(URL(string: "x://timeline"))
         )
         XCTAssertTrue(
             BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
-                URL(string: "twitter://user?screen_name=example"),
-                idiom: .phone
+                URL(string: "twitter://user?screen_name=example")
             )
         )
         XCTAssertFalse(
-            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
-                URL(string: "https://x.com/example"),
-                idiom: .phone
-            )
+            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(URL(string: "https://x.com/example"))
         )
         XCTAssertFalse(
-            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
-                URL(string: "mailto:test@example.com"),
-                idiom: .phone
-            )
+            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(URL(string: "mailto:test@example.com"))
         )
-        XCTAssertFalse(
-            BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(
-                URL(string: "twitter://timeline"),
-                idiom: .pad
-            )
-        )
+        XCTAssertFalse(BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(nil))
     }
 
-    func testIPhoneForcesLinkActivatedXHTTPSNavigationIntoWebView() {
+    func testForcesLinkActivatedXHTTPSNavigationIntoWebView() {
         XCTAssertTrue(
             BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
                 URL(string: "https://x.com/?lang=pt"),
-                idiom: .phone,
                 navigationType: .linkActivated
             )
         )
         XCTAssertTrue(
             BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
                 URL(string: "https://mobile.twitter.com/example"),
-                idiom: .phone,
                 navigationType: .linkActivated
             )
         )
         XCTAssertFalse(
             BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
                 URL(string: "https://x.com/?lang=pt"),
-                idiom: .phone,
                 navigationType: .other
             )
         )
         XCTAssertFalse(
             BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
-                URL(string: "https://x.com/?lang=pt"),
-                idiom: .pad,
-                navigationType: .linkActivated
-            )
-        )
-        XCTAssertFalse(
-            BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
                 URL(string: "https://x.com.example.com/"),
-                idiom: .phone,
                 navigationType: .linkActivated
             )
         )
