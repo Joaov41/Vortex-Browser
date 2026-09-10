@@ -1,0 +1,40 @@
+Launched application with com.web.me.VortexWebKitProbe bundle identifier.
+Waiting for the application to terminate…
+VORTEX_PROBE: OS: Version 27.0 (Build 24A435)
+VORTEX_PROBE: SDK: 24A5380g
+VORTEX_PROBE: Creating native rule store
+VORTEX_PROBE: Compiling block-cookies rule
+VORTEX_PROBE: Compiled; beginning attach/load/remove/teardown cycles
+VORTEX_PROBE: Cycle 1: loaded Optional(Isolated cycle 1)
+VORTEX_PROBE: Cycle 2: loaded Optional(Isolated cycle 2)
+VORTEX_PROBE: Cycle 3: loaded Optional(Isolated cycle 3)
+VORTEX_PROBE: Cycle 4: loaded Optional(Isolated cycle 4)
+VORTEX_PROBE: Cycle 5: loaded Optional(Isolated cycle 5)
+VORTEX_PROBE: Cycle 6: loaded Optional(Isolated cycle 6)
+VORTEX_PROBE: PASS private: first-party retained, native positive control blocked, third-party empty, removal preserved cookies. Baseline third-party empty=true
+VORTEX_PROBE: PASS production service: supported, prepared, repeated registration and site toggles preserved session
+sandbox_extension_issue_file failed for /var/containers/Bundle/Application/C3C35DFE-5E87-4A05-A83D-4F87B9150756/VortexWebKitProbe.app: 1 (Operation not permitted)
+VORTEX_PROBE: PASS persistent: first-party retained, native positive control blocked, third-party empty, removal preserved cookies. Baseline third-party empty=true
+VORTEX_PROBE: PASS production service: supported, prepared, repeated registration and site toggles preserved session
+VORTEX_PROBE: Native ad compilation 1: 23399 rules, 5949801 bytes
+VORTEX_PROBE: Native ad compiled in 8594 ms
+VORTEX_PROBE: PASS native ad cycle 1.1: pre-request script blocking; production exception keeps path/type/site scope; normal script and child frame preserved; removal restored; cookie rule coexists
+VORTEX_PROBE: PASS native ad cycle 1.2: pre-request script blocking; production exception keeps path/type/site scope; normal script and child frame preserved; removal restored; cookie rule coexists
+VORTEX_PROBE: PASS native ad cycle 1.3: pre-request script blocking; production exception keeps path/type/site scope; normal script and child frame preserved; removal restored; cookie rule coexists
+VORTEX_PROBE: PASS native ad cycle 1.4: pre-request script blocking; production exception keeps path/type/site scope; normal script and child frame preserved; removal restored; cookie rule coexists
+VORTEX_PROBE: Native ad compilation 2: 23399 rules, 5949801 bytes
+VORTEX_PROBE: Native ad compiled in 8366 ms
+VORTEX_PROBE: PASS native ad cycle 2.1: pre-request script blocking; production exception keeps path/type/site scope; normal script and child frame preserved; removal restored; cookie rule coexists
+VORTEX_PROBE: PASS native ad cycle 2.2: pre-request script blocking; production exception keeps path/type/site scope; normal script and child frame preserved; removal restored; cookie rule coexists
+VORTEX_PROBE: PASS native ad cycle 2.3: pre-request script blocking; production exception keeps path/type/site scope; normal script and child frame preserved; removal restored; cookie rule coexists
+VORTEX_PROBE: PASS native ad cycle 2.4: pre-request script blocking; production exception keeps path/type/site scope; normal script and child frame preserved; removal restored; cookie rule coexists
+VORTEX_PROBE: PASS scoped private-before: static/dynamic execution and pre-request counts, source scope, party, exception, ordinary scripts
+VORTEX_PROBE: PASS scoped private-protected: static/dynamic execution and pre-request counts, source scope, party, exception, ordinary scripts
+VORTEX_PROBE: PASS scoped private-outside: static/dynamic execution and pre-request counts, source scope, party, exception, ordinary scripts
+VORTEX_PROBE: PASS scoped private-removed: static/dynamic execution and pre-request counts, source scope, party, exception, ordinary scripts
+VORTEX_PROBE: PASS scoped persistent-before: static/dynamic execution and pre-request counts, source scope, party, exception, ordinary scripts
+VORTEX_PROBE: PASS scoped persistent-protected: static/dynamic execution and pre-request counts, source scope, party, exception, ordinary scripts
+VORTEX_PROBE: PASS scoped persistent-outside: static/dynamic execution and pre-request counts, source scope, party, exception, ordinary scripts
+VORTEX_PROBE: PASS scoped persistent-removed: static/dynamic execution and pre-request counts, source scope, party, exception, ordinary scripts
+VORTEX_PROBE: PASS: lifecycle, cookie and native script fixtures. Real-site compatibility remains a manual smoke test.
+The app terminated with the exit code 0.

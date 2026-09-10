@@ -1,0 +1,37 @@
+{
+  "info" : {
+    "arguments" : [
+      "devicectl",
+      "device",
+      "install",
+      "app",
+      "--device",
+      "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+      "/Users/johnval/Downloads/Vortex uBlock Origin Lite/.derived/Build/Products/Release-iphoneos/Browser.app",
+      "--json-output",
+      "/private/tmp/ubol-duplication-m1-install.json"
+    ],
+    "commandType" : "devicectl.device.install.app",
+    "environment" : {
+      "TERM" : "dumb"
+    },
+    "jsonVersion" : 5,
+    "outcome" : "success",
+    "version" : "642.0.1"
+  },
+  "result" : {
+    "deviceIdentifier" : "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+    "installedApplications" : [
+      {
+        "bundleID" : "com.web.me.Browser",
+        "databaseSequenceNumber" : 2248,
+        "databaseUUID" : "08C8E322-6576-459A-BC49-C5B700B0B39F",
+        "installationURL" : "file:///private/var/containers/Bundle/Application/6B66799B-5CBA-4B46-87C8-CC26341E920F/Browser.app/",
+        "launchServicesIdentifier" : "unknown",
+        "options" : {
+
+        }
+      }
+    ]
+  }
+}

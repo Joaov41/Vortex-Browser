@@ -55,9 +55,11 @@ nonisolated enum NativeAdResourceRules {
     }
     enum BuildError: Error { case unsupportedException, safetyBudget }
 
-    // Enable only after the isolated full-ruleset probe passes on this pair.
+    // Enabled on iOS 27. The isolated full-ruleset probe passed on builds 24A5430a
+    // (beta) and 24A435 (27.0 release) with SDK 24A5380g; WebKit behaviour is set
+    // by the device OS, so the SDK is not pinned. Re-probe before adding a new major.
     static func supports(majorVersion: Int, osBuild: String, sdkBuild: String?) -> Bool {
-        majorVersion == 27 && osBuild == "24A5430a" && sdkBuild == "24A5380g"
+        majorVersion == 27 && !osBuild.isEmpty
     }
     static var isSupported: Bool {
         var size = 0

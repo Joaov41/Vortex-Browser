@@ -1,0 +1,4316 @@
+{
+  "auditComplete" : true,
+  "https-domains-adblock-tester.com" : {
+    "error" : "TypeError: Load failed"
+  },
+  "https-domains-unrelated.invalid" : {
+    "length" : 3409,
+    "status" : 200
+  },
+  "https-initiatorDomains-adblock-tester.com" : {
+    "error" : "TypeError: Load failed"
+  },
+  "https-initiatorDomains-unrelated.invalid" : {
+    "length" : 3409,
+    "status" : 200
+  },
+  "lite-complete-0" : {
+    "cosmeticStyles" : [
+      {
+        "content" : "\n        html {\n            font-size: 100.0% !important;\n        }\n    ",
+        "id" : "browser-font-size-initial"
+      },
+      {
+        "content" : ".zhz6ns4k7{display:block;overflow:hidden;width:100%;line-height:0;text-decoration:none;border-radius:var(--r-lg);aspect-ratio:1940\/240;padding:0;border:0;background-color:transparent;}.zhz6ns4k7>img{display:block;width:100%;height:100%;object-fit:cover;}.zhz6ns4k7:focus-visible{outline:2px solid var(--focus);outline-offset:3px;}@media (max-width:48em){.zhz6ns4k7{aspect-ratio:1200\/400;}}",
+        "id" : ""
+      }
+    ],
+    "functionSources" : {
+      "bugsnagKeys" : [
+
+      ],
+      "bugsnagStart" : "undefined",
+      "hj" : "undefined",
+      "sentryInit" : "undefined"
+    },
+    "globals" : {
+      "adsbygoogle" : "undefined",
+      "gtag" : "undefined",
+      "hj" : "undefined",
+      "Sentry" : "object",
+      "ym" : "undefined"
+    },
+    "readyState" : "complete",
+    "resources" : [
+      {
+        "duration" : 154,
+        "name" : "https:\/\/s.turtlecute.org\/assets\/index-B7xKq2Lp.js",
+        "size" : 0,
+        "type" : "script"
+      },
+      {
+        "duration" : 158.00000000000023,
+        "name" : "https:\/\/adblock.turtlecute.org\/js\/index.js",
+        "size" : 17591,
+        "type" : "script"
+      },
+      {
+        "duration" : 144,
+        "name" : "https:\/\/adblock.turtlecute.org\/css\/index.css",
+        "size" : 7837,
+        "type" : "link"
+      },
+      {
+        "duration" : 140,
+        "name" : "https:\/\/adblock.turtlecute.org\/js\/pagead.js",
+        "size" : 33,
+        "type" : "script"
+      },
+      {
+        "duration" : 140,
+        "name" : "https:\/\/adblock.turtlecute.org\/js\/widget\/ads.js",
+        "size" : 30,
+        "type" : "script"
+      },
+      {
+        "duration" : 154,
+        "name" : "https:\/\/adblock.turtlecute.org\/js\/7d5e97fcf8970ba2a994.js",
+        "size" : 13402,
+        "type" : "script"
+      },
+      {
+        "duration" : 216.00000000000023,
+        "name" : "https:\/\/s.turtlecute.org\/assets\/api\/send",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 564,
+        "name" : "https:\/\/analyticsengine.s3.amazonaws.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 573,
+        "name" : "https:\/\/analytics.s3.amazonaws.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 254,
+        "name" : "https:\/\/click.googleanalytics.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 300,
+        "name" : "https:\/\/ads-api.twitter.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 726,
+        "name" : "https:\/\/ads-api.tiktok.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 362,
+        "name" : "https:\/\/ads-sg.tiktok.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 352,
+        "name" : "https:\/\/business-api.tiktok.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 329,
+        "name" : "https:\/\/log.byteoversea.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 340,
+        "name" : "https:\/\/ads.tiktok.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 440,
+        "name" : "https:\/\/udcm.yahoo.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 459,
+        "name" : "https:\/\/analytics.query.yahoo.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 425,
+        "name" : "https:\/\/log.fc.yahoo.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 582,
+        "name" : "https:\/\/partnerads.ysm.yahoo.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 860,
+        "name" : "https:\/\/gemini.yahoo.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 911,
+        "name" : "https:\/\/adtech.yahooinc.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 385,
+        "name" : "https:\/\/appmetrica.yandex.ru\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 346,
+        "name" : "https:\/\/adfstat.yandex.ru\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 668,
+        "name" : "https:\/\/metrika.yandex.ru\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 193,
+        "name" : "https:\/\/iot-eu-logser.realme.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 597,
+        "name" : "https:\/\/iot-logser.realme.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 674,
+        "name" : "https:\/\/data.mistat.xiaomi.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 1269,
+        "name" : "https:\/\/data.mistat.india.xiaomi.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 1359,
+        "name" : "https:\/\/data.mistat.rus.xiaomi.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 934,
+        "name" : "https:\/\/tracking.rus.miui.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 239,
+        "name" : "https:\/\/grs.hicloud.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 704,
+        "name" : "https:\/\/api-adservices.apple.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 677.00000000000045,
+        "name" : "https:\/\/books-analytics-events.apple.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 663,
+        "name" : "https:\/\/notes-analytics-events.apple.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 675,
+        "name" : "https:\/\/weather-analytics-events.apple.com\/fakepage.html",
+        "size" : 0,
+        "type" : "fetch"
+      },
+      {
+        "duration" : 3,
+        "name" : "https:\/\/cdn.prod.website-files.com\/6721939c8726e5c8dc6b9f96\/css\/y-qw94pmn342-2762b3cf3474bc6594bde18f76.shared.22b8409e7.min.css",
+        "size" : 0,
+        "type" : "link"
+      }
+    ],
+    "scripts" : [
+      "https:\/\/s.turtlecute.org\/assets\/index-B7xKq2Lp.js",
+      "https:\/\/adblock.turtlecute.org\/js\/index.js",
+      "https:\/\/adblock.turtlecute.org\/js\/widget\/ads.js",
+      "https:\/\/adblock.turtlecute.org\/js\/pagead.js"
+    ],
+    "text" : "Skip to main content\n  Support\n  GitHub\nAd Blocker Test\n  Re-test\nTotal : 132\n95 blocked\n37 not blocked\n\nSome setups, like Firefox with uBlock Origin, can skew results.\nSee the tested setups\n\nThis test is free and open source. A star helps more people find it.\nStar on GitHub\n  Cosmetic Filter\n  Static Ad\n  Dynamic Ad\nWhy does the Cosmetic Filter test fail?\n  Ad Scripts Loading\nads.js\npagead.js\nWhy does the Ad Script Loading test fail?\n  Ad networks\nAmazon\nadtago.s3.amazonaws.com\nanalyticsengine.s3.amazonaws.com\nanalytics.s3.amazonaws.com\nadvice-ads.s3.amazonaws.com\nDoubleclick.net\nstats.g.doubleclick.net\nad.doubleclick.net\nstatic.doubleclick.net\nm.doubleclick.net\nmediavisor.doubleclick.net\nMedia.net\nstatic.media.net\nmedia.net\nadservetx.media.net\n Google Ads\npagead2.googlesyndication.com\nadservice.google.com\npagead2.googleadservices.com\nafs.googlesyndication.com\n Adcolony\nads30.adcolony.com\nadc3-launch.adcolony.com\nevents3alt.adcolony.com\nwd.adcolony.com\n  Analytics and session recording\n Google Analytics\nanalytics.google.com\nclick.googleanalytics.com\ngoogle-analytics.com\nssl.google-analytics.com\nMouseFlow\nmouseflow.com\ncdn.mouseflow.com\no2.mouseflow.com\ngtm.mouseflow.com\napi.mouseflow.com\ntools.mouseflow.com\ncdn-test.mouseflow.com\nLuckyorange\nluckyorange.com\napi.luckyorange.com\nrealtime.luckyorange.com\ncdn.luckyorange.com\nw1.luckyorange.com\nupload.luckyorange.net\ncs.luckyorange.net\nsettings.luckyorange.net\n Hotjar\nadm.hotjar.com\nidentify.hotjar.com\ninsights.hotjar.com\nscript.hotjar.com\nsurveys.hotjar.com\ncareers.hotjar.com\nevents.hotjar.io\nFreshWorks\nfreshmarketer.com\nclaritybt.freshmarketer.com\nfwtracks.freshmarketer.com\nStats WP Plugin\nstats.wp.com\n  Error and crash reporting\n Bugsnag\nnotify.bugsnag.com\nsessions.bugsnag.com\napi.bugsnag.com\napp.bugsnag.com\n Sentry\nbrowser.sentry-cdn.com\napp.getsentry.com\n  Social network trackers\n Facebook\npixel.facebook.com\nan.facebook.com\n LinkedIn\nads.linkedin.com\nanalytics.pointdrive.linkedin.com\n Reddit\nevents.reddit.com\nevents.redditmedia.com\n TikTok\nads-api.tiktok.com\nanalytics.tiktok.com\nads-sg.tiktok.com\nanalytics-sg.tiktok.com\nbusiness-api.tiktok.com\nads.tiktok.com\nlog.byteoversea.com\n Twitter\nstatic.ads-twitter.com\nads-api.twitter.com\n Pinterest\nads.pinterest.com\nlog.pinterest.com\ntrk.pinterest.com\n YouTube\nads.youtube.com\n  Mixed ad and tracking networks\n Yahoo\nads.yahoo.com\nanalytics.yahoo.com\ngeo.yahoo.com\nudcm.yahoo.com\nanalytics.query.yahoo.com\npartnerads.ysm.yahoo.com\nlog.fc.yahoo.com\ngemini.yahoo.com\nadtech.yahooinc.com\n Unity\nauction.unityads.unity3d.com\nwebview.unityads.unity3d.com\nconfig.unityads.unity3d.com\nadserver.unityads.unity3d.com\nYandex\nextmaps-api.yandex.net\nappmetrica.yandex.ru\nadfstat.yandex.ru\nmetrika.yandex.ru\nofferwall.yandex.net\nadfox.yandex.ru\n  Device maker telemetry\nRealme\niot-eu-logser.realme.com\niot-logser.realme.com\nbdapi-ads.realmemobile.com\nbdapi-in-ads.realmemobile.com\nOppo\nadsfs.oppomobile.com\nadx.ads.oppomobile.com\nck.ads.oppomobile.com\ndata.ads.oppomobile.com\n OnePlus\nclick.oneplus.cn\n Apple\niadsdk.apple.com\nmetrics.icloud.com\nmetrics.mzstatic.com\napi-adservices.apple.com\nbooks-analytics-events.apple.com\nweather-analytics-events.apple.com\nnotes-analytics-events.apple.com\n Xiaomi\napi.ad.xiaomi.com\ndata.mistat.xiaomi.com\ndata.mistat.india.xiaomi.com\ndata.mistat.rus.xiaomi.com\nsdkconfig.ad.xiaomi.com\nsdkconfig.ad.intl.xiaomi.com\ntracking.rus.miui.com\n Huawei\nmetrics.data.hicloud.com\nmetrics2.data.hicloud.com\ngrs.hicloud.com\nlogservice.hicloud.com\nlogservice1.hicloud.com\nlogbak.hicloud.com\n Samsung\nsamsungads.com\nsmetrics.samsung.com\nnmetrics.samsung.com\nsamsung-com.112.2o7.net\nanalytics-api.samsunghealthcn.com\nWhat this ad blocker test checks\n\nThree independent checks, scored together. No real ads or trackers are ever loaded.\n\nCosmetic filters\n\nTwo ad-shaped elements, one static and one added after load. The test measures whether your blocker removes or hides them.\n\nAd script loading\n\nTwo decoy scripts named ads.js and pagead.js. The test measures whether they were stopped from running.\n\nHost and DNS blocking\n\n128 hostnames across 30 ad, analytics, tracking and telemetry services. This is the only category a DNS filter can score on.\n\nThe 128 hosts, by category\nAd networks\n20 hosts\nAmazon, Google Ads, Doubleclick.net, Adcolony, Media.net\nAnalytics and session recording\n30 hosts\nGoogle Analytics, Hotjar, MouseFlow, FreshWorks, Luckyorange, Stats WP Plugin\nError and crash reporting\n6 hosts\nBugsnag, Sentry\nSocial network trackers\n19 hosts\nFacebook, Twitter, LinkedIn, Pinterest, Reddit, YouTube, TikTok\nMixed ad and tracking networks\n19 hosts\nYahoo, Yandex, Unity\nDevice maker telemetry\n34 hosts\nRealme, Xiaomi, Oppo, Huawei, OnePlus, Samsung, Apple\nTesting a DNS filter: Pi-hole, AdGuard Home, NextDNS, AdGuard DNS or Control D\n\nA DNS filter blocks domains, so it can only pass the Host category. Here is the score to expect and how to read it.\n\nWhat a good Pi-hole score looks like\n\nA DNS filter on its own answers 128 of the 132 checks, so roughly 40–60% is the correct result, not a failure. The four cosmetic and script checks need a browser extension, which no DNS resolver can do. If you want to know whether your Pi-hole is working, look at the Host category, not the total.\n\nTurn the block page off first\n\nPi-hole, AdGuard Home and NextDNS can answer a blocked domain with their own block page instead of dropping the request. To this test that looks like a successful connection, so your score drops even though the domain was blocked. Set the blocking mode to NXDOMAIN or NULL and re-run.\n\nGetting to a full score\n\nPair the DNS filter with a browser extension such as uBlock Origin or the AdGuard extension. The DNS layer covers the hosts, the extension covers the cosmetic filters and the ad scripts. That combination is what scores green here.\n\nWritten Pi-hole, pi-hole or pihole — all the same thing, and the same advice applies to AdGuard Home, AdGuard DNS, Control D, Quad9 and any other resolver-level blocker. The test cannot see per-client rules, regex filters or allowlists — only whether the 128 hostnames above resolved.\n\nAd blocker test FAQ\n\nAnswers about how the test works, what your score means, and how to improve it.\n\nHow does the ad blocker test work?\nMy ad blocker is configured correctly but the test does not work. Why?\nHow can I get 100% on the ad blocker test?\nWhat do the three test categories check?\nWhat do “Blocked” and “Not Blocked” mean?\nHow is my score calculated, and what do the colors mean?\nHow do I know if I have an ad blocker, and which one?\nAre you looking for a page full of ads to test your blocker?\nWhich ad blockers and DNS filters do you recommend?\nWhat other ad blocker test tools do you recommend?\nMade with love by Turtlecute 🐢 with the help of Daniela Brozzoni\n\nLicensed under [NC-SA-4.0]",
+    "title" : "Ad Blocker Test | Check if Your Ad Blocker Works",
+    "url" : "https:\/\/adblock.turtlecute.org\/"
+  },
+  "lite-complete-0-contextErrors" : [
+
+  ],
+  "lite-complete-0-readinessMs" : 4942.1470165252686,
+  "lite-complete-1" : {
+    "cosmeticStyles" : [
+      {
+        "content" : "\n        html {\n            font-size: 100.0% !important;\n        }\n    ",
+        "id" : "browser-font-size-initial"
+      }
+    ],
+    "functionSources" : {
+      "bugsnagKeys" : [
+
+      ],
+      "bugsnagStart" : "undefined",
+      "hj" : "function(){(t.hj.q=t.hj.q||[]).push(arguments)}",
+      "sentryInit" : "function(o){n.removeEventListener(r,g),n.removeEventListener(t,E);var a=c;for(var s in o)Object.prototype.hasOwnProperty.call(o,s)&&(a[s]=o[s]);!function(n,e){var r=n.integrations||[];if(!Array.isArray(r))return;var t=r.map((function(n){return n.name}));n.tracesSampleRate&&-1===t.indexOf(\"BrowserTracing\")&&(e.browserTracingIntegration?r.push(e.browserTracingIntegration({enableInp:!0})):e.BrowserTracing&&r.push(new e.BrowserTracing));(n.replaysSessionSampleRate||n.replaysOnErrorSampleRate)&&-1===t.indexOf(\"Replay\")&&(e.replayIntegration?r.push(e.replayIntegration()):e.Replay&&r.push(new e.Replay));n.autoInjectFeedback&&-1===t.indexOf(\"Feedback\")&&e.feedbackIntegration&&r.push(e.feedbackIntegration());n.integrations=r}(a,e),i(a)}"
+    },
+    "globals" : {
+      "adsbygoogle" : "object",
+      "gtag" : "function",
+      "hj" : "function",
+      "Sentry" : "object",
+      "ym" : "function"
+    },
+    "readyState" : "complete",
+    "resources" : [
+      {
+        "duration" : 70.999999999999773,
+        "name" : "https:\/\/adblock-tester.com\/src.5b3618ca.css",
+        "size" : 1173,
+        "type" : "link"
+      },
+      {
+        "duration" : 69,
+        "name" : "https:\/\/browser.sentry-cdn.com\/7.81.1\/bundle.tracing.replay.min.js",
+        "size" : 0,
+        "type" : "script"
+      },
+      {
+        "duration" : 68.999999999999773,
+        "name" : "https:\/\/adblock-tester.com\/src.15f4d593.css",
+        "size" : 2030,
+        "type" : "link"
+      },
+      {
+        "duration" : 211.99999999999977,
+        "name" : "https:\/\/adblock-tester.com\/head.inject.8b1bdd48.js",
+        "size" : 1398,
+        "type" : "script"
+      },
+      {
+        "duration" : 99,
+        "name" : "https:\/\/static.hotjar.com\/c\/hotjar-1639117.js?sv=6",
+        "size" : 0,
+        "type" : "script"
+      },
+      {
+        "duration" : 63,
+        "name" : "https:\/\/js.sentry-cdn.com\/98eefed2636036c3bdb8377b11ff28fe.min.js",
+        "size" : 0,
+        "type" : "script"
+      },
+      {
+        "duration" : 63.999999999999773,
+        "name" : "https:\/\/d2wy8f7a9ursnm.cloudfront.net\/v4\/bugsnag.min.js",
+        "size" : 0,
+        "type" : "script"
+      },
+      {
+        "duration" : 215,
+        "name" : "https:\/\/adblock-tester.com\/src.cd761dad.js",
+        "size" : 145162,
+        "type" : "script"
+      },
+      {
+        "duration" : 281,
+        "name" : "https:\/\/adblock-tester.com\/logo.c41e6f93.svg",
+        "size" : 768,
+        "type" : "img"
+      },
+      {
+        "duration" : 59,
+        "name" : "https:\/\/js.sentry-cdn.com\/98eefed2636036c3bdb8377b11ff28fe.min.js",
+        "size" : 0,
+        "type" : "script"
+      },
+      {
+        "duration" : 17,
+        "name" : "https:\/\/adblock-tester.com\/cdn-cgi\/scripts\/5c5dd728\/cloudflare-static\/email-decode.min.js",
+        "size" : 666,
+        "type" : "script"
+      },
+      {
+        "duration" : 41.000000000000227,
+        "name" : "https:\/\/adblock-tester.com\/site.webmanifest?v=qAJrlpKQ8p",
+        "size" : 220,
+        "type" : "other"
+      },
+      {
+        "duration" : 11,
+        "name" : "https:\/\/browser.sentry-cdn.com\/7.120.4\/bundle.tracing.replay.min.js",
+        "size" : 0,
+        "type" : "script"
+      },
+      {
+        "duration" : 46.000000000000227,
+        "name" : "https:\/\/script.hotjar.com\/modules.e762be2b6b709245aabb.js",
+        "size" : 0,
+        "type" : "script"
+      }
+    ],
+    "scripts" : [
+      "https:\/\/browser.sentry-cdn.com\/7.120.4\/bundle.tracing.replay.min.js",
+      "https:\/\/browser.sentry-cdn.com\/7.120.4\/bundle.tracing.replay.min.js",
+      "https:\/\/browser.sentry-cdn.com\/7.120.4\/bundle.tracing.replay.min.js",
+      "https:\/\/mc.yandex.ru\/metrika\/tag.js",
+      "https:\/\/an.yandex.ru\/system\/context.js",
+      "https:\/\/browser.sentry-cdn.com\/7.81.1\/bundle.tracing.replay.min.js",
+      "https:\/\/adblock-tester.com\/head.inject.8b1bdd48.js",
+      "https:\/\/pagead2.googlesyndication.com\/pagead\/js\/adsbygoogle.js",
+      "https:\/\/pagead2.googlesyndication.com\/pagead\/js\/adsbygoogle.js",
+      "https:\/\/an.yandex.ru\/system\/context.js",
+      "https:\/\/www.googletagmanager.com\/gtag\/js?id=G-EPK7X69JWC",
+      "https:\/\/static.hotjar.com\/c\/hotjar-1639117.js?sv=6",
+      "https:\/\/mc.yandex.ru\/metrika\/tag.js",
+      "https:\/\/js.sentry-cdn.com\/98eefed2636036c3bdb8377b11ff28fe.min.js",
+      "https:\/\/d2wy8f7a9ursnm.cloudfront.net\/v4\/bugsnag.min.js",
+      "https:\/\/static.hotjar.com\/c\/hotjar-1639117.js?sv=6",
+      "https:\/\/pagead2.googlesyndication.com\/pagead\/js\/adsbygoogle.js",
+      "https:\/\/pagead2.googlesyndication.com\/pagead\/js\/adsbygoogle.js",
+      "https:\/\/an.yandex.ru\/system\/context.js",
+      "https:\/\/www.googletagmanager.com\/gtag\/js?id=G-EPK7X69JWC",
+      "https:\/\/static.hotjar.com\/c\/hotjar-1639117.js?sv=6",
+      "https:\/\/mc.yandex.ru\/metrika\/tag.js",
+      "https:\/\/js.sentry-cdn.com\/98eefed2636036c3bdb8377b11ff28fe.min.js",
+      "https:\/\/d2wy8f7a9ursnm.cloudfront.net\/v4\/bugsnag.min.js",
+      "https:\/\/script.hotjar.com\/modules.e762be2b6b709245aabb.js",
+      "https:\/\/adblock-tester.com\/src.cd761dad.js",
+      "https:\/\/ymatuhin.ru\/ads\/ads.js",
+      "https:\/\/pagead2.googlesyndication.com\/pagead\/js\/adsbygoogle.js",
+      "https:\/\/www.googletagmanager.com\/gtag\/js?id=G-EPK7X69JWC",
+      "https:\/\/js.sentry-cdn.com\/98eefed2636036c3bdb8377b11ff28fe.min.js",
+      "https:\/\/d2wy8f7a9ursnm.cloudfront.net\/v4\/bugsnag.min.js"
+    ],
+    "text" : "Night mode\nAdBlock Tester(version 3.1.1 from 11\/23\/2023)\n\nChoosing an ad blocker but don't know where to test it? This site contains various advertising and analytic services you can use to test the effectiveness of your Adblocker. Some examples of Adblockers you can test are:\nTotal Adblock, AdBlock, AdBlock Plus, AdGuard, Ghostery, uBlock Origin, AdBlocker Ultimate and others.\n\nRECOMMENDED IF YOUR SCORE IS UNDER 90\/100: Total Adblock blocked the most ads + tracking scripts in our tests. It’s currently up to 80% off (limited-time discount). 👉 Improve your score with Total Adblock\n\nBEST RATED AD BLOCKERS 2026 We put together a full breakdown of the top ad blockers in 2025. See our top picks and how they scored.\n\nUsing multiple ad blockers at the same time can negatively affect their work.\n\nDue to caching when refreshing the page, the results of the previous check may still be visible. To avoid this, try refreshing the page with clearing cache.\n\nContextual advertising\nmedium\nclose\n\nUsually this is the most important type of ADS, but ADS providers blocks this website, so right now it's not reliable way of testing it.\n\nThis is the most common form of advertising and tracking on the internet. It’s very easy for website owners to set up. These services collect data about you in order to find the right advertisement for you.\n\nCustom\nclose\nScript loading:  ⚠️ test has most likely passed(file size does not match the original or takes a long time to load)\nBlock visibility:  ✅ test passed\nGoogle AdSense\nclose\nScript loading:  ⚠️ test has most likely passed(file size does not match the original or takes a long time to load)\nBlock visibility:  ✅ test passed\nYandex Direct\nclose\nScript loading:  ✅ test passed\nBlock visibility:  ✅ test passed\nAnalytics Tools\nmedium\nclose\n\nThese services monitor your actions on the site and collect information about you. They are only useful to the sites' owners. Unfortunately, blocking them sometimes can completely break the site.\n\nGoogle Analytics\nclose\nScript loading:  ⚠️ test has most likely passed(file size does not match the original or takes a long time to load)\nScript execution:  ✅ test passed\nHotjar\nclose\nScript loading:  🏳️ unable to check(possibly due to service security settings)\nScript execution:  ❌ test failed\nYandex.Metrica\nclose\nScript loading:  ✅ test passed\nScript execution:  ✅ test passed\nBanner advertising\nlow\nclose\n\nThis type of advertising is often used on large websites that sell ad space. It is difficult to block because it is difficult to distinguish between an advertising image and a regular image. Often the rules are written for each site separately, so this check is not entirely accurate. It only checks for the presence of keywords in the file path and the availability of Flash.\n\nFlash banners\nclose\nFile loading:  ✅ test passed\nBlock visibility:  ✅ test passed\nGif image\nclose\nFile loading:  ✅ test passed\nBlock visibility:  ✅ test passed\nStatic image\nclose\nFile loading:  ✅ test passed\nBlock visibility:  ✅ test passed\nError Monitoring\nlow\nclose\n\nUnlike analytics tools, these services are used to track and measure errors on websites. Services monitor almost all user actions so that the error message is as complete as possible. Most often, if you turn these off, nothing will break.\n\nSentry\nclose\nScript loading:  🏳️ unable to check(possibly due to service security settings)\nScript execution:  ❌ test failed\nBugsnag\nclose\nScript loading:  🏳️ unable to check(possibly due to service security settings)\nScript execution:  ❌ test failed\n83 points out of 100\n(11 services, 22 checks)\nAdBlock Tester (version 3.1.1)\nWant a stronger result? If any checks failed, your blocker is still letting some ads\/trackers through.\n✅ Total Adblock performed best overall in our tests.\nGrab while it lasts!\n\nThank you for visiting AdBlock Tester. If you have any feedback or ideas for new features, feel free to reach out at whitematchmarketing@gmail.com.We're always looking to improve your experience.\n\nWebsite with ads, analytics trackers, metrics, error catchers. Check your blocker: AdBlock, AdBlock Plus, AdGuard, Ghostery, uBlock Origin, AdBlocker Ultimate…",
+    "title" : "AdBlock Tester: test your AdBlock extensions",
+    "url" : "https:\/\/adblock-tester.com\/"
+  },
+  "lite-complete-1-contextErrors" : [
+
+  ],
+  "lite-complete-1-readinessMs" : 0.11491775512695312,
+  "lite-complete-configuration" : {
+    "dynamicRules" : 104,
+    "mode" : 3,
+    "permissions" : {
+      "origins" : [
+        "<all_urls>"
+      ],
+      "permissions" : [
+        "alarms",
+        "declarativeNetRequest",
+        "scripting",
+        "storage",
+        "unlimitedStorage",
+        "activeTab",
+        "declarativeNetRequestWithHostAccess"
+      ]
+    },
+    "rulesets" : [
+      "adguard-mobile",
+      "ublock-filters",
+      "easyprivacy",
+      "easylist"
+    ],
+    "scripts" : [
+      {
+        "id" : "easyprivacy.main",
+        "matches" : [
+          "<all_urls>"
+        ]
+      },
+      {
+        "id" : "adguard-mobile.main",
+        "matches" : [
+          "<all_urls>"
+        ]
+      },
+      {
+        "id" : "css-generic-some",
+        "matches" : [
+          "*:\/\/*.www.activo.mx\/*",
+          "*:\/\/*.www.foroactivo.com\/*"
+        ]
+      },
+      {
+        "id" : "adguard-mobile.isolated",
+        "matches" : [
+          "<all_urls>"
+        ]
+      },
+      {
+        "id" : "ublock-filters.main",
+        "matches" : [
+          "<all_urls>"
+        ]
+      },
+      {
+        "id" : "css-specific",
+        "matches" : [
+          "<all_urls>"
+        ]
+      },
+      {
+        "excludeMatches" : [
+
+        ],
+        "id" : "prevent-popup",
+        "matches" : [
+          "<all_urls>"
+        ]
+      },
+      {
+        "id" : "easyprivacy.isolated",
+        "matches" : [
+          "*:\/\/*.247sports.com\/*",
+          "*:\/\/*.abc17news.com\/*",
+          "*:\/\/*.abema.tv\/*",
+          "*:\/\/*.al.com\/*",
+          "*:\/\/*.artforum.com\/*",
+          "*:\/\/*.artnews.com\/*",
+          "*:\/\/*.awkward.com\/*",
+          "*:\/\/*.awkwardmom.com\/*",
+          "*:\/\/*.baeldung.com\/*",
+          "*:\/\/*.bailiwickexpress.com\/*",
+          "*:\/\/*.barnsleychronicle.com\/*",
+          "*:\/\/*.becomingpeculiar.com\/*",
+          "*:\/\/*.bethcakes.com\/*",
+          "*:\/\/*.blogher.com\/*",
+          "*:\/\/*.bluegraygal.com\/*",
+          "*:\/\/*.briefeguru.de\/*",
+          "*:\/\/*.carmagazine.co.uk\/*",
+          "*:\/\/*.cattime.com\/*",
+          "*:\/\/*.cbr.com\/*",
+          "*:\/\/*.cbsnews.com\/*",
+          "*:\/\/*.cbssports.com\/*",
+          "*:\/\/*.chaptercheats.com\/*",
+          "*:\/\/*.cheatsheet.com\/*",
+          "*:\/\/*.collider.com\/*",
+          "*:\/\/*.comingsoon.net\/*",
+          "*:\/\/*.commercialobserver.com\/*",
+          "*:\/\/*.competentedigitale.ro\/*",
+          "*:\/\/*.coomer.st\/*",
+          "*:\/\/*.crafty.house\/*",
+          "*:\/\/*.dailyvoice.com\/*",
+          "*:\/\/*.decider.com\/*",
+          "*:\/\/*.didyouknowfacts.com\/*",
+          "*:\/\/*.dogtime.com\/*",
+          "*:\/\/*.dualshockers.com\/*",
+          "*:\/\/*.dustyoldthing.com\/*",
+          "*:\/\/*.faithhub.net\/*",
+          "*:\/\/*.fedex.com\/*",
+          "*:\/\/*.femestella.com\/*",
+          "*:\/\/*.footwearnews.com\/*",
+          "*:\/\/*.freeconvert.com\/*",
+          "*:\/\/*.frogsandsnailsandpuppydogtail.com\/*",
+          "*:\/\/*.fsm-media.com\/*",
+          "*:\/\/*.funtasticlife.com\/*",
+          "*:\/\/*.fwmadebycarli.com\/*",
+          "*:\/\/*.gamerant.com\/*",
+          "*:\/\/*.gfinityesports.com\/*",
+          "*:\/\/*.givemesport.com\/*",
+          "*:\/\/*.gulflive.com\/*",
+          "*:\/\/*.helloflo.com\/*",
+          "*:\/\/*.homeglowdesign.com\/*",
+          "*:\/\/*.honeygirlsworld.com\/*",
+          "*:\/\/*.hotcars.com\/*",
+          "*:\/\/*.howtogeek.com\/*",
+          "*:\/\/*.indiewire.com\/*",
+          "*:\/\/*.insider-gaming.com\/*",
+          "*:\/\/*.insurancejournal.com\/*",
+          "*:\/\/*.jasminemaria.com\/*",
+          "*:\/\/*.kemono.cr\/*",
+          "*:\/\/*.kion546.com\/*",
+          "*:\/\/*.lehighvalleylive.com\/*",
+          "*:\/\/*.lettyskitchen.com\/*",
+          "*:\/\/*.lifeinleggings.com\/*",
+          "*:\/\/*.liveandletsfly.com\/*",
+          "*:\/\/*.lizzieinlace.com\/*",
+          "*:\/\/*.localnews8.com\/*",
+          "*:\/\/*.lonestarlive.com\/*",
+          "*:\/\/*.madeeveryday.com\/*",
+          "*:\/\/*.madewell.com\/*",
+          "*:\/\/*.maidenhead-advertiser.co.uk\/*",
+          "*:\/\/*.makeuseof.com\/*",
+          "*:\/\/*.mardomreport.net\/*",
+          "*:\/\/*.melangery.com\/*",
+          "*:\/\/*.milestomemories.com\/*",
+          "*:\/\/*.mlive.com\/*",
+          "*:\/\/*.modernmom.com\/*",
+          "*:\/\/*.momtastic.com\/*",
+          "*:\/\/*.mostlymorgan.com\/*",
+          "*:\/\/*.motherwellmag.com\/*",
+          "*:\/\/*.movieweb.com\/*",
+          "*:\/\/*.muddybootsanddiamonds.com\/*",
+          "*:\/\/*.musicfeeds.com.au\/*",
+          "*:\/\/*.nationalreview.com\/*",
+          "*:\/\/*.nj.com\/*",
+          "*:\/\/*.nordot.app\/*",
+          "*:\/\/*.nothingbutnewcastle.com\/*",
+          "*:\/\/*.nsjonline.com\/*",
+          "*:\/\/*.nypost.com\/*",
+          "*:\/\/*.oakvillenews.org\/*",
+          "*:\/\/*.observer.com\/*",
+          "*:\/\/*.official.coomer.com.co\/*",
+          "*:\/\/*.pagesix.com\/*",
+          "*:\/\/*.pcwelt.de\/*",
+          "*:\/\/*.pennlive.com\/*",
+          "*:\/\/*.pinkonthecheek.com\/*",
+          "*:\/\/*.predic.ro\/*",
+          "*:\/\/*.puckermom.com\/*",
+          "*:\/\/*.pwinsider.com\/*",
+          "*:\/\/*.qtoptens.com\/*",
+          "*:\/\/*.realgm.com\/*",
+          "*:\/\/*.robbreport.com\/*",
+          "*:\/\/*.royalmailchat.co.uk\/*",
+          "*:\/\/*.samchui.com\/*",
+          "*:\/\/*.sandrarose.com\/*",
+          "*:\/\/*.screenrant.com\/*",
+          "*:\/\/*.sheknows.com\/*",
+          "*:\/\/*.sherdog.com\/*",
+          "*:\/\/*.sidereel.com\/*",
+          "*:\/\/*.simpleflying.com\/*",
+          "*:\/\/*.sloughexpress.co.uk\/*",
+          "*:\/\/*.spacenews.com\/*",
+          "*:\/\/*.sportsgamblingpodcast.com\/*",
+          "*:\/\/*.spotofteadesigns.com\/*",
+          "*:\/\/*.ssnewstelegram.com\/*",
+          "*:\/\/*.stacysrandomthoughts.com\/*",
+          "*:\/\/*.superherohype.com\/*",
+          "*:\/\/*.tablelifeblog.com\/*",
+          "*:\/\/*.thebeautysection.com\/*",
+          "*:\/\/*.thecelticblog.com\/*",
+          "*:\/\/*.thecurvyfashionista.com\/*",
+          "*:\/\/*.thefashionspot.com\/*",
+          "*:\/\/*.thegamer.com\/*",
+          "*:\/\/*.thenerdyme.com\/*",
+          "*:\/\/*.thenonconsumeradvocate.com\/*",
+          "*:\/\/*.thethings.com\/*",
+          "*:\/\/*.timesnews.net\/*",
+          "*:\/\/*.topspeed.com\/*",
+          "*:\/\/*.toyotaklub.org.pl\/*",
+          "*:\/\/*.travelingformiles.com\/*",
+          "*:\/\/*.tvline.com\/*",
+          "*:\/\/*.usaa.com\/*",
+          "*:\/\/*.visible.com\/*"
+        ]
+      },
+      {
+        "id" : "ublock-filters.isolated",
+        "matches" : [
+          "<all_urls>"
+        ]
+      },
+      {
+        "excludeMatches" : [
+          "*:\/\/*.m.beautypageants.in\/*",
+          "*:\/\/*.market.viber.com\/*",
+          "*:\/\/*.accounts.google.com\/*",
+          "*:\/\/*.adblockplus.org\/*",
+          "*:\/\/*.ads.microsoft.com\/*",
+          "*:\/\/*.adsmanager.facebook.com\/*",
+          "*:\/\/*.aetv.com\/*",
+          "*:\/\/*.amazon.ae\/*",
+          "*:\/\/*.amazon.ca\/*",
+          "*:\/\/*.amazon.cn\/*",
+          "*:\/\/*.amazon.co.jp\/*",
+          "*:\/\/*.amazon.co.uk\/*",
+          "*:\/\/*.amazon.com\/*",
+          "*:\/\/*.amazon.com.au\/*",
+          "*:\/\/*.amazon.com.br\/*",
+          "*:\/\/*.amazon.com.mx\/*",
+          "*:\/\/*.amazon.com.tr\/*",
+          "*:\/\/*.amazon.de\/*",
+          "*:\/\/*.amazon.eg\/*",
+          "*:\/\/*.amazon.es\/*",
+          "*:\/\/*.amazon.fr\/*",
+          "*:\/\/*.amazon.in\/*",
+          "*:\/\/*.amazon.it\/*",
+          "*:\/\/*.amazon.nl\/*",
+          "*:\/\/*.amazon.pl\/*",
+          "*:\/\/*.amazon.sa\/*",
+          "*:\/\/*.amazon.se\/*",
+          "*:\/\/*.amazon.sg\/*",
+          "*:\/\/*.androidpolice.com\/*",
+          "*:\/\/*.apkmirror.com\/*",
+          "*:\/\/*.apple.com\/*",
+          "*:\/\/*.artnet.com\/*",
+          "*:\/\/*.atlassian.net\/*",
+          "*:\/\/*.babygaga.com\/*",
+          "*:\/\/*.backyardboss.net\/*",
+          "*:\/\/*.bing.com\/*",
+          "*:\/\/*.bitbucket.org\/*",
+          "*:\/\/*.boot.dev\/*",
+          "*:\/\/*.brighteon.com\/*",
+          "*:\/\/*.browserbench.org\/*",
+          "*:\/\/*.builder.io\/*",
+          "*:\/\/*.calendar.google.com\/*",
+          "*:\/\/*.canva.com\/*",
+          "*:\/\/*.carbuzz.com\/*",
+          "*:\/\/*.cbr.com\/*",
+          "*:\/\/*.cbs.com\/*",
+          "*:\/\/*.cdpn.io\/*",
+          "*:\/\/*.centro.co.il\/*",
+          "*:\/\/*.challenges.cloudflare.com\/*",
+          "*:\/\/*.chatgpt.com\/*",
+          "*:\/\/*.claude.ai\/*",
+          "*:\/\/*.cloud.google.com\/*",
+          "*:\/\/*.codepen.io\/*",
+          "*:\/\/*.codesandbox.io\/*",
+          "*:\/\/*.collider.com\/*",
+          "*:\/\/*.console.cloud.google.com\/*",
+          "*:\/\/*.contacts.google.com\/*",
+          "*:\/\/*.curiositystream.com\/*",
+          "*:\/\/*.cwtv.com\/*",
+          "*:\/\/*.deezer.com\/*",
+          "*:\/\/*.destinationamerica.com\/*",
+          "*:\/\/*.discord.com\/*",
+          "*:\/\/*.discoveryplus.com\/*",
+          "*:\/\/*.disneyplus.com\/*",
+          "*:\/\/*.docs.google.com\/*",
+          "*:\/\/*.dragontea.ink\/*",
+          "*:\/\/*.drive.google.com\/*",
+          "*:\/\/*.dropbox.com\/*",
+          "*:\/\/*.dualshockers.com\/*",
+          "*:\/\/*.facebook.com\/*",
+          "*:\/\/*.fastmail.com\/*",
+          "*:\/\/*.figma.com\/*",
+          "*:\/\/*.fingerprintjs.com\/*",
+          "*:\/\/*.footballfancast.com\/*",
+          "*:\/\/*.footballleagueworld.co.uk\/*",
+          "*:\/\/*.freecodecamp.org\/*",
+          "*:\/\/*.gamerant.com\/*",
+          "*:\/\/*.games.pch.com\/*",
+          "*:\/\/*.geekzone.co.nz\/*",
+          "*:\/\/*.gemini.google.com\/*",
+          "*:\/\/*.github.com\/*",
+          "*:\/\/*.github.io\/*",
+          "*:\/\/*.gitlab.com\/*",
+          "*:\/\/*.givemesport.com\/*",
+          "*:\/\/*.gmail.com\/*",
+          "*:\/\/*.hardcoregamer.com\/*",
+          "*:\/\/*.history.com\/*",
+          "*:\/\/*.hotcars.com\/*",
+          "*:\/\/*.howtogeek.com\/*",
+          "*:\/\/*.icloud.com\/*",
+          "*:\/\/*.instagram.com\/*",
+          "*:\/\/*.instapundit.com\/*",
+          "*:\/\/*.instawp.xyz\/*",
+          "*:\/\/*.jetzt.de\/*",
+          "*:\/\/*.jsfiddle.net\/*",
+          "*:\/\/*.mail.google.com\/*",
+          "*:\/\/*.makeuseof.com\/*",
+          "*:\/\/*.material.angular.io\/*",
+          "*:\/\/*.material.io\/*",
+          "*:\/\/*.matlab.mathworks.com\/*",
+          "*:\/\/*.max.com\/*",
+          "*:\/\/*.maxstream.video\/*",
+          "*:\/\/*.meet.google.com\/*",
+          "*:\/\/*.megaup.net\/*",
+          "*:\/\/*.milfzr.com\/*",
+          "*:\/\/*.moms.com\/*",
+          "*:\/\/*.morphic.sh\/*",
+          "*:\/\/*.movieweb.com\/*",
+          "*:\/\/*.mui.com\/*",
+          "*:\/\/*.music.youtube.com\/*",
+          "*:\/\/*.myaccount.google.com\/*",
+          "*:\/\/*.nebula.tv\/*",
+          "*:\/\/*.neoseeker.com\/*",
+          "*:\/\/*.netflix.com\/*",
+          "*:\/\/*.nfl.com\/*",
+          "*:\/\/*.notebooklm.google.com\/*",
+          "*:\/\/*.notion.so\/*",
+          "*:\/\/*.oisd.nl\/*",
+          "*:\/\/*.onedrive.live.com\/*",
+          "*:\/\/*.open.spotify.com\/*",
+          "*:\/\/*.pandora.com\/*",
+          "*:\/\/*.paramountplus.com\/*",
+          "*:\/\/*.peacocktv.com\/*",
+          "*:\/\/*.photos.google.com\/*",
+          "*:\/\/*.pinterest.com\/*",
+          "*:\/\/*.playcode.io\/*",
+          "*:\/\/*.pocket-lint.com\/*",
+          "*:\/\/*.pocketnow.com\/*",
+          "*:\/\/*.proton.me\/*",
+          "*:\/\/*.proxmox.local\/*",
+          "*:\/\/*.publicwww.com\/*",
+          "*:\/\/*.qobuz.com\/*",
+          "*:\/\/*.receiveasms.com\/*",
+          "*:\/\/*.reddit.com\/*",
+          "*:\/\/*.riverside.fm\/*",
+          "*:\/\/*.sc2casts.com\/*",
+          "*:\/\/*.schemeflood.com\/*",
+          "*:\/\/*.sciencechannel.com\/*",
+          "*:\/\/*.screenrant.com\/*",
+          "*:\/\/*.simpleflying.com\/*",
+          "*:\/\/*.slack.com\/*",
+          "*:\/\/*.smallseotools.com\/*",
+          "*:\/\/*.sonichits.com\/*",
+          "*:\/\/*.soranews24.com\/*",
+          "*:\/\/*.sourcegraph.com\/*",
+          "*:\/\/*.spanishdict.com\/*",
+          "*:\/\/*.stackblitz.com\/*",
+          "*:\/\/*.startpage.com\/*",
+          "*:\/\/*.stream4free.live\/*",
+          "*:\/\/*.tailscale.com\/*",
+          "*:\/\/*.teams.live.com\/*",
+          "*:\/\/*.teams.microsoft.com\/*",
+          "*:\/\/*.testufo.com\/*",
+          "*:\/\/*.thefreedictionary.com\/*",
+          "*:\/\/*.thegamer.com\/*",
+          "*:\/\/*.therichest.com\/*",
+          "*:\/\/*.thesportster.com\/*",
+          "*:\/\/*.thethings.com\/*",
+          "*:\/\/*.thetravel.com\/*",
+          "*:\/\/*.tidal.com\/*",
+          "*:\/\/*.tiktok.com\/*",
+          "*:\/\/*.tlc.com\/*",
+          "*:\/\/*.topspeed.com\/*",
+          "*:\/\/*.tubitv.com\/*",
+          "*:\/\/*.tv.youtube.com\/*",
+          "*:\/\/*.twitch.tv\/*",
+          "*:\/\/*.up-load.io\/*",
+          "*:\/\/*.web.basemark.com\/*",
+          "*:\/\/*.web.telegram.org\/*",
+          "*:\/\/*.webex.com\/*",
+          "*:\/\/*.whatsapp.com\/*",
+          "*:\/\/*.wikibooks.org\/*",
+          "*:\/\/*.wikidata.org\/*",
+          "*:\/\/*.wikinews.org\/*",
+          "*:\/\/*.wikipedia.org\/*",
+          "*:\/\/*.wikiquote.org\/*",
+          "*:\/\/*.wikiversity.org\/*",
+          "*:\/\/*.wiktionary.org\/*",
+          "*:\/\/*.www.youtube.com\/*",
+          "*:\/\/*.x.com\/*",
+          "*:\/\/*.xda-developers.com\/*",
+          "*:\/\/*.yellowbridge.com\/*",
+          "*:\/\/*.yibada.com\/*",
+          "*:\/\/*.10.com.au\/*",
+          "*:\/\/*.1000ps.de\/*",
+          "*:\/\/*.1001tracklists.com\/*",
+          "*:\/\/*.101soundboards.com\/*",
+          "*:\/\/*.1shortlink.com\/*",
+          "*:\/\/*.1stcollegescholarship.net\/*",
+          "*:\/\/*.1warie.com\/*",
+          "*:\/\/*.25cineframes.com\/*",
+          "*:\/\/*.2ix2tv.de\/*",
+          "*:\/\/*.3amid-url.blogspot.com\/*",
+          "*:\/\/*.3dmonitortips.com\/*",
+          "*:\/\/*.45er-de.translate.goog\/*",
+          "*:\/\/*.45er.de\/*",
+          "*:\/\/*.4bigv.com\/*",
+          "*:\/\/*.5278cc.co\/*",
+          "*:\/\/*.65creedmoor.com\/*",
+          "*:\/\/*.7plus.com.au\/*",
+          "*:\/\/*.85videos.com\/*",
+          "*:\/\/*.a2zupload.com\/*",
+          "*:\/\/*.aargauerzeitung.ch\/*",
+          "*:\/\/*.aasarchitecture.com\/*",
+          "*:\/\/*.abczdrowie.pl\/*",
+          "*:\/\/*.accountingplus786.blogspot.com\/*",
+          "*:\/\/*.acilissaati.com\/*",
+          "*:\/\/*.acorta-enlace.com\/*",
+          "*:\/\/*.activo.mx\/*",
+          "*:\/\/*.adhs-zentrum.de\/*",
+          "*:\/\/*.adikdrive.my.id\/*",
+          "*:\/\/*.adproceed.com\/*",
+          "*:\/\/*.adshnk.com\/*",
+          "*:\/\/*.adsuite.io\/*",
+          "*:\/\/*.aeonax.com\/*",
+          "*:\/\/*.aetnd.com\/*",
+          "*:\/\/*.aetools.blogspot.com\/*",
+          "*:\/\/*.aii.sh\/*",
+          "*:\/\/*.airlive.net\/*",
+          "*:\/\/*.ajc.com\/*",
+          "*:\/\/*.ak.sv\/*",
+          "*:\/\/*.akillikafa.com\/*",
+          "*:\/\/*.aktuality.sk\/*",
+          "*:\/\/*.allgemeine-zeitung.de\/*",
+          "*:\/\/*.allkaicerteam.com\/*",
+          "*:\/\/*.allround-pc.com\/*",
+          "*:\/\/*.allsmo.com\/*",
+          "*:\/\/*.alrakoba.net\/*",
+          "*:\/\/*.althub.club\/*",
+          "*:\/\/*.amc.com\/*",
+          "*:\/\/*.amcplus.com\/*",
+          "*:\/\/*.androidacy.com\/*",
+          "*:\/\/*.anghami.com\/*",
+          "*:\/\/*.anime-king.com\/*",
+          "*:\/\/*.anime-loads.org\/*",
+          "*:\/\/*.animefire.plus\/*",
+          "*:\/\/*.animevietsub.tv\/*",
+          "*:\/\/*.aniroleplay.com\/*",
+          "*:\/\/*.antenadosnaskyecia.com\/*",
+          "*:\/\/*.antonimos.de\/*",
+          "*:\/\/*.aosmark.com\/*",
+          "*:\/\/*.appnee.com\/*",
+          "*:\/\/*.apprendrelekabyle.com\/*",
+          "*:\/\/*.appsbull.com\/*",
+          "*:\/\/*.appvn.com\/*",
+          "*:\/\/*.arab4load.com\/*",
+          "*:\/\/*.arcadepunks.com\/*",
+          "*:\/\/*.arcai.com\/*",
+          "*:\/\/*.ariva.de\/*",
+          "*:\/\/*.armorama.com\/*",
+          "*:\/\/*.armypowerinfo.com\/*",
+          "*:\/\/*.arrowos.net\/*",
+          "*:\/\/*.arthromed.de\/*",
+          "*:\/\/*.artoffocas.com\/*",
+          "*:\/\/*.asd.homes\/*",
+          "*:\/\/*.asd.ink\/*",
+          "*:\/\/*.asd.pics\/*",
+          "*:\/\/*.ashemaletube.com\/*",
+          "*:\/\/*.asianexpress.co.uk\/*",
+          "*:\/\/*.aston-martin-club.com\/*",
+          "*:\/\/*.aternos.org\/*",
+          "*:\/\/*.athlete-insurance.com\/*",
+          "*:\/\/*.atozmath.com\/*",
+          "*:\/\/*.atresplayer.com\/*",
+          "*:\/\/*.audi-sport.net\/*",
+          "*:\/\/*.audio-sound-premium.com\/*",
+          "*:\/\/*.ausfile.com\/*",
+          "*:\/\/*.authenticateme.xyz\/*",
+          "*:\/\/*.autocentrum.pl\/*",
+          "*:\/\/*.autokult.pl\/*",
+          "*:\/\/*.automodeler.com\/*",
+          "*:\/\/*.avforums.com\/*",
+          "*:\/\/*.axenthost.com\/*",
+          "*:\/\/*.aztravels.net\/*",
+          "*:\/\/*.babygames.com\/*",
+          "*:\/\/*.backlinkping.com\/*",
+          "*:\/\/*.bakai.org\/*",
+          "*:\/\/*.batch.id\/*",
+          "*:\/\/*.bbcamerica.com\/*",
+          "*:\/\/*.beatricedailysun.com\/*",
+          "*:\/\/*.beeg-pornos.com\/*",
+          "*:\/\/*.benchmark.pl\/*",
+          "*:\/\/*.benzin-preis.ch\/*",
+          "*:\/\/*.berliner-kurier.de\/*",
+          "*:\/\/*.berliner-zeitung.de\/*",
+          "*:\/\/*.berryboot.alexgoldcheidt.com\/*",
+          "*:\/\/*.bg-gledai.video\/*",
+          "*:\/\/*.bgland24.de\/*",
+          "*:\/\/*.bhugolinfo.com\/*",
+          "*:\/\/*.bigbrothercanada.ca\/*",
+          "*:\/\/*.bigbrothergisthub.com\/*",
+          "*:\/\/*.bigwavedave.ca\/*",
+          "*:\/\/*.bild.de\/*",
+          "*:\/\/*.biovetro.net\/*",
+          "*:\/\/*.bishopsstortfordindependent.co.uk\/*",
+          "*:\/\/*.bisnis.adigenius.com\/*",
+          "*:\/\/*.bitcosite.com\/*",
+          "*:\/\/*.blackwoodacademy.org\/*",
+          "*:\/\/*.blogshinobijawi.blogspot.com\/*",
+          "*:\/\/*.boardgamesonline.net\/*",
+          "*:\/\/*.boards.net\/*",
+          "*:\/\/*.bolognatoday.it\/*",
+          "*:\/\/*.bolsanow.com\/*",
+          "*:\/\/*.bondagevalley.cc\/*",
+          "*:\/\/*.bookshared.org\/*",
+          "*:\/\/*.bootdey.com\/*",
+          "*:\/\/*.british-birdsongs.uk\/*",
+          "*:\/\/*.broncos.com.au\/*",
+          "*:\/\/*.brownsboys.com\/*",
+          "*:\/\/*.btc-echo.de\/*",
+          "*:\/\/*.btv.bg\/*",
+          "*:\/\/*.btvnovinite.bg\/*",
+          "*:\/\/*.btvplus.bg\/*",
+          "*:\/\/*.btvsport.bg\/*",
+          "*:\/\/*.btvsports.lol\/*",
+          "*:\/\/*.buerstaedter-zeitung.de\/*",
+          "*:\/\/*.buffed.de\/*",
+          "*:\/\/*.bulldogs.com.au\/*",
+          "*:\/\/*.busuu.com\/*",
+          "*:\/\/*.buxearn.com\/*",
+          "*:\/\/*.bzbasel.ch\/*",
+          "*:\/\/*.c--ix-de.translate.goog\/*",
+          "*:\/\/*.c-ix.de\/*",
+          "*:\/\/*.calciomercato.com\/*",
+          "*:\/\/*.cambridgeindependent.co.uk\/*",
+          "*:\/\/*.canalnatelinhaonline.blogspot.com\/*",
+          "*:\/\/*.canoe.com\/*",
+          "*:\/\/*.capital.fr\/*",
+          "*:\/\/*.cartometro.com\/*",
+          "*:\/\/*.cartoonbrew.com\/*",
+          "*:\/\/*.cartoonth12.com\/*",
+          "*:\/\/*.catracalivre.com.br\/*",
+          "*:\/\/*.cc.com\/*",
+          "*:\/\/*.ccbluex.net\/*",
+          "*:\/\/*.ceesty.com\/*",
+          "*:\/\/*.cety.app\/*",
+          "*:\/\/*.challenge.place\/*",
+          "*:\/\/*.charbelnemnom.com\/*",
+          "*:\/\/*.chd4.com\/*",
+          "*:\/\/*.cheat.hax4you.net\/*",
+          "*:\/\/*.chiaseapk.com\/*",
+          "*:\/\/*.chiemgau24.de\/*",
+          "*:\/\/*.chuppito.fr\/*",
+          "*:\/\/*.cimanow.cc\/*",
+          "*:\/\/*.cinehax.com\/*",
+          "*:\/\/*.cinewatch.top\/*",
+          "*:\/\/*.claimbits.io\/*",
+          "*:\/\/*.classic-retro-games.com\/*",
+          "*:\/\/*.click-me.today\/*",
+          "*:\/\/*.closermag.fr\/*",
+          "*:\/\/*.cloudfam.io\/*",
+          "*:\/\/*.cloudnovel.net\/*",
+          "*:\/\/*.club-opel.com\/*",
+          "*:\/\/*.coachmag.co.uk\/*",
+          "*:\/\/*.code2care.org\/*",
+          "*:\/\/*.coindice.win\/*",
+          "*:\/\/*.coinlyhub.com\/*",
+          "*:\/\/*.coinpayz.xyz\/*",
+          "*:\/\/*.coinrotation.com\/*",
+          "*:\/\/*.colonist.io\/*",
+          "*:\/\/*.comohoy.com\/*",
+          "*:\/\/*.comparatif-logiciels.fr\/*",
+          "*:\/\/*.conceptartworld.com\/*",
+          "*:\/\/*.condorsoft.co\/*",
+          "*:\/\/*.controlc.com\/*",
+          "*:\/\/*.convallariaslibrary.com\/*",
+          "*:\/\/*.cool--domains-de.translate.goog\/*",
+          "*:\/\/*.cool--web-de.translate.goog\/*",
+          "*:\/\/*.cool-domains.de\/*",
+          "*:\/\/*.cool-web.de\/*",
+          "*:\/\/*.cooldns-de.translate.goog\/*",
+          "*:\/\/*.cooldns.de\/*",
+          "*:\/\/*.coolsoftware-de.translate.goog\/*",
+          "*:\/\/*.coolsoftware.de\/*",
+          "*:\/\/*.corneey.com\/*",
+          "*:\/\/*.countrychord.com\/*",
+          "*:\/\/*.couponcabin.com\/*",
+          "*:\/\/*.cours-de-droit.net\/*",
+          "*:\/\/*.cowboys.com.au\/*",
+          "*:\/\/*.cpu-world.com\/*",
+          "*:\/\/*.crazyhd.com\/*",
+          "*:\/\/*.criptologico.com\/*",
+          "*:\/\/*.cryptednews.space\/*",
+          "*:\/\/*.cryptofactss.com\/*",
+          "*:\/\/*.cryptonetos.ru\/*",
+          "*:\/\/*.cryptowin.io\/*",
+          "*:\/\/*.csm.dev\/*",
+          "*:\/\/*.csrevo.com\/*",
+          "*:\/\/*.cuatro.com\/*",
+          "*:\/\/*.custommapposter.com\/*",
+          "*:\/\/*.cutlink.net\/*",
+          "*:\/\/*.cutnet.net\/*",
+          "*:\/\/*.cuttlinks.com\/*",
+          "*:\/\/*.cuttty.com\/*",
+          "*:\/\/*.cxissuegk.com\/*",
+          "*:\/\/*.cyberbunkers.com\/*",
+          "*:\/\/*.daemon-hentai.com\/*",
+          "*:\/\/*.daihatsu-club.net\/*",
+          "*:\/\/*.dailyjobposting.xyz\/*",
+          "*:\/\/*.dailymotion.com\/*",
+          "*:\/\/*.dailyparliamenttimes.com\/*",
+          "*:\/\/*.dailythanthi.com\/*",
+          "*:\/\/*.damnripped.com\/*",
+          "*:\/\/*.darkw.pl\/*",
+          "*:\/\/*.dash3.cashvib.com\/*",
+          "*:\/\/*.databaseitalia.it\/*",
+          "*:\/\/*.dcode.fr\/*",
+          "*:\/\/*.debrid-file.com\/*",
+          "*:\/\/*.decrypt.day\/*",
+          "*:\/\/*.deine-tierwelt.de\/*",
+          "*:\/\/*.delicious-audio.com\/*",
+          "*:\/\/*.deliciousmagazine.pl\/*",
+          "*:\/\/*.demokrasistyle.blogspot.com\/*",
+          "*:\/\/*.derstandard.at\/*",
+          "*:\/\/*.derstandard.de\/*",
+          "*:\/\/*.designoptimal.com\/*",
+          "*:\/\/*.destyy.com\/*",
+          "*:\/\/*.dfbplay.tv\/*",
+          "*:\/\/*.diariodenavarra.es\/*",
+          "*:\/\/*.diariosur.es\/*",
+          "*:\/\/*.diariovasco.com\/*",
+          "*:\/\/*.dias-uteis.com\/*",
+          "*:\/\/*.dicionarioconceitos.blogspot.com\/*",
+          "*:\/\/*.digilibraries.com\/*",
+          "*:\/\/*.digiztechno.com\/*",
+          "*:\/\/*.dinamalar.com\/*",
+          "*:\/\/*.discover-sharm.com\/*",
+          "*:\/\/*.dissexpress.co.uk\/*",
+          "*:\/\/*.distro.tv\/*",
+          "*:\/\/*.diudemy.com\/*",
+          "*:\/\/*.diyprojectslab.com\/*",
+          "*:\/\/*.djamix.net\/*",
+          "*:\/\/*.dobreprogramy.pl\/*",
+          "*:\/\/*.docer.pl\/*",
+          "*:\/\/*.doci.pl\/*",
+          "*:\/\/*.dogdrip.net\/*",
+          "*:\/\/*.dogefaucet.com\/*",
+          "*:\/\/*.dolphinsnrl.com.au\/*",
+          "*:\/\/*.dongknows.com\/*",
+          "*:\/\/*.doods.to\/*",
+          "*:\/\/*.dopomininfo.com\/*",
+          "*:\/\/*.dotnet.guide\/*",
+          "*:\/\/*.down.fast-down.com\/*",
+          "*:\/\/*.down.mdiaload.com\/*",
+          "*:\/\/*.downfile.site\/*",
+          "*:\/\/*.downloader.la\/*",
+          "*:\/\/*.downloadfreecourse.com\/*",
+          "*:\/\/*.dragons.com.au\/*",
+          "*:\/\/*.drivelinks.me\/*",
+          "*:\/\/*.driveup.in\/*",
+          "*:\/\/*.dropcoins.xyz\/*",
+          "*:\/\/*.duden.de\/*",
+          "*:\/\/*.duellinksmeta.com\/*",
+          "*:\/\/*.durtypass.com\/*",
+          "*:\/\/*.dvdporngay.com\/*",
+          "*:\/\/*.dynamicpapers.com\/*",
+          "*:\/\/*.dynamicsupply.net\/*",
+          "*:\/\/*.e-dnevnik.skole.hr\/*",
+          "*:\/\/*.e-komplet.dk\/*",
+          "*:\/\/*.ear-phone-review.com\/*",
+          "*:\/\/*.easyreaders.site\/*",
+          "*:\/\/*.ebookdz.com\/*",
+          "*:\/\/*.echo-online.de\/*",
+          "*:\/\/*.edukalife.blogspot.com\/*",
+          "*:\/\/*.eglos.pl\/*",
+          "*:\/\/*.ekstrabladet.dk\/*",
+          "*:\/\/*.elbotola.com\/*",
+          "*:\/\/*.elcomercio.es\/*",
+          "*:\/\/*.elcorreo.com\/*",
+          "*:\/\/*.eldia.com\/*",
+          "*:\/\/*.eldiariomontanes.es\/*",
+          "*:\/\/*.eleconomista.es\/*",
+          "*:\/\/*.elnortedecastilla.es\/*",
+          "*:\/\/*.elwood.io\/*",
+          "*:\/\/*.emailn.de\/*",
+          "*:\/\/*.emailnator.com\/*",
+          "*:\/\/*.emailregex.com\/*",
+          "*:\/\/*.embed.wcostream.com\/*",
+          "*:\/\/*.encoretvb.com\/*",
+          "*:\/\/*.endless-live.cz\/*",
+          "*:\/\/*.engquimicasantossp.com.br\/*",
+          "*:\/\/*.eodev.com\/*",
+          "*:\/\/*.erai-raws.info\/*",
+          "*:\/\/*.erepublik.tools\/*",
+          "*:\/\/*.erovoice.us\/*",
+          "*:\/\/*.escapegames24.com\/*",
+          "*:\/\/*.eska.pl\/*",
+          "*:\/\/*.espngratis.com\/*",
+          "*:\/\/*.euconfesso.com\/*",
+          "*:\/\/*.euronews.com\/*",
+          "*:\/\/*.exe-links.com\/*",
+          "*:\/\/*.exe-urls.com\/*",
+          "*:\/\/*.exe.app\/*",
+          "*:\/\/*.exego.app\/*",
+          "*:\/\/*.exeo.app\/*",
+          "*:\/\/*.exeygo.com\/*",
+          "*:\/\/*.exnion.com\/*",
+          "*:\/\/*.expertvn.com\/*",
+          "*:\/\/*.explosivemenu.com\/*",
+          "*:\/\/*.extremeoverclocking.com\/*",
+          "*:\/\/*.extremereportbot.com\/*",
+          "*:\/\/*.f1countdown.com\/*",
+          "*:\/\/*.famfonts.com\/*",
+          "*:\/\/*.fansonlinehub.com\/*",
+          "*:\/\/*.farmeramania.de\/*",
+          "*:\/\/*.farsondigitalwatercams.com\/*",
+          "*:\/\/*.fastcoin.ga\/*",
+          "*:\/\/*.fastssh.com\/*",
+          "*:\/\/*.faucetbr.tk\/*",
+          "*:\/\/*.faucetcrypto.com\/*",
+          "*:\/\/*.fautsy.com\/*",
+          "*:\/\/*.fazercurriculo.online\/*",
+          "*:\/\/*.fenlandcitizen.co.uk\/*",
+          "*:\/\/*.festyy.com\/*",
+          "*:\/\/*.feyorra.top\/*",
+          "*:\/\/*.ff14angler.com\/*",
+          "*:\/\/*.fiatclub.eu\/*",
+          "*:\/\/*.fiches-auto.fr\/*",
+          "*:\/\/*.filesharing.io\/*",
+          "*:\/\/*.filespace.com\/*",
+          "*:\/\/*.filezipa.com\/*",
+          "*:\/\/*.filmweb.pl\/*",
+          "*:\/\/*.filmzie.com\/*",
+          "*:\/\/*.finalboss.io\/*",
+          "*:\/\/*.financefernly.com\/*",
+          "*:\/\/*.financemonk.net\/*",
+          "*:\/\/*.firefaucet.win\/*",
+          "*:\/\/*.firefiles.org\/*",
+          "*:\/\/*.firefiles.us\/*",
+          "*:\/\/*.firenzetoday.it\/*",
+          "*:\/\/*.fitnesssguide.com\/*",
+          "*:\/\/*.flightsim.to\/*",
+          "*:\/\/*.football-highlight.com\/*",
+          "*:\/\/*.fordclub.eu\/*",
+          "*:\/\/*.formulatv.com\/*",
+          "*:\/\/*.foroactivo.com\/*",
+          "*:\/\/*.forum.iptvkalite.com\/*",
+          "*:\/\/*.fotoblogia.pl\/*",
+          "*:\/\/*.foxella.com\/*",
+          "*:\/\/*.foxgreat.com\/*",
+          "*:\/\/*.foxseotools.com\/*",
+          "*:\/\/*.fplstatistics.com\/*",
+          "*:\/\/*.fr.de\/*",
+          "*:\/\/*.francoischarron.com\/*",
+          "*:\/\/*.freebitcoin.win\/*",
+          "*:\/\/*.freecourseweb.com\/*",
+          "*:\/\/*.freeforums.net\/*",
+          "*:\/\/*.freemcserver.net\/*",
+          "*:\/\/*.freeserverhostingweb.club\/*",
+          "*:\/\/*.freevipservers.net\/*",
+          "*:\/\/*.freevstplugins.net\/*",
+          "*:\/\/*.freewatchserialonline.com\/*",
+          "*:\/\/*.freex2line.online\/*",
+          "*:\/\/*.frkn64modding.com\/*",
+          "*:\/\/*.fruitlab.com\/*",
+          "*:\/\/*.fun--seiten-de.translate.goog\/*",
+          "*:\/\/*.fun-seiten.de\/*",
+          "*:\/\/*.g-status.com\/*",
+          "*:\/\/*.gadzetomania.pl\/*",
+          "*:\/\/*.gagetmatome.com\/*",
+          "*:\/\/*.gamaniak.com\/*",
+          "*:\/\/*.game-kentang.blogspot.com\/*",
+          "*:\/\/*.gamebrew.org\/*",
+          "*:\/\/*.gameguardian.net\/*",
+          "*:\/\/*.gamepccrack.com\/*",
+          "*:\/\/*.games.forkids.education\/*",
+          "*:\/\/*.gamesfree.ca\/*",
+          "*:\/\/*.gamesgames.com\/*",
+          "*:\/\/*.gamezone.de\/*",
+          "*:\/\/*.gastroepato.it\/*",
+          "*:\/\/*.gatevidyalay.com\/*",
+          "*:\/\/*.gats.io\/*",
+          "*:\/\/*.gdl.freegogpcgames.xyz\/*",
+          "*:\/\/*.gecmisi.com.tr\/*",
+          "*:\/\/*.geekdrop.com\/*",
+          "*:\/\/*.geekprank.com\/*",
+          "*:\/\/*.genialne.pl\/*",
+          "*:\/\/*.gestyy.com\/*",
+          "*:\/\/*.get-click2.blogspot.com\/*",
+          "*:\/\/*.get-digital-help.com\/*",
+          "*:\/\/*.get-to.link\/*",
+          "*:\/\/*.getpaidstock.com\/*",
+          "*:\/\/*.gknutshell.com\/*",
+          "*:\/\/*.gledaitv.fan\/*",
+          "*:\/\/*.gledaitv.live\/*",
+          "*:\/\/*.global.novelpia.com\/*",
+          "*:\/\/*.globaldjmix.com\/*",
+          "*:\/\/*.globaltv.com\/*",
+          "*:\/\/*.globaltvapp.net\/*",
+          "*:\/\/*.goalad.com\/*",
+          "*:\/\/*.gocolumbialions.com\/*",
+          "*:\/\/*.godstoryinfo.com\/*",
+          "*:\/\/*.goplay.su\/*",
+          "*:\/\/*.gozd-les.com\/*",
+          "*:\/\/*.gps--cache-de.translate.goog\/*",
+          "*:\/\/*.gps-cache.de\/*",
+          "*:\/\/*.gpucheck.com\/*",
+          "*:\/\/*.grafixfather.com\/*",
+          "*:\/\/*.granadaesnoticia.com\/*",
+          "*:\/\/*.granthamjournal.co.uk\/*",
+          "*:\/\/*.greekfun.net\/*",
+          "*:\/\/*.growgritly.com\/*",
+          "*:\/\/*.gsmarena.com\/*",
+          "*:\/\/*.gsmware.com\/*",
+          "*:\/\/*.guiamuriae.com.br\/*",
+          "*:\/\/*.guided.news\/*",
+          "*:\/\/*.guidetechly.com\/*",
+          "*:\/\/*.gulf-up.com\/*",
+          "*:\/\/*.guncelakademi.com\/*",
+          "*:\/\/*.gutesexfilme.com\/*",
+          "*:\/\/*.h-flash.com\/*",
+          "*:\/\/*.haaretz.com\/*",
+          "*:\/\/*.hacknetfl1x.net\/*",
+          "*:\/\/*.hackshort.me\/*",
+          "*:\/\/*.handelsblatt.com\/*",
+          "*:\/\/*.hanime.tv\/*",
+          "*:\/\/*.hardware--entwicklung-de.translate.goog\/*",
+          "*:\/\/*.hardware-entwicklung.de\/*",
+          "*:\/\/*.hastingsobserver.co.uk\/*",
+          "*:\/\/*.hax.co.id\/*",
+          "*:\/\/*.hayastantv.me\/*",
+          "*:\/\/*.hcdn.online\/*",
+          "*:\/\/*.hd-sexfilme.com\/*",
+          "*:\/\/*.hdblog.it\/*",
+          "*:\/\/*.hdmotori.it\/*",
+          "*:\/\/*.hdpornos.net\/*",
+          "*:\/\/*.helenair.com\/*",
+          "*:\/\/*.hentaihaven.xxx\/*",
+          "*:\/\/*.hexagame.io\/*",
+          "*:\/\/*.heypikachu.com\/*",
+          "*:\/\/*.hilfen-de.translate.goog\/*",
+          "*:\/\/*.hilfen.de\/*",
+          "*:\/\/*.hints.littlealchemy2.com\/*",
+          "*:\/\/*.hiphopa.net\/*",
+          "*:\/\/*.hipsonyc.com\/*",
+          "*:\/\/*.historicaerials.com\/*",
+          "*:\/\/*.homeairquality.org\/*",
+          "*:\/\/*.homedecoratione.com\/*",
+          "*:\/\/*.homegrownfreaks.net\/*",
+          "*:\/\/*.honeyhunterworld.com\/*",
+          "*:\/\/*.hostingdetailer.com\/*",
+          "*:\/\/*.hotmediahub.com\/*",
+          "*:\/\/*.hotpress.info\/*",
+          "*:\/\/*.how2electronics.com\/*",
+          "*:\/\/*.howdy.id\/*",
+          "*:\/\/*.hoy.es\/*",
+          "*:\/\/*.hulu.com\/*",
+          "*:\/\/*.hunter.fm\/*",
+          "*:\/\/*.husseinezzat.com\/*",
+          "*:\/\/*.huzungozlum.de\/*",
+          "*:\/\/*.hyogo.ie-t.net\/*",
+          "*:\/\/*.hytale-servers.net\/*",
+          "*:\/\/*.i8086.de\/*",
+          "*:\/\/*.ideal.es\/*",
+          "*:\/\/*.idlixku.com\/*",
+          "*:\/\/*.ifc.com\/*",
+          "*:\/\/*.igg-games.com\/*",
+          "*:\/\/*.iheartradio.ca\/*",
+          "*:\/\/*.ilpuntotecnico.com\/*",
+          "*:\/\/*.ilsole24ore.com\/*",
+          "*:\/\/*.imagereviser.com\/*",
+          "*:\/\/*.imedikament.de\/*",
+          "*:\/\/*.impotsurlerevenu.org\/*",
+          "*:\/\/*.imsolo.pro\/*",
+          "*:\/\/*.indcit.com\/*",
+          "*:\/\/*.indiamaja.com\/*",
+          "*:\/\/*.inews.co.uk\/*",
+          "*:\/\/*.info-desk.co.za\/*",
+          "*:\/\/*.inforge.net\/*",
+          "*:\/\/*.inkagames.com\/*",
+          "*:\/\/*.innsalzach24.de\/*",
+          "*:\/\/*.insideedition.com\/*",
+          "*:\/\/*.insurancesfact.com\/*",
+          "*:\/\/*.iphonetweak.fr\/*",
+          "*:\/\/*.iplsc.com\/*",
+          "*:\/\/*.is2btc.com\/*",
+          "*:\/\/*.isekaipalace.com\/*",
+          "*:\/\/*.isthischannelmonetized.com\/*",
+          "*:\/\/*.itsguider.com\/*",
+          "*:\/\/*.jastrzabpost.pl\/*",
+          "*:\/\/*.javaguides.net\/*",
+          "*:\/\/*.javplayer.com\/*",
+          "*:\/\/*.jbzd.com.pl\/*",
+          "*:\/\/*.jbzdy.com.pl\/*",
+          "*:\/\/*.jelonka.com\/*",
+          "*:\/\/*.jetpunk.com\/*",
+          "*:\/\/*.jiocinema.com\/*",
+          "*:\/\/*.jlaforums.com\/*",
+          "*:\/\/*.jnvharidwar.org\/*",
+          "*:\/\/*.jobnoid.net\/*",
+          "*:\/\/*.jpopsingles.eu\/*",
+          "*:\/\/*.justlightnovels.com\/*",
+          "*:\/\/*.k258059.net\/*",
+          "*:\/\/*.kafeteria.pl\/*",
+          "*:\/\/*.kaystls.site\/*",
+          "*:\/\/*.kbb.com\/*",
+          "*:\/\/*.keneono.site\/*",
+          "*:\/\/*.kentonline.co.uk\/*",
+          "*:\/\/*.key-hub.eu\/*",
+          "*:\/\/*.kio.ac\/*",
+          "*:\/\/*.kledgeb.blogspot.com\/*",
+          "*:\/\/*.kleinanzeigen.de\/*",
+          "*:\/\/*.knightlobby.com\/*",
+          "*:\/\/*.kojodan.jp\/*",
+          "*:\/\/*.komorkomania.pl\/*",
+          "*:\/\/*.koyso.com\/*",
+          "*:\/\/*.krakenfiles.com\/*",
+          "*:\/\/*.kryptografie-de.translate.goog\/*",
+          "*:\/\/*.kryptografie.de\/*",
+          "*:\/\/*.kupujemprodajem.com\/*",
+          "*:\/\/*.kwamkidhen.com\/*",
+          "*:\/\/*.l2top.co\/*",
+          "*:\/\/*.la7.it\/*",
+          "*:\/\/*.lablue.de\/*",
+          "*:\/\/*.lampertheimer-zeitung.de\/*",
+          "*:\/\/*.lapresse.ca\/*",
+          "*:\/\/*.larioja.com\/*",
+          "*:\/\/*.lasprovincias.es\/*",
+          "*:\/\/*.launcherleaks.net\/*",
+          "*:\/\/*.lauterbacher-anzeiger.de\/*",
+          "*:\/\/*.laweducationinfo.com\/*",
+          "*:\/\/*.league-funny.com\/*",
+          "*:\/\/*.leak.sx\/*",
+          "*:\/\/*.learnmarketinfo.com\/*",
+          "*:\/\/*.leaveadvice.com\/*",
+          "*:\/\/*.lecturel.com\/*",
+          "*:\/\/*.leechall.download\/*",
+          "*:\/\/*.leechpremium.net\/*",
+          "*:\/\/*.legrandrex.com\/*",
+          "*:\/\/*.leonoticias.com\/*",
+          "*:\/\/*.lesmoutonsrebelles.com\/*",
+          "*:\/\/*.letras2.com\/*",
+          "*:\/\/*.lewdzone.com\/*",
+          "*:\/\/*.lg-firmwares.com\/*",
+          "*:\/\/*.libero.it\/*",
+          "*:\/\/*.ligainsider.de\/*",
+          "*:\/\/*.link-to.net\/*",
+          "*:\/\/*.linkjust.com\/*",
+          "*:\/\/*.linkvertise.com\/*",
+          "*:\/\/*.lootdb.com\/*",
+          "*:\/\/*.los40.com\/*",
+          "*:\/\/*.loskatchorros.com.br\/*",
+          "*:\/\/*.luciferdonghua.in\/*",
+          "*:\/\/*.luscious.net\/*",
+          "*:\/\/*.lutontoday.co.uk\/*",
+          "*:\/\/*.lynnnews.co.uk\/*",
+          "*:\/\/*.m.kuku.lu\/*",
+          "*:\/\/*.m.photos.timesofindia.com\/*",
+          "*:\/\/*.maalaimalar.com\/*",
+          "*:\/\/*.mabzicle.com\/*",
+          "*:\/\/*.madarascans.com\/*",
+          "*:\/\/*.magiclen.org\/*",
+          "*:\/\/*.mahitimanch.in\/*",
+          "*:\/\/*.mailtool-de.translate.goog\/*",
+          "*:\/\/*.mailtool.de\/*",
+          "*:\/\/*.main-spitze.de\/*",
+          "*:\/\/*.makeincomeinfo.com\/*",
+          "*:\/\/*.mangfall24.de\/*",
+          "*:\/\/*.manhuarmmtl.com\/*",
+          "*:\/\/*.manhwa18.com\/*",
+          "*:\/\/*.manwa.me\/*",
+          "*:\/\/*.maqal360.com\/*",
+          "*:\/\/*.matchendirect.fr\/*",
+          "*:\/\/*.mathportal.org\/*",
+          "*:\/\/*.matzoo.pl\/*",
+          "*:\/\/*.me-encantas.com\/*",
+          "*:\/\/*.meinyouporn.com\/*",
+          "*:\/\/*.melbournestorm.com.au\/*",
+          "*:\/\/*.memexcomputer.it\/*",
+          "*:\/\/*.memoriadatv.com\/*",
+          "*:\/\/*.meong.club\/*",
+          "*:\/\/*.mercedesclub.cz\/*",
+          "*:\/\/*.met.bz\/*",
+          "*:\/\/*.metalymetal.com\/*",
+          "*:\/\/*.meteo365.es\/*",
+          "*:\/\/*.meteologix.com\/*",
+          "*:\/\/*.metin2lobby.com\/*",
+          "*:\/\/*.metro.co.uk\/*",
+          "*:\/\/*.metro.style\/*",
+          "*:\/\/*.meuplayeronlinehd.com\/*",
+          "*:\/\/*.meutimao.com.br\/*",
+          "*:\/\/*.milffabrik.com\/*",
+          "*:\/\/*.minecraftpocket-servers.com\/*",
+          "*:\/\/*.minorpatch.com\/*",
+          "*:\/\/*.mintik.com\/*",
+          "*:\/\/*.mitly.us\/*",
+          "*:\/\/*.mnya.tw\/*",
+          "*:\/\/*.mobilejsr.com\/*",
+          "*:\/\/*.mobinozer.com\/*",
+          "*:\/\/*.model-viewer.com\/*",
+          "*:\/\/*.mojatv.eu\/*",
+          "*:\/\/*.momo-net.com\/*",
+          "*:\/\/*.money.it\/*",
+          "*:\/\/*.money.pl\/*",
+          "*:\/\/*.motoroids.com\/*",
+          "*:\/\/*.mpsconline.gov.in\/*",
+          "*:\/\/*.mrfreemium.blogspot.com\/*",
+          "*:\/\/*.mrsbrownsb.blogspot.com\/*",
+          "*:\/\/*.mtabrasil.com.br\/*",
+          "*:\/\/*.multishows.top\/*",
+          "*:\/\/*.my5.tv\/*",
+          "*:\/\/*.myfxbook.com\/*",
+          "*:\/\/*.mygoodstream.pw\/*",
+          "*:\/\/*.mylifetime.com\/*",
+          "*:\/\/*.mylivesignature.com\/*",
+          "*:\/\/*.myshorturls.blogspot.com\/*",
+          "*:\/\/*.myuploadedpremium.de\/*",
+          "*:\/\/*.myzyia.com\/*",
+          "*:\/\/*.napmap.net\/*",
+          "*:\/\/*.napolitoday.it\/*",
+          "*:\/\/*.nathanmichaelphoto.com\/*",
+          "*:\/\/*.nba.com\/*",
+          "*:\/\/*.nbk.io\/*",
+          "*:\/\/*.nefree.com\/*",
+          "*:\/\/*.neko-sama.fr\/*",
+          "*:\/\/*.nekomeowmeow.com\/*",
+          "*:\/\/*.nensaysubs.net\/*",
+          "*:\/\/*.net--tools-de.translate.goog\/*",
+          "*:\/\/*.net--tours-de.translate.goog\/*",
+          "*:\/\/*.net-tools.de\/*",
+          "*:\/\/*.net-tours.de\/*",
+          "*:\/\/*.newarkadvertiser.co.uk\/*",
+          "*:\/\/*.newcastleknights.com.au\/*",
+          "*:\/\/*.news.bg\/*",
+          "*:\/\/*.news9.co.ke\/*",
+          "*:\/\/*.newscon.org\/*",
+          "*:\/\/*.next-episode.net\/*",
+          "*:\/\/*.nfhost.me\/*",
+          "*:\/\/*.nhl.com\/*",
+          "*:\/\/*.nosey.com\/*",
+          "*:\/\/*.notepad.pw\/*",
+          "*:\/\/*.novelgo.id\/*",
+          "*:\/\/*.now.gg\/*",
+          "*:\/\/*.now.us\/*",
+          "*:\/\/*.nreer.com\/*",
+          "*:\/\/*.nrl.com\/*",
+          "*:\/\/*.nswrl.com.au\/*",
+          "*:\/\/*.nullscripts.net\/*",
+          "*:\/\/*.numbersinwords.net\/*",
+          "*:\/\/*.nursexfilme.com\/*",
+          "*:\/\/*.o2.pl\/*",
+          "*:\/\/*.oberhessische-zeitung.de\/*",
+          "*:\/\/*.okdebrid.com\/*",
+          "*:\/\/*.omekon.blogspot.com\/*",
+          "*:\/\/*.onbatch.my.id\/*",
+          "*:\/\/*.ondemandkorea.com\/*",
+          "*:\/\/*.onemanhua.com\/*",
+          "*:\/\/*.onle.co\/*",
+          "*:\/\/*.online-courses.club\/*",
+          "*:\/\/*.onlinecoursebay.com\/*",
+          "*:\/\/*.onlinefetishporn.cc\/*",
+          "*:\/\/*.onlinestudentseva.com\/*",
+          "*:\/\/*.openlua.cloud\/*",
+          "*:\/\/*.operationharshdoorstop.com\/*",
+          "*:\/\/*.orangeobserver.com\/*",
+          "*:\/\/*.osuskinner.com\/*",
+          "*:\/\/*.osuskins.net\/*",
+          "*:\/\/*.otakukan.com\/*",
+          "*:\/\/*.ovagames.com\/*",
+          "*:\/\/*.ovb-online.de\/*",
+          "*:\/\/*.overgal.com\/*",
+          "*:\/\/*.overtakefans.com\/*",
+          "*:\/\/*.oztoml.com\/*",
+          "*:\/\/*.paktech2.com\/*",
+          "*:\/\/*.pandamovies.pw\/*",
+          "*:\/\/*.paraphraser.io\/*",
+          "*:\/\/*.parenting.pl\/*",
+          "*:\/\/*.parraeels.com.au\/*",
+          "*:\/\/*.paste.bin.sx\/*",
+          "*:\/\/*.pastepvp.org\/*",
+          "*:\/\/*.pastpapers.papacambridge.com\/*",
+          "*:\/\/*.paypou.com\/*",
+          "*:\/\/*.pch.com\/*",
+          "*:\/\/*.penrithpanthers.com.au\/*",
+          "*:\/\/*.pharmacyreviewer.com\/*",
+          "*:\/\/*.phonereviewinfo.com\/*",
+          "*:\/\/*.photo--alben-de.translate.goog\/*",
+          "*:\/\/*.photo-alben.de\/*",
+          "*:\/\/*.pigy.cz\/*",
+          "*:\/\/*.pikwizard.com\/*",
+          "*:\/\/*.planhub.ca\/*",
+          "*:\/\/*.play.history.com\/*",
+          "*:\/\/*.player.pl\/*",
+          "*:\/\/*.playstore.pw\/*",
+          "*:\/\/*.ploudos.com\/*",
+          "*:\/\/*.plutomovies.com\/*",
+          "*:\/\/*.poedb.tw\/*",
+          "*:\/\/*.pogo.com\/*",
+          "*:\/\/*.polygamia.pl\/*",
+          "*:\/\/*.polygon.com\/*",
+          "*:\/\/*.pomponik.pl\/*",
+          "*:\/\/*.ponselharian.com\/*",
+          "*:\/\/*.poophq.com\/*",
+          "*:\/\/*.poring.world\/*",
+          "*:\/\/*.pornbimbo.com\/*",
+          "*:\/\/*.pornleaks.in\/*",
+          "*:\/\/*.pornoente.tv\/*",
+          "*:\/\/*.pornohans.com\/*",
+          "*:\/\/*.pornohirsch.net\/*",
+          "*:\/\/*.pornoman.pl\/*",
+          "*:\/\/*.pornoschlange.com\/*",
+          "*:\/\/*.pornotom.com\/*",
+          "*:\/\/*.pornozebra.com\/*",
+          "*:\/\/*.postazap.com\/*",
+          "*:\/\/*.poststar.com\/*",
+          "*:\/\/*.powergam.online\/*",
+          "*:\/\/*.precitaj.si\/*",
+          "*:\/\/*.premid.app\/*",
+          "*:\/\/*.preu-pdf-paste.blogspot.com\/*",
+          "*:\/\/*.printablebricks.com\/*",
+          "*:\/\/*.prinxy.app\/*",
+          "*:\/\/*.proboards.com\/*",
+          "*:\/\/*.programasve.blogspot.com\/*",
+          "*:\/\/*.programasvirtualespc.net\/*",
+          "*:\/\/*.promo-visits.site\/*",
+          "*:\/\/*.promods.net\/*",
+          "*:\/\/*.properhacks.weebly.com\/*",
+          "*:\/\/*.psprices.com\/*",
+          "*:\/\/*.pudelek.pl\/*",
+          "*:\/\/*.pvpoke-re.com\/*",
+          "*:\/\/*.pxtech.site\/*",
+          "*:\/\/*.pysznosci.pl\/*",
+          "*:\/\/*.qctimes.com\/*",
+          "*:\/\/*.qrixpe.com\/*",
+          "*:\/\/*.qrl.com.au\/*",
+          "*:\/\/*.quesignifi.ca\/*",
+          "*:\/\/*.quicksounds.com\/*",
+          "*:\/\/*.quizglobal.com\/*",
+          "*:\/\/*.quizrr.in\/*",
+          "*:\/\/*.qul-de.translate.goog\/*",
+          "*:\/\/*.qul.de\/*",
+          "*:\/\/*.raiders.com.au\/*",
+          "*:\/\/*.rakuten.tv\/*",
+          "*:\/\/*.rangerboard.com\/*",
+          "*:\/\/*.rawstory.com\/*",
+          "*:\/\/*.rcbinfo.com\/*",
+          "*:\/\/*.reactgo.com\/*",
+          "*:\/\/*.readcomicsonline.ru\/*",
+          "*:\/\/*.realmofdarkness.net\/*",
+          "*:\/\/*.receivetxt.com\/*",
+          "*:\/\/*.rechtschreibpruefung24.de\/*",
+          "*:\/\/*.redheadpassions.com\/*",
+          "*:\/\/*.redsoccer.info\/*",
+          "*:\/\/*.remix.es\/*",
+          "*:\/\/*.remixsearch.co\/*",
+          "*:\/\/*.remixsearch.es\/*",
+          "*:\/\/*.renault-club.cz\/*",
+          "*:\/\/*.rendaclix.com\/*",
+          "*:\/\/*.restegourmet.de\/*",
+          "*:\/\/*.rizaldi.web.id\/*",
+          "*:\/\/*.rmweb.co.uk\/*",
+          "*:\/\/*.roanoke.com\/*",
+          "*:\/\/*.rokuguru.com\/*",
+          "*:\/\/*.romanialivewebcam.blogspot.com\/*",
+          "*:\/\/*.romfast.com\/*",
+          "*:\/\/*.roosters.com.au\/*",
+          "*:\/\/*.rosenheim24.de\/*",
+          "*:\/\/*.roya.tv\/*",
+          "*:\/\/*.rp-online.de\/*",
+          "*:\/\/*.rsgamer.app\/*",
+          "*:\/\/*.rte.ie\/*",
+          "*:\/\/*.rutland-times.co.uk\/*",
+          "*:\/\/*.ryuukoi.web.id\/*",
+          "*:\/\/*.s.yimg.com\/*",
+          "*:\/\/*.s0ft4pc.com\/*",
+          "*:\/\/*.saarbruecker-zeitung.de\/*",
+          "*:\/\/*.sabervivirtv.com\/*",
+          "*:\/\/*.sabishare.com\/*",
+          "*:\/\/*.sadeempc.com\/*",
+          "*:\/\/*.safelink-jozz.blogspot.com\/*",
+          "*:\/\/*.samplette.io\/*",
+          "*:\/\/*.sanadegreecollege.in\/*",
+          "*:\/\/*.sarapbabe.com\/*",
+          "*:\/\/*.satoshilabs.net\/*",
+          "*:\/\/*.savemoneyinfo.com\/*",
+          "*:\/\/*.savetolink.com\/*",
+          "*:\/\/*.sbs.com.au\/*",
+          "*:\/\/*.scaleya.com\/*",
+          "*:\/\/*.scholarshipexpo.com\/*",
+          "*:\/\/*.schwaebische.de\/*",
+          "*:\/\/*.scimagoir.com\/*",
+          "*:\/\/*.scopenew.com\/*",
+          "*:\/\/*.screenflash.io\/*",
+          "*:\/\/*.scriptgrowagarden.com\/*",
+          "*:\/\/*.seaeagles.com.au\/*",
+          "*:\/\/*.seekingalpha.com\/*",
+          "*:\/\/*.seireshd.com\/*",
+          "*:\/\/*.senpa.io\/*",
+          "*:\/\/*.servustv.com\/*",
+          "*:\/\/*.sfirmware.com\/*",
+          "*:\/\/*.sh.st\/*",
+          "*:\/\/*.shaboysglobal.com\/*",
+          "*:\/\/*.shana.pe.kr\/*",
+          "*:\/\/*.sharks.com.au\/*",
+          "*:\/\/*.shavetape.cash\/*",
+          "*:\/\/*.shirainime.com\/*",
+          "*:\/\/*.shoop.de\/*",
+          "*:\/\/*.shoot-yalla.to\/*",
+          "*:\/\/*.shorterall.com\/*",
+          "*:\/\/*.shortx.net\/*",
+          "*:\/\/*.shrink.icu\/*",
+          "*:\/\/*.shrink.yt\/*",
+          "*:\/\/*.shrt10.com\/*",
+          "*:\/\/*.shrtslug.biz\/*",
+          "*:\/\/*.silenthub.net\/*",
+          "*:\/\/*.simplebits.io\/*",
+          "*:\/\/*.simply-debrid.com\/*",
+          "*:\/\/*.simply-hentai.com\/*",
+          "*:\/\/*.sinonimos.de\/*",
+          "*:\/\/*.siouxcityjournal.com\/*",
+          "*:\/\/*.skmedix.pl\/*",
+          "*:\/\/*.smallseo.tools\/*",
+          "*:\/\/*.smarthomebeginner.com\/*",
+          "*:\/\/*.smashresume.com\/*",
+          "*:\/\/*.sme.sk\/*",
+          "*:\/\/*.sms-anonyme.net\/*",
+          "*:\/\/*.smscodeonline.com\/*",
+          "*:\/\/*.smsonline.cloud\/*",
+          "*:\/\/*.software-on.com\/*",
+          "*:\/\/*.softwaredetail.com\/*",
+          "*:\/\/*.softwareengineer-de.translate.goog\/*",
+          "*:\/\/*.softwareengineer.de\/*",
+          "*:\/\/*.sonixgvn.net\/*",
+          "*:\/\/*.sonyliv.com\/*",
+          "*:\/\/*.souqsky.net\/*",
+          "*:\/\/*.spaldingtoday.co.uk\/*",
+          "*:\/\/*.speakingtree.in\/*",
+          "*:\/\/*.speedweek.com\/*",
+          "*:\/\/*.spiele.heise.de\/*",
+          "*:\/\/*.spite.cz\/*",
+          "*:\/\/*.splitshire.com\/*",
+          "*:\/\/*.sportnews.to\/*",
+          "*:\/\/*.sportshub.to\/*",
+          "*:\/\/*.sshkit.com\/*",
+          "*:\/\/*.stamfordmercury.co.uk\/*",
+          "*:\/\/*.starachowice.eu\/*",
+          "*:\/\/*.starbits.io\/*",
+          "*:\/\/*.starcima.com\/*",
+          "*:\/\/*.starkroboticsfrc.com\/*",
+          "*:\/\/*.startimez.com\/*",
+          "*:\/\/*.startseite.to\/*",
+          "*:\/\/*.stereogum.com\/*",
+          "*:\/\/*.stfly.me\/*",
+          "*:\/\/*.stgeorgeutah.com\/*",
+          "*:\/\/*.stltoday.com\/*",
+          "*:\/\/*.stly.link\/*",
+          "*:\/\/*.stokerpiller.dk\/*",
+          "*:\/\/*.streamcash.to\/*",
+          "*:\/\/*.streamextreme.cc\/*",
+          "*:\/\/*.streamnoads.com\/*",
+          "*:\/\/*.strimek.tv\/*",
+          "*:\/\/*.subhashyadav.org\/*",
+          "*:\/\/*.successstoryinfo.com\/*",
+          "*:\/\/*.such--maschine-de.translate.goog\/*",
+          "*:\/\/*.such-maschine.de\/*",
+          "*:\/\/*.suffolknews.co.uk\/*",
+          "*:\/\/*.sultanovic.info\/*",
+          "*:\/\/*.sunbtc.space\/*",
+          "*:\/\/*.sunderlandecho.com\/*",
+          "*:\/\/*.supercomputingonline.com\/*",
+          "*:\/\/*.superhumanradio.net\/*",
+          "*:\/\/*.svetatnazdraveto.bg\/*",
+          "*:\/\/*.t-online.de\/*",
+          "*:\/\/*.tagesanzeiger.ch\/*",
+          "*:\/\/*.taiba-dz.blogspot.com\/*",
+          "*:\/\/*.tamilfunda.com\/*",
+          "*:\/\/*.tanfacil.net\/*",
+          "*:\/\/*.tbdailynews.com\/*",
+          "*:\/\/*.tech.pubghighdamage.com\/*",
+          "*:\/\/*.tech.trendingword.com\/*",
+          "*:\/\/*.tech4auto.in\/*",
+          "*:\/\/*.techautomobile.in\/*",
+          "*:\/\/*.techdracula.com\/*",
+          "*:\/\/*.techfinancials.co.za\/*",
+          "*:\/\/*.techkhulasha.com\/*",
+          "*:\/\/*.technons.com\/*",
+          "*:\/\/*.techperiod.com\/*",
+          "*:\/\/*.techprice.pk\/*",
+          "*:\/\/*.tecnoaldia.net\/*",
+          "*:\/\/*.tekfiz.com\/*",
+          "*:\/\/*.teknolojiprojeleri.com\/*",
+          "*:\/\/*.tel-emporio10.blogspot.com\/*",
+          "*:\/\/*.telecinco.es\/*",
+          "*:\/\/*.teledyski.info\/*",
+          "*:\/\/*.telepisodes.org\/*",
+          "*:\/\/*.templateshub.net\/*",
+          "*:\/\/*.tempmail.ninja\/*",
+          "*:\/\/*.terabox.fun\/*",
+          "*:\/\/*.teraearn.com\/*",
+          "*:\/\/*.teralink.me\/*",
+          "*:\/\/*.terashare.me\/*",
+          "*:\/\/*.tercihiniyap.net\/*",
+          "*:\/\/*.testcoz.com\/*",
+          "*:\/\/*.tf1.fr\/*",
+          "*:\/\/*.the-man.gr\/*",
+          "*:\/\/*.the-race.com\/*",
+          "*:\/\/*.thebookee.net\/*",
+          "*:\/\/*.thedailyhoosier.com\/*",
+          "*:\/\/*.thedelimagazine.com\/*",
+          "*:\/\/*.theexchange.africa\/*",
+          "*:\/\/*.thehouseofportable.com\/*",
+          "*:\/\/*.themosvagas.com.br\/*",
+          "*:\/\/*.thenetnaija.net\/*",
+          "*:\/\/*.thenews-chronicle.com\/*",
+          "*:\/\/*.thethings.com\/*",
+          "*:\/\/*.thetruedefender.com\/*",
+          "*:\/\/*.thevideome.com\/*",
+          "*:\/\/*.thinktibits.blogspot.com\/*",
+          "*:\/\/*.thisismoney.co.uk\/*",
+          "*:\/\/*.thuglink.com\/*",
+          "*:\/\/*.thumpertalk.com\/*",
+          "*:\/\/*.thuthuatjb.com\/*",
+          "*:\/\/*.tiktokcounter.net\/*",
+          "*:\/\/*.tiktokrealtime.com\/*",
+          "*:\/\/*.timesnowhindi.com\/*",
+          "*:\/\/*.timesnowmarathi.com\/*",
+          "*:\/\/*.timesnownews.com\/*",
+          "*:\/\/*.tio.ch\/*",
+          "*:\/\/*.titans.com.au\/*",
+          "*:\/\/*.tmohentai.com\/*",
+          "*:\/\/*.tonanmedia.my.id\/*",
+          "*:\/\/*.top100golfcourses.com\/*",
+          "*:\/\/*.top10newgames.com\/*",
+          "*:\/\/*.topsporter.net\/*",
+          "*:\/\/*.torupload.com\/*",
+          "*:\/\/*.tournguide.com\/*",
+          "*:\/\/*.toutes-les-solutions.fr\/*",
+          "*:\/\/*.toyota-club.eu\/*",
+          "*:\/\/*.tpayr.xyz\/*",
+          "*:\/\/*.tradingfact4u.co\/*",
+          "*:\/\/*.tradingref.com\/*",
+          "*:\/\/*.tranimeci.com\/*",
+          "*:\/\/*.transpassions.com\/*",
+          "*:\/\/*.travellingdetail.com\/*",
+          "*:\/\/*.trueid.net\/*",
+          "*:\/\/*.tsubasa.im\/*",
+          "*:\/\/*.tube8-pornos.com\/*",
+          "*:\/\/*.tumblr.com\/*",
+          "*:\/\/*.turkdown.com\/*",
+          "*:\/\/*.tutflix.org\/*",
+          "*:\/\/*.tutoriales-virales.blogspot.com\/*",
+          "*:\/\/*.tv.shoot-yalla.live\/*",
+          "*:\/\/*.tv247.us\/*",
+          "*:\/\/*.tvnation.me\/*",
+          "*:\/\/*.tvnet.lv\/*",
+          "*:\/\/*.tvpc.us\/*",
+          "*:\/\/*.tvserial.it\/*",
+          "*:\/\/*.tvtoday.de\/*",
+          "*:\/\/*.twitchnosub.com\/*",
+          "*:\/\/*.typinggames.zone\/*",
+          "*:\/\/*.tyvpaste.blogspot.com\/*",
+          "*:\/\/*.ubeat.tv\/*",
+          "*:\/\/*.ucoz.com\/*",
+          "*:\/\/*.uflash.tv\/*",
+          "*:\/\/*.ufreegames.com\/*",
+          "*:\/\/*.uii.io\/*",
+          "*:\/\/*.ultrahorny.com\/*",
+          "*:\/\/*.unfriend-app.com\/*",
+          "*:\/\/*.uniquestream.net\/*",
+          "*:\/\/*.uniquetutorialsnew.blogspot.com\/*",
+          "*:\/\/*.univers-simu.com\/*",
+          "*:\/\/*.unlockapk.com\/*",
+          "*:\/\/*.upfiles-urls.com\/*",
+          "*:\/\/*.upfiles.app\/*",
+          "*:\/\/*.upfilesgo.com\/*",
+          "*:\/\/*.upfion.com\/*",
+          "*:\/\/*.uploadshare.net\/*",
+          "*:\/\/*.upns.ink\/*",
+          "*:\/\/*.upns.live\/*",
+          "*:\/\/*.upns.one\/*",
+          "*:\/\/*.upns.xyz\/*",
+          "*:\/\/*.uppit.com\/*",
+          "*:\/\/*.uprot.net\/*",
+          "*:\/\/*.upshrink.com\/*",
+          "*:\/\/*.uptoplay.net\/*",
+          "*:\/\/*.uragongaming.blogspot.com\/*",
+          "*:\/\/*.usandoapp.com\/*",
+          "*:\/\/*.userstyles.org\/*",
+          "*:\/\/*.ustv247.tv\/*",
+          "*:\/\/*.valueyourmusic.com\/*",
+          "*:\/\/*.vandaaginside.nl\/*",
+          "*:\/\/*.vectr.com\/*",
+          "*:\/\/*.vedetta.org\/*",
+          "*:\/\/*.veev.to\/*",
+          "*:\/\/*.velvetmag.co.uk\/*",
+          "*:\/\/*.verdragonball.online\/*",
+          "*:\/\/*.vichitrainfo.com\/*",
+          "*:\/\/*.vidcrt.net\/*",
+          "*:\/\/*.vidlii.com\/*",
+          "*:\/\/*.vidload.eu\/*",
+          "*:\/\/*.vidorg.net\/*",
+          "*:\/\/*.viewster.co\/*",
+          "*:\/\/*.villatalk.com\/*",
+          "*:\/\/*.vinstartheme.com\/*",
+          "*:\/\/*.vix.com\/*",
+          "*:\/\/*.viz.com\/*",
+          "*:\/\/*.vod.tvp.pl\/*",
+          "*:\/\/*.voidforum.com\/*",
+          "*:\/\/*.volksfreund.de\/*",
+          "*:\/\/*.vww.yggtorrent.fr\/*",
+          "*:\/\/*.walkingenglishman.com\/*",
+          "*:\/\/*.wallpaperplay.com\/*",
+          "*:\/\/*.wallpapers.ispazio.net\/*",
+          "*:\/\/*.wallpaperwaifu.com\/*",
+          "*:\/\/*.warriors.kiwi\/*",
+          "*:\/\/*.washingtoninformer.com\/*",
+          "*:\/\/*.wasserburg24.de\/*",
+          "*:\/\/*.watchcalifornicationonline.com\/*",
+          "*:\/\/*.watchmalcolminthemiddle.com\/*",
+          "*:\/\/*.watchonlyfoolsandhorses.com\/*",
+          "*:\/\/*.watchsuitsonline.net\/*",
+          "*:\/\/*.wavse.com\/*",
+          "*:\/\/*.wazzuptechph.com\/*",
+          "*:\/\/*.wcfcourier.com\/*",
+          "*:\/\/*.wcoanimedub.tv\/*",
+          "*:\/\/*.wcoanimesub.tv\/*",
+          "*:\/\/*.weather.us\/*",
+          "*:\/\/*.web--spiele-de.translate.goog\/*",
+          "*:\/\/*.web-spiele.de\/*",
+          "*:\/\/*.web.de\/*",
+          "*:\/\/*.webserver.one\/*",
+          "*:\/\/*.webtvhd.com\/*",
+          "*:\/\/*.weibomiaopai.com\/*",
+          "*:\/\/*.weststigers.com.au\/*",
+          "*:\/\/*.weszlo.com\/*",
+          "*:\/\/*.wetter--vorhersage-de.translate.goog\/*",
+          "*:\/\/*.wetter-vorhersage.de\/*",
+          "*:\/\/*.whiskypreisvergleich.de\/*",
+          "*:\/\/*.whiskyprices.co.uk\/*",
+          "*:\/\/*.why-tech.it\/*",
+          "*:\/\/*.wiadomosci.onet.pl\/*",
+          "*:\/\/*.wiesbadener-kurier.de\/*",
+          "*:\/\/*.wikihandbk.com\/*",
+          "*:\/\/*.wikitrik.com\/*",
+          "*:\/\/*.windisgood.com\/*",
+          "*:\/\/*.windows10gadgets.pro\/*",
+          "*:\/\/*.windowsbulletin.com\/*",
+          "*:\/\/*.wintub.com\/*",
+          "*:\/\/*.wired.com\/*",
+          "*:\/\/*.wirtualnemedia.pl\/*",
+          "*:\/\/*.wiwo.de\/*",
+          "*:\/\/*.woiden.id\/*",
+          "*:\/\/*.wordgames.com\/*",
+          "*:\/\/*.work.ink\/*",
+          "*:\/\/*.workproductivityinfo.com\/*",
+          "*:\/\/*.worldaffairinfo.com\/*",
+          "*:\/\/*.worldaide.fr\/*",
+          "*:\/\/*.worldfreeware.com\/*",
+          "*:\/\/*.wormser-zeitung.de\/*",
+          "*:\/\/*.wp.pl\/*",
+          "*:\/\/*.wspinanie.pl\/*",
+          "*:\/\/*.wupfile.com\/*",
+          "*:\/\/*.xhamster-sexvideos.com\/*",
+          "*:\/\/*.xtremestream.co\/*",
+          "*:\/\/*.yad.com\/*",
+          "*:\/\/*.yalla-shoot-tv.io\/*",
+          "*:\/\/*.yalla-shoots.tv\/*",
+          "*:\/\/*.yandexcdn.com\/*",
+          "*:\/\/*.yilmaztv.com\/*",
+          "*:\/\/*.youdebrid.com\/*",
+          "*:\/\/*.yourporngod.com\/*",
+          "*:\/\/*.yoursavegames.com\/*",
+          "*:\/\/*.yrtourguide.com\/*",
+          "*:\/\/*.yt2save.com\/*",
+          "*:\/\/*.zavislak.to\/*",
+          "*:\/\/*.zdsports.org\/*",
+          "*:\/\/*.zerodmca.com\/*",
+          "*:\/\/*.zerozero.pt\/*",
+          "*:\/\/*.zive.cz\/*",
+          "*:\/\/*.zoomtventertainment.com\/*"
+        ],
+        "id" : "css-generic-all",
+        "matches" : [
+          "<all_urls>"
+        ]
+      }
+    ],
+    "sessionRules" : 0,
+    "tabs" : [
+      {
+        "active" : false,
+        "height" : 0,
+        "highlighted" : false,
+        "id" : 80,
+        "incognito" : false,
+        "index" : 0,
+        "selected" : false,
+        "status" : "complete",
+        "title" : "Google",
+        "url" : "https:\/\/www.google.com\/",
+        "width" : 0,
+        "windowId" : 79
+      },
+      {
+        "active" : true,
+        "height" : 180,
+        "highlighted" : true,
+        "id" : 99,
+        "incognito" : false,
+        "index" : 1,
+        "selected" : true,
+        "status" : "complete",
+        "title" : "",
+        "url" : "",
+        "width" : 370,
+        "windowId" : 79
+      }
+    ]
+  },
+  "requestOutcomes" : [
+    {
+      "status" : 200,
+      "type" : "basic",
+      "url" : "https:\/\/adblock-tester.com\/head.inject.8b1bdd48.js"
+    },
+    {
+      "error" : "TypeError: Load failed",
+      "url" : "https:\/\/static.hotjar.com\/c\/hotjar-1639117.js?sv=6"
+    },
+    {
+      "error" : "TypeError: Load failed",
+      "url" : "https:\/\/js.sentry-cdn.com\/98eefed2636036c3bdb8377b11ff28fe.min.js"
+    },
+    {
+      "error" : "TypeError: Load failed",
+      "url" : "https:\/\/d2wy8f7a9ursnm.cloudfront.net\/v4\/bugsnag.min.js"
+    }
+  ],
+  "requestRules" : {
+    "dynamic" : [
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "zxzj.me"
+          ],
+          "regexFilter" : "\\\/slade[0-9]?\\.js"
+        },
+        "id" : 1,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "1vag.com",
+            "4tube.com",
+            "adult-channels.com",
+            "analdin.com",
+            "biguz.net",
+            "bogrodius.com",
+            "chikiporn.com",
+            "fantasti.cc",
+            "fuqer.com",
+            "fux.com",
+            "hclips.com",
+            "heavy-r.com",
+            "hog.tv",
+            "megapornx.com",
+            "milfzr.com",
+            "mypornhere.com",
+            "porn555.com",
+            "pornchimp.com",
+            "pornerbros.com",
+            "pornj.com",
+            "pornl.com",
+            "pornototale.com",
+            "porntube.com",
+            "sexu.com",
+            "sss.xxx",
+            "thisav.com",
+            "titkino.net",
+            "tubepornclassic.com",
+            "tuberel.com",
+            "tubev.sex",
+            "txxx.com",
+            "vidmo.org",
+            "vpornvideos.com",
+            "xozilla.com",
+            "youporn.lc",
+            "youpornhub.it",
+            "yourdailypornstars.com"
+          ],
+          "regexFilter" : "^https?:\\\/\\\/.*\\\/.*sw[0-9._].*",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 2,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "gsmarena.com"
+          ],
+          "regexFilter" : "\\.gsmarena\\.com\\\/[0-9]+\\.[a-z]+\\?s?Search=",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 3,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "15min.lt",
+            "247sports.com",
+            "abc17news.com",
+            "addictinggames.com",
+            "agrodigital.com",
+            "al.com",
+            "aliontherunblog.com",
+            "allaboutthetea.com",
+            "allmusic.com",
+            "allthingsthrifty.com",
+            "amessagewithabottle.com",
+            "arstechnica.com",
+            "artforum.com",
+            "artnews.com",
+            "athlonsports.com",
+            "audiomack.com",
+            "autoblog.com",
+            "awkward.com",
+            "azcentral.com",
+            "barcablaugranes.com",
+            "barnsleychronicle.com",
+            "bethcakes.com",
+            "betweenenglandandiowa.com",
+            "bgr.com",
+            "bikemag.com",
+            "billboard.com",
+            "blazersedge.com",
+            "blogher.com",
+            "bloxinformer.com",
+            "blu-ray.com",
+            "bluegraygal.com",
+            "boredpanda.com",
+            "briefeguru.de",
+            "brobible.com",
+            "cagesideseats.com",
+            "cbsnews.com",
+            "cbssports.com",
+            "celiacandthebeast.com",
+            "chaptercheats.com",
+            "cheatsheet.com",
+            "cleveland.com",
+            "clickondetroit.com",
+            "coloradoan.com",
+            "commercialobserver.com",
+            "competentedigitale.ro",
+            "cracked.com",
+            "dailycaller.com",
+            "dailydot.com",
+            "dailykos.com",
+            "dailyvoice.com",
+            "danslescoulisses.com",
+            "databazeknih.cz",
+            "deadline.com",
+            "decider.com",
+            "dengarden.com",
+            "dexerto.com",
+            "didyouknowfacts.com",
+            "digitalmusicnews.com",
+            "dogtime.com",
+            "dpreview.com",
+            "dwell.com",
+            "eater.com",
+            "ebaumsworld.com",
+            "egoallstars.com",
+            "eldiariony.com",
+            "fark.com",
+            "femestella.com",
+            "flickr.com",
+            "fmradiofree.com",
+            "forums.hfboards.com",
+            "free-power-point-templates.com",
+            "freeconvert.com",
+            "freep.com",
+            "frogsandsnailsandpuppydogtail.com",
+            "funtasticlife.com",
+            "fwmadebycarli.com",
+            "golfdigest.com",
+            "greenbaypressgazette.com",
+            "grunge.com",
+            "gulflive.com",
+            "hollywoodreporter.com",
+            "homeglowdesign.com",
+            "honeygirlsworld.com",
+            "ibtimes.co.in",
+            "imgur.com",
+            "indiewire.com",
+            "intouchweekly.com",
+            "iphoneincanada.ca",
+            "jasminemaria.com",
+            "jsonline.com",
+            "kens5.com",
+            "kinobox.cz",
+            "kion546.com",
+            "knowyourmeme.com",
+            "komonews.com",
+            "krem.com",
+            "last.fm",
+            "lehighvalleylive.com",
+            "lettyskitchen.com",
+            "lifeandstylemag.com",
+            "lifeinleggings.com",
+            "lizzieinlace.com",
+            "localnews8.com",
+            "lonestarlive.com",
+            "macwelt.de",
+            "macworld.com",
+            "madeeveryday.com",
+            "maidenhead-advertiser.co.uk",
+            "mandatory.com",
+            "mardomreport.net",
+            "masslive.com",
+            "melangery.com",
+            "mensfitness.com",
+            "mensjournal.com",
+            "meteomedia.com",
+            "miamiherald.com",
+            "mlive.com",
+            "mmamania.com",
+            "momtastic.com",
+            "mostlymorgan.com",
+            "motherwellmag.com",
+            "motor1.com",
+            "motorsport.com",
+            "musicfeeds.com.au",
+            "naszemiasto.pl",
+            "nationalpost.com",
+            "nationalreview.com",
+            "nbcsports.com",
+            "news.com.au",
+            "ninersnation.com",
+            "nj.com",
+            "nordot.app",
+            "nothingbutnewcastle.com",
+            "nsjonline.com",
+            "nypost.com",
+            "observer.com",
+            "ocala.com",
+            "ontvtonight.com",
+            "oregonlive.com",
+            "pagesix.com",
+            "palmbeachpost.com",
+            "parade.com",
+            "paradehomeandgarden.com",
+            "paradepets.com",
+            "patheos.com",
+            "pauladeen.com",
+            "pcbolsa.com",
+            "pennlive.com",
+            "pep.ph",
+            "pethelpful.com",
+            "phillyvoice.com",
+            "playstationlifestyle.net",
+            "pnj.com",
+            "powder.com",
+            "pravda.sk",
+            "press-citizen.com",
+            "prydwen.gg",
+            "puckermom.com",
+            "pwinsider.com",
+            "reelmama.com",
+            "reuters.com",
+            "rlfans.com",
+            "robbreport.com",
+            "rollingstone.com",
+            "royalmailchat.co.uk",
+            "sandrarose.com",
+            "sbnation.com",
+            "sheknows.com",
+            "shophq.com",
+            "sidereel.com",
+            "silive.com",
+            "smartworld.it",
+            "sneakernews.com",
+            "sourcingjournal.com",
+            "sport-fm.gr",
+            "sportico.com",
+            "sportsgamblingpodcast.com",
+            "spotofteadesigns.com",
+            "ssnewstelegram.com",
+            "stacysrandomthoughts.com",
+            "stylecaster.com",
+            "superherohype.com",
+            "surfer.com",
+            "syracuse.com",
+            "tablelifeblog.com",
+            "tasteofhome.com",
+            "tastingtable.com",
+            "techcrunch.com",
+            "thecelticblog.com",
+            "thedailymeal.com",
+            "theflowspace.com",
+            "thegatewaypundit.com",
+            "themarysue.com",
+            "thenerdstash.com",
+            "thenerdyme.com",
+            "theprudentgarden.com",
+            "thespun.com",
+            "thestreet.com",
+            "theverge.com",
+            "tiermaker.com",
+            "timesofisrael.com",
+            "tiscali.cz",
+            "tokfm.pl",
+            "torontosun.com",
+            "travelhost.com",
+            "tvline.com",
+            "usatoday.com",
+            "usmagazine.com",
+            "variety.com",
+            "viralviralvideos.com",
+            "wallup.net",
+            "wannacomewith.com",
+            "wcnc.com",
+            "weather.com",
+            "wimp.com",
+            "windsorexpress.co.uk",
+            "woojr.com",
+            "worldoftravelswithkids.com",
+            "worldstar.com",
+            "worldstarhiphop.com",
+            "worldsurfleague.com",
+            "wpgh53.com",
+            "wunderground.com",
+            "wwd.com",
+            "wyborkierowcow.pl",
+            "wzzm13.com",
+            "ydr.com",
+            "yourcountdown.to",
+            "zdnet.com"
+          ],
+          "domainType" : "thirdParty",
+          "excludedRequestDomains" : [
+            "adatoolbar.com",
+            "aswpsdkus.com",
+            "chimpstatic.com",
+            "clickiocmp.com",
+            "mojirater.com",
+            "polldaddy.com",
+            "squareoffs.com",
+            "succeedscene.com",
+            "tallysight.com",
+            "veraviews.com"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?\\.com\\\/[_0-9a-z\\\/][_0-9a-z\\\/]",
+          "requestDomains" : [
+            "com"
+          ],
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 4,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "best",
+            "blog",
+            "buzz",
+            "cam",
+            "cc",
+            "click",
+            "cyou",
+            "dad",
+            "download",
+            "gg",
+            "homes",
+            "in",
+            "info",
+            "ink",
+            "life",
+            "link",
+            "live",
+            "lol",
+            "me",
+            "ng",
+            "nz",
+            "one",
+            "pics",
+            "pk",
+            "pm",
+            "pro",
+            "rest",
+            "sbs",
+            "sh",
+            "shop",
+            "site",
+            "so",
+            "soccer",
+            "stream",
+            "sv",
+            "sx",
+            "to",
+            "today",
+            "top",
+            "tube",
+            "tv",
+            "ug",
+            "vip",
+            "watch",
+            "ws",
+            "xyz"
+          ],
+          "domainType" : "thirdParty",
+          "excludedDomains" : [
+            "edu.in",
+            "edu.me",
+            "edu.ng",
+            "edu.nz",
+            "edu.pk",
+            "edu.pm",
+            "edu.so",
+            "edu.sv",
+            "edu.ug",
+            "edu.ws",
+            "gov.gg",
+            "gov.in",
+            "gov.me",
+            "gov.ng",
+            "gov.nz",
+            "gov.pk",
+            "gov.sh",
+            "gov.so",
+            "gov.sx",
+            "gov.to",
+            "gov.tv",
+            "gov.ws",
+            "proton.me",
+            "twitch.tv"
+          ],
+          "regexFilter" : "^https?:\\\/\\\/[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.com\\\/$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 5,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "best",
+            "blog",
+            "buzz",
+            "cam",
+            "cc",
+            "click",
+            "cyou",
+            "dad",
+            "download",
+            "gg",
+            "homes",
+            "in",
+            "info",
+            "ink",
+            "life",
+            "link",
+            "live",
+            "lol",
+            "me",
+            "ng",
+            "nz",
+            "one",
+            "pics",
+            "pk",
+            "pm",
+            "pro",
+            "rest",
+            "sbs",
+            "sh",
+            "shop",
+            "site",
+            "so",
+            "soccer",
+            "stream",
+            "sv",
+            "sx",
+            "to",
+            "today",
+            "top",
+            "tube",
+            "tv",
+            "ug",
+            "vip",
+            "watch",
+            "ws",
+            "xyz"
+          ],
+          "domainType" : "thirdParty",
+          "excludedDomains" : [
+            "edu.in",
+            "edu.me",
+            "edu.ng",
+            "edu.nz",
+            "edu.pk",
+            "edu.pm",
+            "edu.so",
+            "edu.sv",
+            "edu.ug",
+            "edu.ws",
+            "gov.gg",
+            "gov.in",
+            "gov.me",
+            "gov.ng",
+            "gov.nz",
+            "gov.pk",
+            "gov.sh",
+            "gov.so",
+            "gov.sx",
+            "gov.to",
+            "gov.tv",
+            "gov.ws",
+            "proton.me",
+            "twitch.tv"
+          ],
+          "regexFilter" : "^https?:\\\/\\\/[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.net\\\/$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 6,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "best",
+            "blog",
+            "buzz",
+            "cam",
+            "cc",
+            "click",
+            "cyou",
+            "dad",
+            "download",
+            "gg",
+            "homes",
+            "in",
+            "info",
+            "ink",
+            "life",
+            "link",
+            "live",
+            "lol",
+            "me",
+            "ng",
+            "nz",
+            "one",
+            "pics",
+            "pk",
+            "pm",
+            "pro",
+            "rest",
+            "sbs",
+            "sh",
+            "shop",
+            "site",
+            "so",
+            "soccer",
+            "stream",
+            "sv",
+            "sx",
+            "to",
+            "today",
+            "top",
+            "tube",
+            "tv",
+            "ug",
+            "vip",
+            "watch",
+            "ws",
+            "xyz"
+          ],
+          "domainType" : "thirdParty",
+          "excludedDomains" : [
+            "edu.in",
+            "edu.me",
+            "edu.ng",
+            "edu.nz",
+            "edu.pk",
+            "edu.pm",
+            "edu.so",
+            "edu.sv",
+            "edu.ug",
+            "edu.ws",
+            "gov.gg",
+            "gov.in",
+            "gov.me",
+            "gov.ng",
+            "gov.nz",
+            "gov.pk",
+            "gov.sh",
+            "gov.so",
+            "gov.sx",
+            "gov.to",
+            "gov.tv",
+            "gov.ws",
+            "proton.me",
+            "twitch.tv"
+          ],
+          "regexFilter" : "^https?:\\\/\\\/[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.xyz\\\/$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 7,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "ampav.com",
+            "artforum.com",
+            "artnews.com",
+            "atxtv.co",
+            "bgr.com",
+            "billboard.com",
+            "deadline.com",
+            "dickclark.com",
+            "footwearnews.com",
+            "goldderby.com",
+            "hollywoodreporter.com",
+            "indiewire.com",
+            "la3c.com",
+            "lifeisbeautiful.com",
+            "luminatedata.com",
+            "nextchessmove.com",
+            "reneweconomy.com.au",
+            "robbreport.com",
+            "rollingstone.com",
+            "shemedia.com",
+            "sourcingjournal.com",
+            "sportico.com",
+            "spy.com",
+            "sxsw.com",
+            "tvline.com",
+            "variety.com",
+            "vibe.com",
+            "wwd.com"
+          ],
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.com\\\/script\\\/[a-zA-Z0-9]+_[a-zA-Z0-9]+\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 8,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "calgaryherald.com",
+            "calgarysun.com",
+            "canada.com",
+            "canoe.com",
+            "driving.ca",
+            "edmontonjournal.com",
+            "edmontonsun.com",
+            "financialpost.com",
+            "intelligencer.ca",
+            "leaderpost.com",
+            "lfpress.com",
+            "montrealgazette.com",
+            "nationalpost.com",
+            "ontariofarmer.com",
+            "ottawacitizen.com",
+            "ottawasun.com",
+            "standard-freeholder.com",
+            "thegrowthop.com",
+            "theprovince.com",
+            "thestarphoenix.com",
+            "tj.news",
+            "torontosun.com",
+            "vancouversun.com",
+            "windsorstar.com",
+            "winnipegsun.com"
+          ],
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[a-z][a-z][a-z]+\\.[a-z][a-z][a-z][a-z][a-z][a-z][a-z]+\\.com\\\/[a-z][a-z][a-z][a-z]+\\\/[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 9,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "analdin.com",
+            "bestjavporn.com",
+            "ero-anime.website",
+            "hdpornflix.com",
+            "javdock.com",
+            "javtiful.com",
+            "onscreens.me",
+            "supjav.com",
+            "thefantazy.com",
+            "up4fun.top",
+            "xfantazy.com"
+          ],
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\.[a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?\\\/[0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z]?[0-9a-zA-Z]?[0-9a-zA-Z]?\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 10,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "cr",
+            "dvdgayonline.com",
+            "help",
+            "novelcrow.com",
+            "simply-hentai.com",
+            "tube"
+          ],
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z][0-9a-z]?[0-9a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.[ci][on]m?\\\/[a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?(\\\/[a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?)?(\\\/[a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?)?(\\?id=[0-9]+)?$",
+          "requestDomains" : [
+            "com",
+            "in"
+          ],
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 11,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "1337x.ninjaproxy1.com",
+            "naughtypiss.com",
+            "netfapx.com",
+            "vfxmed.com",
+            "watchluna.com",
+            "watchmodernfamilyonline.com"
+          ],
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/www\\.[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.com\\\/[A-Za-z]+\\\/[_0-9A-Za-z][_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?[_0-9A-Za-z]?\\.min\\.js$",
+          "requestDomains" : [
+            "com"
+          ],
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 12,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "primewire.si"
+          ],
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\\/[a-d][-.\\\/A-Z_a-z][DHWXm][-.\\\/A-Z_a-z][59FVZ][-.\\\/A-Z_a-z][6swyz][-.\\\/A-Z_a-z][-\\\/0-9A-Z_a-z][-.\\\/A-Z_a-z][-\\\/0-9A-Z_a-z]+",
+          "requestDomains" : [
+            "co",
+            "com",
+            "info",
+            "pro",
+            "xyz"
+          ],
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 13,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "dad",
+            "day",
+            "mom",
+            "top",
+            "vercel.app",
+            "you"
+          ],
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/www\\.[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.com\\\/([a-zA-Z][a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?\\\/)?([a-zA-Z][a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?\\\/)?([a-zA-Z][a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?\\\/)?[a-z][a-z][a-z][a-z][a-z][a-z][a-z]+(\\.[a-z][a-z][a-z][a-z][a-z][a-z]+-[a-z][a-z][a-z][a-z][a-z][a-z]+)?\\.min\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 14,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "dad",
+            "day",
+            "mom",
+            "top",
+            "vercel.app",
+            "you"
+          ],
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\.cloudfront\\.net\\\/([a-zA-Z][a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?\\\/)?([a-zA-Z][a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?\\\/)?([a-zA-Z][a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?[a-zA-Z]?\\\/)?[a-z][a-z][a-z][a-z][a-z][a-z]+(\\.[a-z][a-z][a-z][a-z][a-z][a-z]+-[a-z][a-z][a-z][a-z][a-z][a-z]+)?\\.min\\.js",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 15,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z-][a-z-][a-z-][a-z-][a-z-][a-z-]+\\.[cipx][nory][fmoz]?o?\\\/[a-d][-.\\\/A-Z_a-z][DHWXm][-.\\\/A-Z_a-z][59FVZ][-.\\\/A-Z_a-z][6swyz][-.\\\/A-Z_a-z][-\\\/0-9A-Z_a-z][-.\\\/A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z]+$",
+          "requestDomains" : [
+            "co",
+            "com",
+            "info",
+            "pro",
+            "xyz"
+          ],
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 16,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[0-9a-z-][0-9a-z-][0-9a-z-][0-9a-z-][0-9a-z-]?[0-9a-z-]?[0-9a-z-]?\\.[cins][cehlo][imotu][cp]?k?\\\/js\\\/responsive\\.js$",
+          "requestDomains" : [
+            "click",
+            "com",
+            "icu",
+            "net",
+            "shop"
+          ],
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 17,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "info",
+            "me",
+            "pm",
+            "site"
+          ],
+          "domainType" : "thirdParty",
+          "excludedDomains" : [
+            "edu.me",
+            "edu.pm",
+            "gov.me",
+            "proton.me"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\.cloudfront\\.net\\\/[-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z][-+\\\/0-9a-zA-Z]+$",
+          "requestDomains" : [
+            "cloudfront.net"
+          ],
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 18,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "info",
+            "me",
+            "pm",
+            "site"
+          ],
+          "domainType" : "thirdParty",
+          "excludedDomains" : [
+            "edu.me",
+            "edu.pm",
+            "gov.me",
+            "proton.me"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z][a-z][a-z][a-z][a-z][a-z][a-z]+\\.com\\\/[+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z][+\\\/0-9a-zA-Z]+$",
+          "requestDomains" : [
+            "com"
+          ],
+          "resourceTypes" : [
+            "sub_frame"
+          ]
+        },
+        "id" : 19,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "redirect" : {
+            "regexSubstitution" : "\\1\\2"
+          },
+          "type" : "redirect"
+        },
+        "condition" : {
+          "domains" : [
+            "www.amazon.co.jp",
+            "www.amazon.co.uk",
+            "www.amazon.com",
+            "www.amazon.de",
+            "www.primevideo.com"
+          ],
+          "regexFilter" : "(.*\\\/GetPlaybackResources\\?.*)%2CCuepointPlaylist(.*)",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 20
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "faiviral.com",
+            "heqviral.com",
+            "vijviral.com",
+            "wealthcatal.com"
+          ],
+          "domainType" : "firstParty",
+          "regexFilter" : "postsImgs",
+          "resourceTypes" : [
+            "image"
+          ]
+        },
+        "id" : 21,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "chatgpt.com",
+            "openai.com",
+            "sora.com"
+          ],
+          "regexFilter" : "^https?:\\\/\\\/chatgpt\\.com\\\/ces\\\/v1\\\/[a-z]$",
+          "requestMethods" : [
+            "post"
+          ],
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 22,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "love4porn.com",
+            "suptube.com",
+            "upload-pics.com"
+          ],
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\.com\\\/[0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z]?[0-9a-zA-Z]?[0-9a-zA-Z]?\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 23,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "90minutes.pro",
+            "damitv.app"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\\/js\\\/[a-z0-9]+\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 24,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "arabshentai.com",
+            "filmyzones.com"
+          ],
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\\/wp-content\\\/plugins\\\/[a-f][a-f][a-f][a-f][a-f][a-f]\\.js\\?ver=",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 25,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\.goplay\\.su\\\/[a-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]+\\\/[0-9][0-9][0-9][0-9]?[0-9]?[0-9]?$",
+          "requestDomains" : [
+            "goplay.su"
+          ],
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 26,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "hottystop.com"
+          ],
+          "domainType" : "firstParty",
+          "regexFilter" : "\\.com\\\/[_0-9a-zA-Z]+\\.jpg$",
+          "resourceTypes" : [
+            "image"
+          ]
+        },
+        "id" : 27,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "distrowatch.com"
+          ],
+          "domainType" : "firstParty",
+          "regexFilter" : "^https:\\\/\\\/distrowatch\\.com\\\/images\\\/[a-z]+\\\/[a-z]+$",
+          "resourceTypes" : [
+            "image"
+          ]
+        },
+        "id" : 28,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "strumyk.net"
+          ],
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/strumyk\\.net\\\/assets\\\/[0-9]+.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 29,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "filmizip.com"
+          ],
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/filmizip\\.com\\\/templates\\\/filmizip\\\/js\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]\\.js\\?v=",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 30,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "filmizip.com"
+          ],
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/filmizip\\.com\\\/templates\\\/filmizip\\\/js\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]\\.min\\.js\\?v=",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 31,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "fleshed.com"
+          ],
+          "domainType" : "firstParty",
+          "regexFilter" : "\\\/static\\\/[0-9a-z]+\\\/[0-9a-z]+\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 32,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "joysporn.sex"
+          ],
+          "domainType" : "firstParty",
+          "regexFilter" : "\\\/js\\\/[a-z]j\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 33,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "smallencode.me"
+          ],
+          "domainType" : "firstParty",
+          "regexFilter" : "^https:\\\/\\\/smallencode\\.me\\\/[a-zA-Z0-9]+\\\/[0-9]+\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 34,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "gsmarena.com"
+          ],
+          "domainType" : "firstParty",
+          "regexFilter" : "\\.gsmarena\\.com\\\/[0-9]+\\.php3",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 35,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "gsmarena.com"
+          ],
+          "domainType" : "firstParty",
+          "regexFilter" : "\\.gsmarena\\.com\\\/[0-9]+\\.[a-z]+\\?s?Search=",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 36,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[-a-z][-a-z][-a-z][-a-z][-a-z][-a-z][-a-z][-a-z]+\\.com\\\/[f-j][-0-9A-Z_a-z][-0-9A-Z_a-z]+\\\/[0-9A-Za-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z][-\\\/0-9A-Z_a-z]+$",
+          "requestDomains" : [
+            "com"
+          ],
+          "requestMethods" : [
+            "get"
+          ],
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 37,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "txxx.com"
+          ],
+          "domainType" : "thirdParty",
+          "regexFilter" : "\\.[0-9][0-9]?\\.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 38,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z][a-z][a-z][a-z]+\\.top\\\/z-[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]?[a-z0-9]?[a-z0-9]?$",
+          "requestDomains" : [
+            "top"
+          ],
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 39,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domains" : [
+            "index.hr"
+          ],
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[a-z][a-z][a-z]+\\.[a-z][a-z][a-z][a-z][a-z][a-z][a-z]+\\.com\\\/[a-z][a-z][a-z][a-z][a-z][a-z]+\\\/[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 40,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "redirect" : {
+            "extensionPath" : "\/web_accessible_resources\/noop.js"
+          },
+          "type" : "redirect"
+        },
+        "condition" : {
+          "domains" : [
+            "zefoy.com"
+          ],
+          "domainType" : "firstParty",
+          "regexFilter" : "^https:\\\/\\\/zefoy\\.com\\\/[^\\\/]+\\?",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 41,
+        "priority" : 11
+      },
+      {
+        "action" : {
+          "redirect" : {
+            "extensionPath" : "\/web_accessible_resources\/noop.js"
+          },
+          "type" : "redirect"
+        },
+        "condition" : {
+          "domains" : [
+            "com"
+          ],
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[a-z][0-9][0-9][0-9]\\.[a-z]+\\.com\\\/script\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 42,
+        "priority" : 11
+      },
+      {
+        "action" : {
+          "redirect" : {
+            "regexSubstitution" : "\\1\/metacritic\/\\2"
+          },
+          "type" : "redirect"
+        },
+        "condition" : {
+          "domains" : [
+            "metacritic.com"
+          ],
+          "regexFilter" : "(.*)\\\/etacritic\\\/(.*)",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 43
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\.cloudfront\\.net\\\/\\?[a-z][a-z][a-z][a-z]?[a-z]?=[0-9][0-9][0-9][0-9][0-9][0-9][0-9]?$",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 44,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/a\\.[-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?\\.[a-z][a-z][a-z]?[a-z]?[a-z]?\\\/[0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z]?[0-9a-zA-Z]?[0-9a-zA-Z]?\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 45,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/asg\\.[-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?\\.[a-z][a-z][a-z]?[a-z]?[a-z]?\\\/[0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z]?[0-9a-zA-Z]?[0-9a-zA-Z]?\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 46,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/emsi\\.[-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?[-0-9a-z]?\\.[a-z][a-z][a-z]?[a-z]?[a-z]?\\\/[0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z][0-9a-zA-Z]?[0-9a-zA-Z]?[0-9a-zA-Z]?\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 47,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\\/static\\\/js\\\/jav\\.[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 48,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "regexFilter" : "^https:\\\/\\\/www\\.gayxnow\\.com\\\/[a-z][a-z][a-z][a-z][a-z][a-z]?\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 49,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\\/z-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 50,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/www\\.locopelis\\.com\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 51,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[a-z]+\\.[a-z]+\\\/embed\\\/[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\\.js\\?_=[0-9]+$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 52,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "regexFilter" : "\\.liveonlinesports\\.net\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 53,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "regexFilter" : "^https:\\\/\\\/netembed\\.xyz\\\/[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\\.js\\?",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 54,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "regexFilter" : "^https:\\\/\\\/mewcdn\\.online\\\/[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\\.js\\?",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 55,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "excludedDomains" : [
+            "edu",
+            "gov"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/loader\\.[-0-9a-z]+\\.[a-z][a-z][a-z]?\\\/loader\\.min\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 56,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "excludedDomains" : [
+            "edu",
+            "gov"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/loader\\.[-0-9a-z]+\\.[a-z][a-z][a-z]?\\\/script\\\/www\\.[-0-9a-z]+\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 57,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[-a-z0-9]+\\.([-a-z0-9]+\\.)?[a-z][a-z]+\\\/[a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9][a-f0-9]\\.js\\?_=17[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 58,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\\/wp-content\\\/uploads\\\/[a-f][a-f][a-f][a-f][a-f][a-f]\\\/[a-f][a-f][a-f][a-f][a-f][a-f]\\.js",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 59,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "excludedDomains" : [
+            "edu",
+            "gov"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[-a-z0-9]+\\.[a-z]+\\\/uploads\\\/[a-f][a-f][a-f][a-f][a-f][a-f]\\\/[a-f][a-f][a-f][a-f][a-f][a-f]\\.js\\?ver=17[0-9]+$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 60,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?\\.[a-z][a-z][a-z]?\\\/js[0-9]?\\\/noadblocker\\.js(\\?v=[0-9])?$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 61,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\\/js\\\/script_[0-9][0-9]\\.[0-9][0-9]\\.js\\?[0-9]+$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 62,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "\\\/wp-content\\\/themes\\\/[a-z]+\\\/assets\\\/js\\\/fun\\.js\\?ver=[0-9]\\.[0-9]\\.[0-9]$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 63,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "excludedDomains" : [
+            "leagueoflegends.com",
+            "lolesports.com",
+            "playvalorant.com",
+            "riotgames.com",
+            "valorantesports.com"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/(www\\.)?[a-z0-9-]+\\.[a-z]+(\\.[a-z]+)?\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9]\\\/$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 64,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "excludedDomains" : [
+            "leagueoflegends.com",
+            "lolesports.com",
+            "playvalorant.com",
+            "riotgames.com",
+            "valorantesports.com"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/(www\\.)?[a-z0-9-]+\\.[a-z]+(\\.[a-z]+)?\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?\\\/\\?id=$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 65,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/(www\\.)?[a-z0-9-]+\\.[a-z]+(\\.[a-z]+)?\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]?[a-z0-9]?\\\/\\?id=AW-[0-9]+",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 66,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/(www\\.)?[a-z0-9-]+\\.[a-z]+(\\.[a-z]+)?\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9]?[a-z0-9]?[a-z0-9]?\\\/\\?id=G(TM)?-[A-Z0-9]+",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 67,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/(www\\.)?[a-z0-9-]+\\.[a-z]+(\\.[a-z]+)?\\\/analyticsdata\\\/?$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 68,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/(www\\.)?[a-z0-9-]+\\.[a-z]+(\\.[a-z]+)?\\\/gemets\\\/?$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 69,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/(www\\.)?[a-z0-9-]+\\.[a-z]+(\\.[a-z]+)?\\\/gtm[a-z]+\\\/?$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 70,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/(www\\.)?[a-z0-9-]+\\.[a-z]+(\\.[a-z]+)?\\\/metrics\\\/?$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 71,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/(www\\.)?[a-z0-9-]+\\.[a-z]+(\\.[a-z]+)?\\\/securegtm\\\/?$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 72,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "regexFilter" : "^https:\\\/\\\/bbs\\.[a-z0-9-]+\\.[cd][eo][ms]i?\\\/[a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9][a-zA-Z0-9]$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 73,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z]+\\.[co][or][gm]\\\/\\\/?[0-9a-z][0-9a-z]\\\/[0-9a-z][0-9a-z]\\\/([0-9a-z][0-9a-z]\\\/)?[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]\\.js",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 74,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z][-0-9a-z]+\\.com\\\/\\[0-9][0-9]?\\\/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 75,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "regexFilter" : "^https:\\\/\\\/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]\\.[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]\\.com\\\/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 76,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z]?[a-z]?\\.?[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.com\\\/[rt][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?\\\/[A-Za-z][A-Za-z][A-Za-z][A-Za-z][A-Za-z]?$",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 77,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z]?[a-z]?\\.?[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.com\\\/[rt][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?\\\/[A-Za-z][A-Za-z][A-Za-z][A-Za-z][A-Za-z]?\\?",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 78,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z]?[a-z]?\\.?[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.com\\\/[rt][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?\\\/[0-9][0-9][0-9][0-9]?[0-9]?[0-9]?$",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 79,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z]?[a-z]?\\.?[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.com\\\/[rt][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?\\\/[0-9][0-9][0-9][0-9]?[0-9]?[0-9]?\\?",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 80,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[0-9a-z]*\\.?[0-9a-z]+\\.[cr][ef][ds]t?\\\/[a-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]+\\\/[A-Za-z][A-Za-z][A-Za-z][A-Za-z][A-Za-z]$",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 81,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[0-9a-z]*\\.?[0-9a-z]+\\.[cr][ef][ds]t?\\\/[a-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]+\\\/[0-9][0-9][0-9][0-9][0-9][0-9]$",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 82,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "excludedDomains" : [
+            "edu",
+            "gov"
+          ],
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/cdn\\.[a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.[a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?\\\/app\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 83,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]+\\.com\\\/en\\\/([a-z][a-z]+\\\/)?([a-z][a-z]+\\\/)?[a-z][a-z]+\\?([a-z]+=[^&=? ]*&)*id=[12][0-9][0-9][0-9][0-9][0-9][0-9]",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 84,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/[a-z][a-z][a-z][a-z]?[a-z]?\\.[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?\\.top\\\/[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\\/[a-z][a-z][a-z][a-z][a-z][a-z]?\\?d=[0-9]$",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 85,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "regexFilter" : "^https:\\\/\\\/[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]+\\.pages\\.dev\\\/[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]+\\.js$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 86,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "regexFilter" : "^https:\\\/\\\/[a-z-]+\\.cdn-[a-z]\\.net\\\/$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 87,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/s3\\.us-east-1\\.amazonaws\\.com\\\/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]+\\\/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 88,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[-a-z][-a-z][-a-z][-a-z][-a-z][-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?\\.online\\\/[0-9a-z][0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?\\?[0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?=[%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z]+$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 89,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[-a-z][-a-z][-a-z][-a-z][-a-z][-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?\\.site\\\/[0-9a-z][0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?\\?[0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?=[%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z]+$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 90,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[-a-z][-a-z][-a-z][-a-z][-a-z][-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?\\.space\\\/[0-9a-z][0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?\\?[0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?=[%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z]+$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 91,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[-a-z][-a-z][-a-z][-a-z][-a-z][-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?\\.store\\\/[0-9a-z][0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?\\?[0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?=[%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z]+$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 92,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[-a-z][-a-z][-a-z][-a-z][-a-z][-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?[-a-z]?\\.website\\\/[0-9a-z][0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?[0-9a-z]?\\?[0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?=[%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z][%0-9A-Za-z]+$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 93,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "regexFilter" : "^https:\\\/\\\/engine\\.[a-z]+\\.[a-z]+\\\/\\?[0-9]+$",
+          "resourceTypes" : [
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 94,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z]?[a-z]?\\.?[a-z][a-z][a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.shop\\\/i[0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?[0-9A-Za-z]?\\\/[A-Za-z][A-Za-z][A-Za-z][A-Za-z][A-Za-z]?",
+          "resourceTypes" : [
+            "sub_frame"
+          ]
+        },
+        "id" : 95,
+        "priority" : 10
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "regexFilter" : "\\\/[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]\\\/invoke\\.js",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 96,
+        "priority" : 40
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z]?[a-z]?\\.?[a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.[a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?\\\/[fgprst][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]+\\\/[0-9][0-9][0-9][0-9]?[0-9]?[0-9]?$",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 97,
+        "priority" : 40
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z]?[a-z]?\\.?[a-z][a-z][a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?[a-z]?\\.[a-z][a-z][a-z][a-z]?[a-z]?[a-z]?[a-z]?\\\/[fgprst][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z][0-9A-Za-z]+\\\/[0-9][0-9][0-9][0-9]?[0-9]?[0-9]?\\?",
+          "resourceTypes" : [
+            "script"
+          ]
+        },
+        "id" : 98,
+        "priority" : 40
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?\\.com\\\/vignette\\.min\\.js$",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 99,
+        "priority" : 40
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?\\.com\\\/tag\\.min\\.js$",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 100,
+        "priority" : 40
+      },
+      {
+        "action" : {
+          "type" : "block"
+        },
+        "condition" : {
+          "domainType" : "thirdParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https?:\\\/\\\/[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?[a-z0-9]?\\.net\\\/tag\\.min\\.js$",
+          "resourceTypes" : [
+            "script",
+            "xmlhttprequest"
+          ]
+        },
+        "id" : 101,
+        "priority" : 40
+      },
+      {
+        "action" : {
+          "redirect" : {
+            "extensionPath" : "\/web_accessible_resources\/32x32.png"
+          },
+          "type" : "redirect"
+        },
+        "condition" : {
+          "domainType" : "firstParty",
+          "isUrlFilterCaseSensitive" : true,
+          "regexFilter" : "^https:\\\/\\\/www\\.igorslab\\.de\\\/[a-z0-9]+\\\/[\\\/a-zA-Z0-9_-]+$",
+          "resourceTypes" : [
+            "image"
+          ]
+        },
+        "id" : 102,
+        "priority" : 11
+      },
+      {
+        "action" : {
+          "redirect" : {
+            "regexSubstitution" : "\\1?r=1"
+          },
+          "type" : "redirect"
+        },
+        "condition" : {
+          "regexFilter" : "^(https:\\\/\\\/fastpic\\.org\\\/view\\\/.+?\\.html)$",
+          "resourceTypes" : [
+            "main_frame"
+          ]
+        },
+        "id" : 103
+      },
+      {
+        "action" : {
+          "redirect" : {
+            "regexSubstitution" : "\\1r=1&\\2"
+          },
+          "type" : "redirect"
+        },
+        "condition" : {
+          "regexFilter" : "^(https:\\\/\\\/fastpic\\.org\\\/view\\\/.+?\\.html\\?)([^r].*)$",
+          "resourceTypes" : [
+            "main_frame"
+          ]
+        },
+        "id" : 104
+      }
+    ],
+    "matched" : {
+      "error" : "Error: Invalid call to declarativeNetRequest.getMatchedRules(). The 'activeTab' permission has not been granted by the user for the tab."
+    }
+  },
+  "version" : "2026.907.2003"
+}

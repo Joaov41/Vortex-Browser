@@ -1,0 +1,28 @@
+{
+  "builtinDisabled" : true,
+  "completeModeHidesAdElement" : true,
+  "contextErrors" : [
+
+  ],
+  "enabledRulesets" : [
+    "ublock-filters",
+    "easylist",
+    "easyprivacy",
+    "adguard-mobile"
+  ],
+  "liteAllowsControl" : true,
+  "liteBlocksMatchingScript" : true,
+  "liteStillSelected" : true,
+  "loaded" : true,
+  "offAllowsMatchingScript" : true,
+  "passed" : true,
+  "popupAvailable" : true,
+  "privateBlocksMatchingScript" : true,
+  "privateDataStoreNonPersistent" : true,
+  "privateStorageIsolated" : true,
+  "reenableBlocksMatchingScript" : true,
+  "restoredTabBlocksMatchingScript" : true,
+  "siteExceptionAllowsMatchingScript" : true,
+  "version" : "2026.907.2003",
+  "vortexAlternativeActive" : true
+}

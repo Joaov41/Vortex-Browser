@@ -181,9 +181,9 @@ class DarkModeService: ObservableObject {
     private func updateDocumentScript(in webView: WKWebView, enabled: Bool) {
         loadDarkReaderScriptIfNeeded()
         effectiveStates.setObject(NSNumber(value: enabled), forKey: webView)
-        // DarkReader owns page theming; asking WebKit for native dark styling too
-        // can double-theme sites. Only the empty/loading surface changes here.
-        webView.overrideUserInterfaceStyle = .light
+        // Match native webpage controls, including the keyboard, to the effective
+        // tab appearance. DarkReader continues to theme the page content.
+        webView.overrideUserInterfaceStyle = enabled ? .dark : .light
         let background: UIColor = enabled
             ? UIColor(red: 24 / 255, green: 26 / 255, blue: 27 / 255, alpha: 1)
             : .white

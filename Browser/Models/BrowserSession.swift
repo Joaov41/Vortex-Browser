@@ -90,6 +90,7 @@ final class BrowserTab: ObservableObject, Identifiable {
 
         let configuration = makeConfiguration()
         let created = AIWebView(frame: .zero, configuration: configuration)
+        created.isOpaque = false
         created.customUserAgent = nil
         created.allowsLinkPreview = !isIncognito
         // Vortex owns back/forward gestures so it can enforce a deliberate
@@ -120,6 +121,10 @@ final class BrowserTab: ObservableObject, Identifiable {
         }
 
         liveWebView = created
+        UBlockLiteService.shared.didCreateWebView(for: self)
+        if !isIncognito {
+            BrowserMediaPlaybackCoordinator.shared.register(tab: self, webView: created)
+        }
         isHibernated = false
         showsHibernationIndicator = false
         isActivelyPlayingMedia = false
@@ -271,7 +276,9 @@ final class BrowserTab: ObservableObject, Identifiable {
               !webView.isLoading,
               !isIncognito,
               webAIProvider == nil,
+              !BrowserMediaPlaybackCoordinator.shared.protects(webView),
               !(await refreshMediaPlaybackState()) else { return false }
+        BrowserMediaPlaybackCoordinator.shared.unregister(webView)
         canGoBackObserver?.invalidate()
         canGoForwardObserver?.invalidate()
         pendingForwardNavigationTask?.cancel()
@@ -297,6 +304,10 @@ final class BrowserTab: ObservableObject, Identifiable {
 
     private func makeConfiguration() -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
+        UBlockLiteService.shared.configure(configuration, isPrivate: isIncognito)
+        configuration.preferences.isElementFullscreenEnabled = true
+        configuration.allowsInlineMediaPlayback = true
+        configuration.allowsPictureInPictureMediaPlayback = true
         configuration.defaultWebpagePreferences.preferredContentMode = useDesktopUserAgent ? .desktop : .mobile
         if isIncognito {
             configuration.websiteDataStore = .nonPersistent()
@@ -630,6 +641,10 @@ final class BrowserViewModel: ObservableObject {
             .filter { !protected.contains($0.id) }
             .filter { !$0.isIncognito && $0.webAIProvider == nil }
             .filter { !$0.isActivelyPlayingMedia }
+            .filter { tab in
+                guard let webView = tab.liveWebView else { return false }
+                return !BrowserMediaPlaybackCoordinator.shared.protects(webView)
+            }
             .filter { $0.liveWebView?.isLoading != true }
             .sorted { $0.lastUsedAt < $1.lastUsedAt }
     }
@@ -671,6 +686,10 @@ final class BrowserViewModel: ObservableObject {
 
     func closeTab(_ tab: BrowserTab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        if let webView = tab.liveWebView {
+            BrowserMediaPlaybackCoordinator.shared.stop(webView)
+            BrowserMediaPlaybackCoordinator.shared.unregister(webView)
+        }
         if !tab.isIncognito, let url = tab.currentURL {
             recentlyClosedTabs.insert(
                 RecentlyClosedTab(

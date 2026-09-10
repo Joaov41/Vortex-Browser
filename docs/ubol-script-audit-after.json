@@ -1,0 +1,24 @@
+{
+  "scriptAuditComplete" : true,
+  "scripts-after-one-update" : {
+    "count" : 26,
+    "duplicates" : [
+
+    ],
+    "uniqueSources" : 26
+  },
+  "scripts-after-two-updates" : {
+    "count" : 26,
+    "duplicates" : [
+
+    ],
+    "uniqueSources" : 26
+  },
+  "scripts-before" : {
+    "count" : 25,
+    "duplicates" : [
+
+    ],
+    "uniqueSources" : 25
+  }
+}

@@ -1,0 +1,249 @@
+{
+  "scriptAuditComplete" : true,
+  "scripts-after-one-update" : {
+    "count" : 307,
+    "duplicates" : [
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 16,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      }
+    ],
+    "uniqueSources" : 22
+  },
+  "scripts-after-two-updates" : {
+    "count" : 611,
+    "duplicates" : [
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 32,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      }
+    ],
+    "uniqueSources" : 22
+  },
+  "scripts-before" : {
+    "count" : 154,
+    "duplicates" : [
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      },
+      {
+        "copies" : 8,
+        "prefix" : "\/*******************************************************************************\n\n    uBlock Origin Lite - a comprehensive, MV3-compliant content bloc"
+      }
+    ],
+    "uniqueSources" : 21
+  }
+}

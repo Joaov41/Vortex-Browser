@@ -1,0 +1,41 @@
+{
+  "baseline" : {
+    "ad" : false,
+    "control" : true
+  },
+  "domainAuditComplete" : true,
+  "domains-127.0.0.1" : {
+    "control" : false,
+    "expectedControl" : false,
+    "passed" : true
+  },
+  "domains-unrelated.invalid" : {
+    "control" : true,
+    "expectedControl" : true,
+    "passed" : true
+  },
+  "excludedDomains-127.0.0.1" : {
+    "control" : true,
+    "expectedControl" : true,
+    "passed" : true
+  },
+  "excludedInitiatorDomains-127.0.0.1" : {
+    "control" : false,
+    "expectedControl" : true,
+    "passed" : false
+  },
+  "initiatorDomains-127.0.0.1" : {
+    "control" : true,
+    "expectedControl" : false,
+    "passed" : false
+  },
+  "initiatorDomains-unrelated.invalid" : {
+    "control" : true,
+    "expectedControl" : true,
+    "passed" : true
+  },
+  "restored" : {
+    "ad" : false,
+    "control" : true
+  }
+}

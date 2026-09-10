@@ -1,3 +1,5 @@
+> This is the isolated Vortex Lite Lab copy. See [the experiment notes](../docs/UBLOCK-ORIGIN-LITE-EXPERIMENT.md) for the uBlock Origin Lite integration. The documentation below describes the retained Vortex blocker.
+
 # Ad blocking in Vortex
 
 `AdBlockService` combines downloaded filter lists, user rules, WebKit content rules, and a JavaScript runtime.
@@ -5,7 +7,7 @@
 ## Platform behavior
 
 - On iOS 26, Vortex compiles enabled network filters into `WKContentRuleList` objects and also runs the JavaScript blocker.
-- On iOS 27, the legacy native converter remains disabled. A separate bounded native resource layer is enabled only on the isolated-probe-verified OS build `24A5430a` / SDK `24A5380g` pair. Other builds retain the JavaScript network and cosmetic fallback.
+- On iOS 27, the legacy native converter remains disabled. A separate bounded native resource layer is enabled on any iOS 27 build (isolated probe passed on `24A5430a` beta on 2026-09-05 and `24A435` release on 2026-09-10 with SDK `24A5380g`; see `docs/cookie-probe-ios27-24A435-2026-09-10.log`). The SDK is not pinned because WebKit behaviour is set by the device OS. A major version other than 27 falls back to the JavaScript network and cosmetic layer until re-probed.
 - A global switch and per-site exception control both reconcile existing WebViews. Disabling protection removes native lists, restores elements hidden by Vortex, and makes the installed JavaScript hooks pass requests through.
 
 ## Filter sources
@@ -65,4 +67,4 @@ Each web view retains one managed ad-block script. Configuration replacement pre
 
 Third-party cookie blocking is a separate service. It must not be implemented by globally pruning the shared cookie store, because that can erase first-party login sessions for hibernated or closed tabs.
 
-The cookie service retains iOS 26 support and also permits the verified iPadOS 27 build `24A5430a` / SDK `24A5380g` combination. Cookie and bounded ad-resource compatibility guards remain separate; neither revives the legacy full ad-block converter on iOS 27. Re-run `scripts/WebKitRegressionProbe` before extending either allowlist. WebKit's own privacy policy still applies; disabling Vortex's extra cookie rule does not override it. See [WebKit's content-blocker semantics](https://webkit.org/blog/3476/content-blockers-first-look/).
+The cookie service retains iOS 26 support and permits any iPadOS 27 build regardless of SDK (probe-verified on `24A5430a` beta and `24A435` release with SDK `24A5380g`; see `docs/cookie-probe-ios27-24A435-2026-09-10.log`). Cookie and bounded ad-resource compatibility guards remain separate; neither revives the legacy full ad-block converter on iOS 27. Re-run `scripts/WebKitRegressionProbe` before accepting a new iOS major version. WebKit's own privacy policy still applies; disabling Vortex's extra cookie rule does not override it. See [WebKit's content-blocker semantics](https://webkit.org/blog/3476/content-blockers-first-look/).

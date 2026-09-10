@@ -1,0 +1,57 @@
+{
+  "info" : {
+    "arguments" : [
+      "devicectl",
+      "device",
+      "process",
+      "launch",
+      "--device",
+      "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+      "--terminate-existing",
+      "--json-output",
+      "/tmp/ubol-latency-release-launch.json",
+      "com.web.me.Browser"
+    ],
+    "commandType" : "devicectl.device.process.launch",
+    "environment" : {
+
+    },
+    "jsonVersion" : 5,
+    "outcome" : "success",
+    "version" : "642.0.1"
+  },
+  "result" : {
+    "deviceIdentifier" : "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+    "launchOptions" : {
+      "activatedWhenStarted" : true,
+      "arguments" : [
+
+      ],
+      "environmentVariables" : {
+        "TERM" : "vt100"
+      },
+      "platformSpecificOptions" : {
+
+      },
+      "startStopped" : false,
+      "terminateExistingInstances" : true,
+      "user" : {
+        "active" : true
+      }
+    },
+    "process" : {
+      "auditToken" : [
+        4294967295,
+        501,
+        501,
+        501,
+        501,
+        1757,
+        0,
+        4644
+      ],
+      "executable" : "file:///private/var/containers/Bundle/Application/E1FB59E0-4017-4383-B393-0E2787FAD521/Browser.app/Browser",
+      "processIdentifier" : 1757
+    }
+  }
+}

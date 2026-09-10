@@ -23,16 +23,22 @@ final class WebViewRegressionTests: XCTestCase {
         XCTAssertFalse(ManagedUserScript.install(source: "config49", identifier: "ad-block", in: controller))
     }
 
-    func testCookieCompatibilityDoesNotEnableUntestedOSOrSDK() {
+    func testCookieCompatibilityEnablesIOS26AndIOS27OnlyWithReadableBuild() {
         XCTAssertTrue(NativeCookieRuleCompatibility.supports(majorVersion: 26, osBuild: "old", sdkBuild: nil))
         XCTAssertTrue(NativeCookieRuleCompatibility.supports(
             majorVersion: 27, osBuild: "24A5430a", sdkBuild: "24A5380g"
         ))
-        XCTAssertFalse(NativeCookieRuleCompatibility.supports(
-            majorVersion: 27, osBuild: "earlier-beta", sdkBuild: "24A5380g"
+        XCTAssertTrue(NativeCookieRuleCompatibility.supports(
+            majorVersion: 27, osBuild: "24A435", sdkBuild: "24A5380g"
+        ))
+        XCTAssertTrue(NativeCookieRuleCompatibility.supports(
+            majorVersion: 27, osBuild: "24B100", sdkBuild: "24A5380g"
+        ))
+        XCTAssertTrue(NativeCookieRuleCompatibility.supports(
+            majorVersion: 27, osBuild: "24A435", sdkBuild: "newer-sdk"
         ))
         XCTAssertFalse(NativeCookieRuleCompatibility.supports(
-            majorVersion: 27, osBuild: "24A5430a", sdkBuild: "untested-sdk"
+            majorVersion: 27, osBuild: "", sdkBuild: "24A5380g"
         ))
         XCTAssertFalse(NativeCookieRuleCompatibility.supports(
             majorVersion: 28, osBuild: "24A5430a", sdkBuild: "24A5380g"

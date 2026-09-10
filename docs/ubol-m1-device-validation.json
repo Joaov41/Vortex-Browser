@@ -1,0 +1,39 @@
+{
+  "device": "M1 iPad Air (5th generation)",
+  "deviceIdentifier": "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+  "build": {
+    "project": "/Users/johnval/Downloads/Vortex uBlock Origin Lite/Browser.xcodeproj",
+    "scheme": "Browser",
+    "configuration": "Release",
+    "destination": "generic/platform=iOS",
+    "derived_data_path": "/Users/johnval/Downloads/Vortex uBlock Origin Lite/.derived",
+    "clean": false,
+    "no_code_signing": false,
+    "success": true,
+    "duration_ms": 225589,
+    "exit_status": 0
+  },
+  "installedApp": {
+    "appClip": false,
+    "builtByDeveloper": true,
+    "bundleIdentifier": "com.web.me.Browser",
+    "bundleVersion": "21",
+    "containerAccessible": true,
+    "defaultApp": false,
+    "hidden": false,
+    "internalApp": false,
+    "name": "Vortex Lite Lab",
+    "removable": true,
+    "url": "file:///private/var/containers/Bundle/Application/E3A1DDE8-EFC3-4CB7-92D9-B8BE1724D4BD/Browser.app/",
+    "version": "1.1"
+  },
+  "installSucceeded": true,
+  "launchSucceeded": true,
+  "launchBlocker": null,
+  "originalSourceFilesVerified": 158,
+  "originalChangedFiles": [],
+  "runningProcessIdentifier": 2082,
+  "visibleAppVerified": true,
+  "screenshot": "ubol-m1-installed.png",
+  "runtimeScope": "App launch and visible browser UI verified; physical-device blocking quality is for user testing."
+}

@@ -1,0 +1,220 @@
+{
+  "time": 1788968605655,
+  "date": "9/9/2026 16:43:25",
+  "note": "",
+  "abt": {
+    "total": 132,
+    "blocked": 95,
+    "notblocked": 37,
+    "cosmetic_test": {
+      "static": true,
+      "dynamic": true
+    },
+    "script": {
+      "ads": false,
+      "pagead": false
+    },
+    "hosts": {
+      "Ads": {
+        "Amazon": {
+          "adtago.s3.amazonaws.com": true,
+          "advice-ads.s3.amazonaws.com": true,
+          "analyticsengine.s3.amazonaws.com": false,
+          "analytics.s3.amazonaws.com": false
+        },
+        "Google Ads": {
+          "adservice.google.com": true,
+          "pagead2.googleadservices.com": true,
+          "afs.googlesyndication.com": true,
+          "pagead2.googlesyndication.com": false
+        },
+        "Doubleclick.net": {
+          "stats.g.doubleclick.net": false,
+          "ad.doubleclick.net": false,
+          "static.doubleclick.net": false,
+          "m.doubleclick.net": false,
+          "mediavisor.doubleclick.net": false
+        },
+        "Adcolony": {
+          "ads30.adcolony.com": true,
+          "adc3-launch.adcolony.com": true,
+          "events3alt.adcolony.com": true,
+          "wd.adcolony.com": true
+        },
+        "Media.net": {
+          "static.media.net": true,
+          "media.net": true,
+          "adservetx.media.net": true
+        }
+      },
+      "Analytics": {
+        "Google Analytics": {
+          "analytics.google.com": true,
+          "google-analytics.com": true,
+          "ssl.google-analytics.com": true,
+          "click.googleanalytics.com": false
+        },
+        "Hotjar": {
+          "adm.hotjar.com": true,
+          "identify.hotjar.com": true,
+          "insights.hotjar.com": true,
+          "script.hotjar.com": true,
+          "surveys.hotjar.com": true,
+          "careers.hotjar.com": true,
+          "events.hotjar.io": true
+        },
+        "MouseFlow": {
+          "mouseflow.com": true,
+          "cdn.mouseflow.com": true,
+          "o2.mouseflow.com": true,
+          "gtm.mouseflow.com": true,
+          "api.mouseflow.com": true,
+          "tools.mouseflow.com": true,
+          "cdn-test.mouseflow.com": true
+        },
+        "FreshWorks": {
+          "freshmarketer.com": true,
+          "claritybt.freshmarketer.com": true,
+          "fwtracks.freshmarketer.com": true
+        },
+        "Luckyorange": {
+          "luckyorange.com": true,
+          "api.luckyorange.com": true,
+          "realtime.luckyorange.com": true,
+          "cdn.luckyorange.com": true,
+          "w1.luckyorange.com": true,
+          "upload.luckyorange.net": true,
+          "cs.luckyorange.net": true,
+          "settings.luckyorange.net": true
+        },
+        "Stats WP Plugin": {
+          "stats.wp.com": true
+        }
+      },
+      "Error Trackers": {
+        "Bugsnag": {
+          "notify.bugsnag.com": true,
+          "sessions.bugsnag.com": true,
+          "api.bugsnag.com": true,
+          "app.bugsnag.com": true
+        },
+        "Sentry": {
+          "browser.sentry-cdn.com": true,
+          "app.getsentry.com": true
+        }
+      },
+      "Social Trackers": {
+        "Facebook": {
+          "pixel.facebook.com": true,
+          "an.facebook.com": true
+        },
+        "Twitter": {
+          "static.ads-twitter.com": true,
+          "ads-api.twitter.com": false
+        },
+        "LinkedIn": {
+          "ads.linkedin.com": true,
+          "analytics.pointdrive.linkedin.com": true
+        },
+        "Pinterest": {
+          "ads.pinterest.com": true,
+          "log.pinterest.com": true,
+          "trk.pinterest.com": true
+        },
+        "Reddit": {
+          "events.reddit.com": true,
+          "events.redditmedia.com": true
+        },
+        "YouTube": {
+          "ads.youtube.com": true
+        },
+        "TikTok": {
+          "analytics.tiktok.com": true,
+          "analytics-sg.tiktok.com": true,
+          "log.byteoversea.com": false,
+          "ads.tiktok.com": false,
+          "business-api.tiktok.com": false,
+          "ads-sg.tiktok.com": false,
+          "ads-api.tiktok.com": false
+        }
+      },
+      "Mix": {
+        "Yahoo": {
+          "ads.yahoo.com": true,
+          "analytics.yahoo.com": true,
+          "geo.yahoo.com": true,
+          "log.fc.yahoo.com": false,
+          "analytics.query.yahoo.com": false,
+          "udcm.yahoo.com": false,
+          "partnerads.ysm.yahoo.com": false,
+          "adtech.yahooinc.com": false,
+          "gemini.yahoo.com": false
+        },
+        "Yandex": {
+          "extmaps-api.yandex.net": true,
+          "offerwall.yandex.net": true,
+          "adfox.yandex.ru": true,
+          "adfstat.yandex.ru": false,
+          "appmetrica.yandex.ru": false,
+          "metrika.yandex.ru": false
+        },
+        "Unity": {
+          "auction.unityads.unity3d.com": true,
+          "webview.unityads.unity3d.com": true,
+          "config.unityads.unity3d.com": true,
+          "adserver.unityads.unity3d.com": true
+        }
+      },
+      "OEMs": {
+        "Realme": {
+          "bdapi-ads.realmemobile.com": true,
+          "bdapi-in-ads.realmemobile.com": true,
+          "iot-eu-logser.realme.com": false,
+          "iot-logser.realme.com": false
+        },
+        "Xiaomi": {
+          "api.ad.xiaomi.com": true,
+          "sdkconfig.ad.xiaomi.com": true,
+          "sdkconfig.ad.intl.xiaomi.com": true,
+          "data.mistat.xiaomi.com": false,
+          "tracking.rus.miui.com": false,
+          "data.mistat.rus.xiaomi.com": false,
+          "data.mistat.india.xiaomi.com": false
+        },
+        "Oppo": {
+          "adsfs.oppomobile.com": true,
+          "adx.ads.oppomobile.com": true,
+          "ck.ads.oppomobile.com": true,
+          "data.ads.oppomobile.com": true
+        },
+        "Huawei": {
+          "metrics.data.hicloud.com": true,
+          "metrics2.data.hicloud.com": true,
+          "logservice.hicloud.com": true,
+          "logservice1.hicloud.com": true,
+          "logbak.hicloud.com": true,
+          "grs.hicloud.com": false
+        },
+        "OnePlus": {
+          "click.oneplus.cn": true
+        },
+        "Samsung": {
+          "samsungads.com": true,
+          "smetrics.samsung.com": true,
+          "nmetrics.samsung.com": true,
+          "samsung-com.112.2o7.net": true,
+          "analytics-api.samsunghealthcn.com": true
+        },
+        "Apple": {
+          "iadsdk.apple.com": true,
+          "metrics.icloud.com": true,
+          "metrics.mzstatic.com": true,
+          "books-analytics-events.apple.com": false,
+          "notes-analytics-events.apple.com": false,
+          "weather-analytics-events.apple.com": false,
+          "api-adservices.apple.com": false
+        }
+      }
+    }
+  }
+}

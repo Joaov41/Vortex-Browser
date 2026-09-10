@@ -2,6 +2,7 @@ import SwiftUI
 
 struct FilterListSettingsView: View {
     @ObservedObject var adBlockService = AdBlockService.shared
+    @ObservedObject private var lite = UBlockLiteService.shared
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showAddList = false
     @State private var showAddRule = false
@@ -10,7 +11,10 @@ struct FilterListSettingsView: View {
     @State private var newCustomRule = ""
 
     var body: some View {
-        if horizontalSizeClass == .compact {
+        if lite.engine != .vortex {
+            List { Section { UBlockLiteControls() } }
+                .navigationTitle("Ad Blocker")
+        } else if horizontalSizeClass == .compact {
             filterListContent
                 .listStyle(.insetGrouped)
         } else {
@@ -23,7 +27,7 @@ struct FilterListSettingsView: View {
         List {
             // MARK: - Ad Blocking Toggle
             Section {
-                Toggle("Enable Ad Blocking", isOn: $adBlockService.isEnabled)
+                UBlockLiteControls()
             } header: {
                 Text("Ad Blocker")
             } footer: {

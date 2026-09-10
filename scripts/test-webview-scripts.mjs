@@ -84,8 +84,11 @@ Task { @MainActor in
     do {
         try check(NativeCookieRuleCompatibility.supports(majorVersion: 26, osBuild: "old", sdkBuild: nil), "Lost iOS 26 support")
         try check(NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "24A5430a", sdkBuild: "24A5380g"), "Verified pair disabled")
-        try check(!NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "old", sdkBuild: "24A5380g"), "Untested OS enabled")
-        try check(!NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "24A5430a", sdkBuild: "unknown"), "Untested SDK enabled")
+        try check(NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "24A435", sdkBuild: "24A5380g"), "Verified 27.0 release pair disabled")
+        try check(NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "24B100", sdkBuild: "24A5380g"), "iOS 27 point update disabled")
+        try check(NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "24A435", sdkBuild: "newer-sdk"), "SDK pinned on iOS 27")
+        try check(NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "24A435", sdkBuild: nil), "Missing SDK key disabled iOS 27")
+        try check(!NativeCookieRuleCompatibility.supports(majorVersion: 27, osBuild: "", sdkBuild: "24A5380g"), "Unreadable OS build enabled")
         try check(!NativeCookieRuleCompatibility.supports(majorVersion: 28, osBuild: "24A5430a", sdkBuild: "24A5380g"), "Untested major enabled")
         for name in ["before-on-two", "after-on-50-refreshes", "before-off-two", "after-off", "after-early-dark", "after-reddit", "after-google", "after-amazon", "after-facebook", "after-pinterest", "after-twitter"] {
             let config = WKWebViewConfiguration()

@@ -1,0 +1,250 @@
+[
+  {
+    "host": "analyticsengine.s3.amazonaws.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "analytics.s3.amazonaws.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "pagead2.googlesyndication.com",
+    "matchingHighestRule": [
+      {
+        "action": {
+          "redirect": {
+            "extensionPath": "/web_accessible_resources/noop.js"
+          },
+          "type": "redirect"
+        },
+        "condition": {
+          "resourceTypes": [
+            "xmlhttprequest"
+          ],
+          "urlFilter": "||pagead2.googlesyndication.com/"
+        },
+        "id": 6121,
+        "priority": 11,
+        "ruleset": "ublock-filters"
+      }
+    ]
+  },
+  {
+    "host": "stats.g.doubleclick.net",
+    "matchingHighestRule": [
+      {
+        "action": {
+          "redirect": {
+            "extensionPath": "/web_accessible_resources/noop.txt"
+          },
+          "type": "redirect"
+        },
+        "condition": {
+          "resourceTypes": [
+            "xmlhttprequest"
+          ],
+          "urlFilter": "||doubleclick.net/"
+        },
+        "id": 6124,
+        "priority": 11,
+        "ruleset": "ublock-filters"
+      }
+    ]
+  },
+  {
+    "host": "ad.doubleclick.net",
+    "matchingHighestRule": [
+      {
+        "action": {
+          "redirect": {
+            "extensionPath": "/web_accessible_resources/noop.txt"
+          },
+          "type": "redirect"
+        },
+        "condition": {
+          "resourceTypes": [
+            "xmlhttprequest"
+          ],
+          "urlFilter": "||doubleclick.net/"
+        },
+        "id": 6124,
+        "priority": 11,
+        "ruleset": "ublock-filters"
+      }
+    ]
+  },
+  {
+    "host": "static.doubleclick.net",
+    "matchingHighestRule": [
+      {
+        "action": {
+          "redirect": {
+            "extensionPath": "/web_accessible_resources/noop.txt"
+          },
+          "type": "redirect"
+        },
+        "condition": {
+          "resourceTypes": [
+            "xmlhttprequest"
+          ],
+          "urlFilter": "||doubleclick.net/"
+        },
+        "id": 6124,
+        "priority": 11,
+        "ruleset": "ublock-filters"
+      }
+    ]
+  },
+  {
+    "host": "m.doubleclick.net",
+    "matchingHighestRule": [
+      {
+        "action": {
+          "redirect": {
+            "extensionPath": "/web_accessible_resources/noop.txt"
+          },
+          "type": "redirect"
+        },
+        "condition": {
+          "resourceTypes": [
+            "xmlhttprequest"
+          ],
+          "urlFilter": "||doubleclick.net/"
+        },
+        "id": 6124,
+        "priority": 11,
+        "ruleset": "ublock-filters"
+      }
+    ]
+  },
+  {
+    "host": "mediavisor.doubleclick.net",
+    "matchingHighestRule": [
+      {
+        "action": {
+          "redirect": {
+            "extensionPath": "/web_accessible_resources/noop.txt"
+          },
+          "type": "redirect"
+        },
+        "condition": {
+          "resourceTypes": [
+            "xmlhttprequest"
+          ],
+          "urlFilter": "||doubleclick.net/"
+        },
+        "id": 6124,
+        "priority": 11,
+        "ruleset": "ublock-filters"
+      }
+    ]
+  },
+  {
+    "host": "click.googleanalytics.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "ads-api.twitter.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "log.byteoversea.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "ads.tiktok.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "business-api.tiktok.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "ads-sg.tiktok.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "ads-api.tiktok.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "log.fc.yahoo.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "analytics.query.yahoo.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "udcm.yahoo.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "partnerads.ysm.yahoo.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "adtech.yahooinc.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "gemini.yahoo.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "adfstat.yandex.ru",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "appmetrica.yandex.ru",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "metrika.yandex.ru",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "iot-eu-logser.realme.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "iot-logser.realme.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "data.mistat.xiaomi.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "tracking.rus.miui.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "data.mistat.rus.xiaomi.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "data.mistat.india.xiaomi.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "grs.hicloud.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "books-analytics-events.apple.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "notes-analytics-events.apple.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "weather-analytics-events.apple.com",
+    "matchingHighestRule": []
+  },
+  {
+    "host": "api-adservices.apple.com",
+    "matchingHighestRule": []
+  }
+]

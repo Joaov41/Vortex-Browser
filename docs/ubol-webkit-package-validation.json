@@ -1,0 +1,29 @@
+{
+  "upstreamVersion": "2026.907.2003",
+  "upstreamSHA256": "851254d65c768cf23ba4fa27e51250344cee293d7e58b9387dbc62de6bc7c306",
+  "compatibilitySHA256": "05ed7255c10940aba6cfc127776aa5fb7be34711c0c63083a2cda14ec18bad13",
+  "changedEntries": [
+    "rulesets/main/ublock-filters.json"
+  ],
+  "omittedRule": {
+    "action": {
+      "type": "block"
+    },
+    "condition": {
+      "domainType": "thirdParty",
+      "excludedRequestDomains": [
+        "com",
+        "net",
+        "org"
+      ],
+      "resourceTypes": [
+        "script"
+      ],
+      "urlFilter": "/8b3ytkn.js|"
+    },
+    "id": 5154,
+    "priority": 10
+  },
+  "rulesBefore": 6532,
+  "rulesAfter": 6531
+}

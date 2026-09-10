@@ -4,6 +4,16 @@ import WebKit
 /// WebKit has no single-user-script removal API, so rebuilding the list must preserve its peers.
 @MainActor
 enum ManagedUserScript {
+    /// WebKit retains web-extension scripts when removing the app's scripts.
+    /// Re-adding those same objects duplicates the extension on every update.
+    static func replaceAppScripts(_ scripts: [WKUserScript], in controller: WKUserContentController) {
+        controller.removeAllUserScripts()
+        var installed = Set(controller.userScripts.map(ObjectIdentifier.init))
+        for script in scripts where installed.insert(ObjectIdentifier(script)).inserted {
+            controller.addUserScript(script)
+        }
+    }
+
     @discardableResult
     static func install(source: String, identifier: String, in controller: WKUserContentController) -> Bool {
         let marker = "// Vortex managed script: \(identifier)\n"
@@ -23,8 +33,7 @@ enum ManagedUserScript {
             }
         }
         if !inserted { updated.append(replacement) }
-        controller.removeAllUserScripts()
-        updated.forEach(controller.addUserScript)
+        replaceAppScripts(updated, in: controller)
         return true
     }
 }

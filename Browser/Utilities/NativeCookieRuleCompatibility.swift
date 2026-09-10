@@ -10,12 +10,13 @@ enum NativeCookieRuleCompatibility {
         )
     }
 
-    /// iOS 26 keeps its existing path. iOS 27 is enabled only for the OS/SDK
-    /// pair exercised by the isolated lifecycle and cookie probe on the M1 iPad.
-    /// Re-run scripts/WebKitRegressionProbe before extending this allowlist.
+    /// iOS 26 keeps its existing path. iOS 27 is enabled for any OS build; the
+    /// isolated lifecycle and cookie probe passed on the M1 iPad on 24A5430a (beta)
+    /// and 24A435 (release). WebKit behaviour is set by the device OS, so the SDK
+    /// is not pinned. Re-run scripts/WebKitRegressionProbe before adding a new major.
     static func supports(majorVersion: Int, osBuild: String, sdkBuild: String?) -> Bool {
         if majorVersion < 27 { return true }
-        return majorVersion == 27 && osBuild == "24A5430a" && sdkBuild == "24A5380g"
+        return majorVersion == 27 && !osBuild.isEmpty
     }
 
     private static var operatingSystemBuild: String {

@@ -1,0 +1,57 @@
+{
+  "info" : {
+    "arguments" : [
+      "devicectl",
+      "device",
+      "process",
+      "launch",
+      "--device",
+      "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+      "com.web.me.Browser",
+      "--terminate-existing",
+      "--json-output",
+      "/private/tmp/ubol-duplication-m1-launch.json"
+    ],
+    "commandType" : "devicectl.device.process.launch",
+    "environment" : {
+      "TERM" : "dumb"
+    },
+    "jsonVersion" : 5,
+    "outcome" : "success",
+    "version" : "642.0.1"
+  },
+  "result" : {
+    "deviceIdentifier" : "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+    "launchOptions" : {
+      "activatedWhenStarted" : true,
+      "arguments" : [
+        "--terminate-existing"
+      ],
+      "environmentVariables" : {
+        "TERM" : "dumb"
+      },
+      "platformSpecificOptions" : {
+
+      },
+      "startStopped" : false,
+      "terminateExistingInstances" : false,
+      "user" : {
+        "active" : true
+      }
+    },
+    "process" : {
+      "auditToken" : [
+        4294967295,
+        501,
+        501,
+        501,
+        501,
+        2325,
+        0,
+        6222
+      ],
+      "executable" : "file:///private/var/containers/Bundle/Application/6B66799B-5CBA-4B46-87C8-CC26341E920F/Browser.app/Browser",
+      "processIdentifier" : 2325
+    }
+  }
+}

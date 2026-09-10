@@ -1,0 +1,31 @@
+{
+  "device": "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+  "app": {
+    "appClip": false,
+    "builtByDeveloper": true,
+    "bundleIdentifier": "com.web.me.Browser",
+    "bundleVersion": "21",
+    "containerAccessible": true,
+    "defaultApp": false,
+    "hidden": false,
+    "internalApp": false,
+    "name": "Vortex Lite Lab",
+    "removable": true,
+    "url": "file:///private/var/containers/Bundle/Application/D6CA78AB-9A33-4A27-9485-212AB284A3C0/Browser.app/",
+    "version": "1.1"
+  },
+  "process": {
+    "executable": "file:///private/var/containers/Bundle/Application/D6CA78AB-9A33-4A27-9485-212AB284A3C0/Browser.app/Browser",
+    "processIdentifier": 2524
+  },
+  "releaseBuildSucceeded": true,
+  "signatureVerified": true,
+  "m1CompleteScores": {
+    "adblockTester": 96,
+    "turtlecute": {
+      "blocked": 95,
+      "total": 132
+    }
+  },
+  "originalSourceFilesUnchanged": 158
+}

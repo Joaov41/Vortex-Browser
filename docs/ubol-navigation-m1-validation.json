@@ -1,0 +1,53 @@
+{
+  "installedApp": {
+    "appClip": false,
+    "builtByDeveloper": true,
+    "bundleIdentifier": "com.web.me.Browser",
+    "bundleVersion": "21",
+    "containerAccessible": true,
+    "defaultApp": false,
+    "hidden": false,
+    "internalApp": false,
+    "name": "Vortex Lite Lab",
+    "removable": true,
+    "url": "file:///private/var/containers/Bundle/Application/46A3DE25-3BC6-44A7-BFAB-6A49A2D568EA/Browser.app/",
+    "version": "1.1"
+  },
+  "launch": {
+    "deviceIdentifier": "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+    "launchOptions": {
+      "activatedWhenStarted": true,
+      "arguments": [],
+      "environmentVariables": {
+        "TERM": "dumb"
+      },
+      "platformSpecificOptions": {},
+      "startStopped": false,
+      "terminateExistingInstances": true,
+      "user": {
+        "active": true
+      }
+    },
+    "process": {
+      "auditToken": [
+        4294967295,
+        501,
+        501,
+        501,
+        501,
+        2145,
+        0,
+        5745
+      ],
+      "executable": "file:///private/var/containers/Bundle/Application/46A3DE25-3BC6-44A7-BFAB-6A49A2D568EA/Browser.app/Browser",
+      "processIdentifier": 2145
+    }
+  },
+  "sourceFilesVerifiedUnchanged": 158,
+  "simulatorAssertionsPassed": 17,
+  "simulatorVersions": [
+    "26.5",
+    "27.0"
+  ],
+  "physicalFlashTimingVerified": false
+}

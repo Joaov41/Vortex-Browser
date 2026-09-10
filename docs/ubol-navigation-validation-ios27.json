@@ -1,0 +1,32 @@
+{
+  "bridgeRecreatedOnlyAfterEngineReload" : true,
+  "builtinDisabled" : true,
+  "completeModeHidesAdElement" : true,
+  "contextErrors" : [
+
+  ],
+  "enabledRulesets" : [
+    "adguard-mobile",
+    "easylist",
+    "easyprivacy",
+    "ublock-filters"
+  ],
+  "liteAllowsControl" : true,
+  "liteBlocksMatchingScript" : true,
+  "liteStillSelected" : true,
+  "loaded" : true,
+  "loadingSurfaceIsNonOpaque" : true,
+  "newTabBlocksWithReusedBridge" : true,
+  "offAllowsMatchingScript" : true,
+  "passed" : true,
+  "popupAvailable" : true,
+  "privateBlocksMatchingScript" : true,
+  "privateDataStoreNonPersistent" : true,
+  "privateStorageIsolated" : true,
+  "reenableBlocksMatchingScript" : true,
+  "regularRefreshCount" : 5,
+  "restoredTabBlocksMatchingScript" : true,
+  "siteExceptionAllowsMatchingScript" : true,
+  "version" : "2026.907.2003",
+  "vortexAlternativeActive" : true
+}

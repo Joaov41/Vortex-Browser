@@ -1,0 +1,9 @@
+{
+  "device": "FDFA143F-2E8F-58A5-BC84-EF9E9EE6D64F",
+  "processes": [
+    {
+      "executable": "file:///private/var/containers/Bundle/Application/6B66799B-5CBA-4B46-87C8-CC26341E920F/Browser.app/Browser",
+      "processIdentifier": 2325
+    }
+  ]
+}

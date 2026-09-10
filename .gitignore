@@ -42,3 +42,7 @@ all-swift-code.txt
 remotion-browser-film/node_modules/
 remotion-browser-film/output/
 scripts/WebKitRegressionProbe/*.xcodeproj/
+
+# Isolated uBlock Origin Lite experiment
+.ubol-derived/
+.ubol-artifacts/

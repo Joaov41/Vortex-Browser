@@ -9,6 +9,7 @@ struct SitePrivacyShieldButton: View {
     @ObservedObject private var privacyStore = SitePrivacyStore.shared
     @ObservedObject private var adBlockService = AdBlockService.shared
     @ObservedObject private var cookieBlocker = ThirdPartyCookieBlocker.shared
+    @ObservedObject private var lite = UBlockLiteService.shared
     @State private var showingPanel = false
 
     private var isAdBlockingPaused: Bool {
@@ -44,7 +45,7 @@ struct SitePrivacyShieldButton: View {
                     Text(privacyStore.host(for: url) ?? "This Page")
                         .font(.headline)
                         .lineLimit(1)
-                    Text(isAdBlockingPaused ? "Site protection is paused" : "Site protection is active")
+                    Text(lite.engine == .ublockLite ? "uBlock Origin Lite" : (lite.engine == .off ? "Ad blocking is off" : (isAdBlockingPaused ? "Site protection is paused" : "Site protection is active")))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -52,8 +53,18 @@ struct SitePrivacyShieldButton: View {
 
             Divider()
 
-            Toggle("Block ads and trackers", isOn: adBlockingBinding)
-                .disabled(!adBlockService.isEnabled || url?.host == nil)
+            if lite.engine == .ublockLite {
+                Button {
+                    lite.showPopup(for: webView)
+                } label: {
+                    Label("uBlock Origin Lite Controls", systemImage: "shield.lefthalf.filled")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Toggle("Block ads and trackers", isOn: adBlockingBinding)
+                    .disabled(!adBlockService.isEnabled || url?.host == nil)
+            }
 
             Toggle("Block third-party cookies", isOn: cookieBlockingBinding)
                 .disabled(!cookieBlocker.isSupported || !cookieBlocker.isEnabled || url?.host == nil)
@@ -68,8 +79,10 @@ struct SitePrivacyShieldButton: View {
                     .foregroundStyle(.secondary)
             }
 
-            LabeledContent("Blocked this session", value: "\(adBlockService.blockedCount)")
-                .font(.subheadline)
+            if lite.engine == .vortex {
+                LabeledContent("Blocked this session", value: "\(adBlockService.blockedCount)")
+                    .font(.subheadline)
+            }
 
             Button {
                 showingPanel = false
@@ -105,15 +118,17 @@ struct SitePrivacyShieldButton: View {
     }
 
     private var shieldSymbol: String {
+        if lite.engine == .ublockLite { return "shield.lefthalf.filled" }
         if !adBlockService.isEnabled || isAdBlockingPaused { return "shield.slash" }
         return "shield.checkered"
     }
 
     private var shieldColor: Color {
-        !adBlockService.isEnabled || isAdBlockingPaused ? .orange : .green
+        lite.engine == .ublockLite ? .blue : (!adBlockService.isEnabled || isAdBlockingPaused ? .orange : .green)
     }
 
     private var accessibilityLabel: String {
+        if lite.engine == .ublockLite { return "Privacy controls and uBlock Origin Lite for this page" }
         let host = privacyStore.host(for: url) ?? "this page"
         return isAdBlockingPaused ? "Privacy shield paused for \(host)" : "Privacy shield active for \(host)"
     }

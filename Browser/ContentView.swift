@@ -321,6 +321,23 @@ final class AIWebView: WKWebView {
     }
 }
 
+/// WebKit temporarily reparents the web view for element fullscreen. SwiftUI must own a stable
+/// container instead of resizing that web view while it belongs to the fullscreen controller.
+final class BrowserWebViewContainer: UIView {
+    let webView: WKWebView
+
+    init(webView: WKWebView) {
+        self.webView = webView
+        super.init(frame: .zero)
+        backgroundColor = webView.backgroundColor
+        webView.frame = bounds
+        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        addSubview(webView)
+    }
+
+    required init?(coder: NSCoder) { nil }
+}
+
 private struct BrowserWebAIRequest: Identifiable, Equatable {
     let id = UUID()
     let provider: WebAIProvider
@@ -2983,6 +3000,7 @@ struct ContentView: View {
             }
         }
         .onAppear {
+            UBlockLiteService.shared.attach(vm)
             lastSelectedTabID = vm.selectedTabID
             refreshHibernationProtection()
             vm.activateSelectedTab()
@@ -4413,7 +4431,7 @@ struct ContentView: View {
         } else {
             DarkModeService.shared.disableDarkMode(for: webView)
         }
-        webView.overrideUserInterfaceStyle = .light
+        webView.overrideUserInterfaceStyle = tab.isDarkMode ? .dark : .light
         tab.lastAppliedDarkMode = tab.isDarkMode
     }
 
@@ -5566,20 +5584,7 @@ struct ContentView: View {
 
                 Divider()
 
-                Toggle(isOn: $adBlockService.isEnabled) {
-                    HStack {
-                        Image(systemName: adBlockService.isEnabled ? "shield.fill" : "shield")
-                            .foregroundColor(adBlockService.isEnabled ? .green : .primary)
-                        VStack(alignment: .leading) {
-                            Text("Ad Blocker")
-                            if adBlockService.isEnabled {
-                                Text("\(adBlockService.blockedCount) blocked")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                    }
-                }
+                UBlockLiteControls()
 
                 Toggle(isOn: $thirdPartyCookieBlocker.isEnabled) {
                     HStack {
@@ -6392,7 +6397,7 @@ struct ContentView: View {
             )
         }
 
-        func makeUIView(context: Context) -> WKWebView {
+        func makeUIView(context: Context) -> BrowserWebViewContainer {
             let webView = tab.activateWebView()
             webView.navigationDelegate = context.coordinator
             webView.uiDelegate = context.coordinator
@@ -6408,10 +6413,10 @@ struct ContentView: View {
                 // Wait for ad block rules before loading (prevents race condition)
                 loadWhenReady(webView: webView, url: url)
             }
-            return webView
+            return BrowserWebViewContainer(webView: webView)
         }
 
-        func updateUIView(_ uiView: WKWebView, context: Context) {
+        func updateUIView(_ uiView: BrowserWebViewContainer, context: Context) {
             let webView = tab.liveWebView ?? tab.activateWebView()
             webView.navigationDelegate = context.coordinator
             webView.uiDelegate = context.coordinator
@@ -6437,7 +6442,7 @@ struct ContentView: View {
 
             if !webView.isLoading {
                 let shouldDark = tab.hasDarkModeOverride ? tab.isDarkMode : DarkModeService.shared.isDarkMode
-                webView.overrideUserInterfaceStyle = .light
+                webView.overrideUserInterfaceStyle = shouldDark ? .dark : .light
                 if tab.lastAppliedDarkMode != shouldDark {
                     if shouldDark {
                         DarkModeService.shared.enableDarkMode(for: webView)
@@ -6498,23 +6503,24 @@ struct ContentView: View {
             }
         }
 
-        static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-            uiView.configuration.userContentController.removeScriptMessageHandler(forName: "webProviderPrompt")
-            uiView.navigationDelegate = nil
-            uiView.uiDelegate = nil
-            uiView.scrollView.delegate = nil
-            uiView.scrollView.refreshControl = nil
+        static func dismantleUIView(_ uiView: BrowserWebViewContainer, coordinator: Coordinator) {
+            let webView = uiView.webView
+            webView.configuration.userContentController.removeScriptMessageHandler(forName: "webProviderPrompt")
+            webView.navigationDelegate = nil
+            webView.uiDelegate = nil
+            webView.scrollView.delegate = nil
+            webView.scrollView.refreshControl = nil
         }
 
         /// Wait for ad block rules to be ready before loading URL (prevents race condition on fast devices)
         private func loadWhenReady(webView: WKWebView, url: URL) {
-            if AdBlockService.shared.isReady {
+            if !AdBlockService.shared.isEnabled || AdBlockService.shared.isReady {
                 webView.load(URLRequest(url: url))
             } else {
                 Task {
                     // Wait up to 3 seconds for rules to compile
                     for _ in 0..<30 {
-                        if AdBlockService.shared.isReady { break }
+                        if !AdBlockService.shared.isEnabled || AdBlockService.shared.isReady { break }
                         try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
                     }
                     _ = await MainActor.run {
@@ -7065,6 +7071,11 @@ struct ContentView: View {
                 if navigationAction.targetFrame?.isMainFrame == true {
                     let enabled = !SitePrivacyStore.shared.isCookieBlockingAllowed(for: navigationAction.request.url)
                     ThirdPartyCookieBlocker.shared.setProtectionEnabled(enabled, for: webView)
+                    Task { @MainActor in
+                        await UBlockLiteService.shared.preparePage(webView)
+                        decisionHandler(.allow)
+                    }
+                    return
                 }
                 decisionHandler(.allow)
             }
@@ -7150,7 +7161,7 @@ struct ContentView: View {
                         
                         // Apply dark mode with per-tab override support
                         let shouldDark = self.tab.hasDarkModeOverride ? self.tab.isDarkMode : DarkModeService.shared.isDarkMode
-                        webView.overrideUserInterfaceStyle = .light
+                        webView.overrideUserInterfaceStyle = shouldDark ? .dark : .light
                         if shouldDark {
                             DarkModeService.shared.enableDarkMode(for: webView)
                         } else {
@@ -7541,7 +7552,7 @@ struct BrowserApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        WindowGroup { ContentView() }
+        WindowGroup { UBlockLiteRootView() }
     }
 }
 
