@@ -18,7 +18,7 @@ struct UBlockLiteRootView: View {
             } else {
                 VStack(spacing: 16) {
                     ProgressView()
-                    Text("Starting Vortex Lite Lab")
+                    Text("Starting Vortex Browser")
                     Text("Loading uBlock Origin Lite…").font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -50,7 +50,7 @@ struct UBlockLiteControls: View {
             if blocker.engine == .ublockLite, blocker.loadsFromPackageStore {
                 UBlockLiteRulesUpdateControls(blocker: blocker)
             }
-            Text("Vortex Lite Lab · uBOL \(blocker.version)" + (blocker.rulesVersion == blocker.version ? "" : " · rules \(blocker.rulesVersion)"))
+            Text("Vortex Browser · uBOL \(blocker.version)" + (blocker.rulesVersion == blocker.version ? "" : " · rules \(blocker.rulesVersion)"))
                 .font(.caption2).foregroundStyle(.secondary)
         }
     }

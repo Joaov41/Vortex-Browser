@@ -1521,6 +1521,7 @@ struct ContentView: View {
     @State private var splitPrimaryID: UUID?
     @State private var splitSecondaryID: UUID?
     @State private var splitSecondaryExternalTab: BrowserTab?
+    @State private var lastInteractedSplitTabID: UUID?
     @State private var showWebProviderSheet = false
     @State private var aiContextTabID: UUID?
     @State private var lastSelectedTabID: UUID?
@@ -4194,6 +4195,7 @@ struct ContentView: View {
         splitPrimaryID = nil
         splitSecondaryID = nil
         splitSecondaryExternalTab = nil
+        lastInteractedSplitTabID = nil
         showWebProviderSheet = false
         pendingWebProviderPrompt = nil
         pendingWebProviderProvider = nil
@@ -4242,6 +4244,18 @@ struct ContentView: View {
         )
     }
 
+    /// Marks a split-view pane as the one the user is working in so AI
+    /// queries target it without requiring a manual tab selection.
+    private func handleSplitPaneInteraction(_ tab: BrowserTab) {
+        guard splitMode != nil, tab.webAIProvider == nil else { return }
+        if lastInteractedSplitTabID != tab.id {
+            lastInteractedSplitTabID = tab.id
+        }
+        if aiContextTabID != tab.id {
+            aiContextTabID = tab.id
+        }
+    }
+
     private func syncAIContextSelection(
         previousSelectedTabID: UUID? = nil,
         forceVisibleTab: Bool = false
@@ -4251,24 +4265,35 @@ struct ContentView: View {
             aiContextTabID = nil
             return
         }
+        let preferredSplitTabID: UUID?
+        if splitMode != nil,
+           let lastInteracted = lastInteractedSplitTabID,
+           options.contains(where: { $0.id == lastInteracted }) {
+            preferredSplitTabID = lastInteracted
+        } else {
+            preferredSplitTabID = nil
+        }
         if forceVisibleTab,
-           let currentSelected = vm.selectedTabID,
-           options.contains(where: { $0.id == currentSelected }) {
-            aiContextTabID = currentSelected
+           let preferred = preferredSplitTabID ?? vm.selectedTabID,
+           options.contains(where: { $0.id == preferred }) {
+            aiContextTabID = preferred
             return
         }
         if let selected = aiContextTabID,
            options.contains(where: { $0.id == selected }) {
             if let previousSelectedTabID,
                selected == previousSelectedTabID,
-               let currentSelected = vm.selectedTabID,
+               let currentSelected = preferredSplitTabID ?? vm.selectedTabID,
                options.contains(where: { $0.id == currentSelected }) {
                 aiContextTabID = currentSelected
             }
             return
         }
-        if let currentSelected = vm.selectedTabID,
-           options.contains(where: { $0.id == currentSelected }) {
+        if let preferred = preferredSplitTabID,
+           options.contains(where: { $0.id == preferred }) {
+            aiContextTabID = preferred
+        } else if let currentSelected = vm.selectedTabID,
+                  options.contains(where: { $0.id == currentSelected }) {
             aiContextTabID = currentSelected
         } else {
             aiContextTabID = options.first?.id
@@ -5349,6 +5374,7 @@ struct ContentView: View {
                             withAnimation(.easeOut(duration: 0.15)) {
                                 isScrolling = true
                             }
+                            handleSplitPaneInteraction(tab)
                         },
                         onScrollEnd: {
                             withAnimation(.easeOut(duration: 0.2)) {
@@ -5359,6 +5385,7 @@ struct ContentView: View {
                             if omniboxFocused {
                                 omniboxFocused = false
                             }
+                            handleSplitPaneInteraction(tab)
                         },
                         onAskAI: {
                             handleAskAISelection(in: tab)
