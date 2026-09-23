@@ -81,11 +81,22 @@ class AdBlockService: NSObject, ObservableObject {
 
     @Published var isEnabled: Bool {
         didSet {
-            UserDefaults.standard.set(isEnabled, forKey: "adBlockEnabled")
+            if persistsEnabledChanges { UserDefaults.standard.set(isEnabled, forKey: "adBlockEnabled") }
             if isEnabled != oldValue {
                 handleConfigurationChange(recompileNativeRules: true)
             }
         }
+    }
+
+    private var persistsEnabledChanges = true
+
+    /// Sets protection without necessarily saving it. The Lite engine selector turns this blocker on and off
+    /// with `persist: false`, so choosing an engine never overwrites the saved `adBlockEnabled` preference,
+    /// which the main Vortex app shares because both builds use the same bundle identifier.
+    func setEnabled(_ enabled: Bool, persist: Bool) {
+        persistsEnabledChanges = persist
+        defer { persistsEnabledChanges = true }
+        isEnabled = enabled
     }
 
     @Published var blockedCount: Int = 0

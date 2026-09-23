@@ -40,6 +40,8 @@ final class UBlockLiteService: ObservableObject {
     private var privateLoad: Task<Void, Error>?
     private var deferredPrivateLoad: Task<Void, Never>?
     private static let compiledRulesKey = "experimental.ubolCompiledRules"
+    /// Popup or settings panels currently shown; per-site modes are re-read while any is open.
+    var openPanels = 0
 
     private init() {
         WKWebExtension.MatchPattern.registerCustomURLScheme("safari-web-extension")
@@ -56,6 +58,11 @@ final class UBlockLiteService: ObservableObject {
             await changeEngine(to: engine, reload: false)
             prepareDuration = Date().timeIntervalSince(start)
             isReady = true
+            // The extra blocklist loads from its compiled cache, or builds in the background, after the first frame.
+            Task(priority: .utility) {
+                try? await Task.sleep(for: .seconds(1))
+                await ExtraBlocklistService.shared.prepare()
+            }
         }
         preparation = task
         await task.value
@@ -76,32 +83,45 @@ final class UBlockLiteService: ObservableObject {
                 if extensionResource == nil { extensionResource = try await loadExtensionResource() }
                 guard let extensionResource else { throw failure("Could not load the extension.") }
                 try await regular.load(extensionResource)
-                AdBlockService.shared.isEnabled = false
-                Task { await rulesUpdater.checkIfDue() }
+                AdBlockService.shared.setEnabled(false, persist: false)
+                // Without the package store there is no installed rules version an update could replace.
+                if loadsFromPackageStore { Task { await rulesUpdater.checkIfDue() } }
             } else {
                 await cancelPrivateRuntimeLoad()
                 try regular.unload()
                 try privateRuntime.unload()
-                AdBlockService.shared.isEnabled = value == .vortex
+                AdBlockService.shared.setEnabled(value == .vortex, persist: false)
                 if value == .vortex { AdBlockService.shared.prepareAsync() }
             }
             engine = value
             UserDefaults.standard.set(value.rawValue, forKey: "experimental.blockerEngine")
         } catch {
-            // Never advertise Lite protection after a failed load, or run two blockers accidentally.
-            await cancelPrivateRuntimeLoad()
-            try? regular.unload()
-            try? privateRuntime.unload()
-            engine = .vortex
-            AdBlockService.shared.isEnabled = true
-            AdBlockService.shared.prepareAsync()
+            await activateVortexFallback(persist: false)
             errorMessage = "uBlock Origin Lite could not start: \(error.localizedDescription) Vortex protection is active."
         }
-        if reload {
-            for runtime in [regular, privateRuntime] {
-                for window in runtime.windows {
-                    for tab in window.tabBridges.values { tab.tab?.liveWebView?.reload() }
-                }
+        ExtraBlocklistService.shared.reapplyAll()
+        if reload { reloadOpenTabs() }
+    }
+
+    /// Unloads both Lite contexts and turns Vortex on, so the app never advertises Lite protection after a
+    /// failure or runs two blockers at once. Performs no `isChanging` check: callers either hold it already
+    /// (`changeEngine`, `applyRulesUpdate`) or take it (`failOver`). `persist` records Vortex as the selected
+    /// engine; otherwise Lite is tried again on the next launch.
+    private func activateVortexFallback(persist: Bool) async {
+        await cancelPrivateRuntimeLoad()
+        try? regular.unload()
+        try? privateRuntime.unload()
+        engine = .vortex
+        if persist { UserDefaults.standard.set(Engine.vortex.rawValue, forKey: "experimental.blockerEngine") }
+        AdBlockService.shared.setEnabled(true, persist: false)
+        AdBlockService.shared.prepareAsync()
+        ExtraBlocklistService.shared.reapplyAll()
+    }
+
+    private func reloadOpenTabs() {
+        for runtime in [regular, privateRuntime] {
+            for window in runtime.windows {
+                for tab in window.tabBridges.values { tab.tab?.liveWebView?.reload() }
             }
         }
     }
@@ -111,7 +131,11 @@ final class UBlockLiteService: ObservableObject {
     private func loadExtensionResource() async throws -> WKWebExtension {
         if let official = Bundle.main.url(forResource: "UBOLite.safari", withExtension: "zip") {
             do {
-                let state = try packageStore.prepareActivePackage(bundledArchive: official, packageVersion: version)
+                // First launch of a build unzips ~44 MB and re-filters every ruleset: keep it off the main actor.
+                let store = packageStore, packageVersion = version
+                let state = try await Task.detached(priority: .userInitiated) {
+                    try store.prepareActivePackage(bundledArchive: official, packageVersion: packageVersion)
+                }.value
                 let resource = try await WKWebExtension(resourceBaseURL: packageStore.activeURL)
                 rulesVersion = state.rulesVersion
                 loadsFromPackageStore = true
@@ -130,6 +154,7 @@ final class UBlockLiteService: ObservableObject {
 
     /// Applies a staged network-rules update: swaps the rule files, reloads the extension from the updated
     /// package, waits for WebKit to compile and re-enable the rulesets, and rolls back if that fails.
+    /// If the previous rules cannot be restored either, Vortex takes over for this session.
     func applyRulesUpdate() async {
         guard engine == .ublockLite, !isChanging, loadsFromPackageStore else { return }
         isChanging = true
@@ -137,42 +162,54 @@ final class UBlockLiteService: ObservableObject {
         defer { isChanging = false; rulesUpdater.markApplying(false) }
         errorMessage = nil
         await cancelPrivateRuntimeLoad()
-        try? regular.unload()
-        try? privateRuntime.unload()
-        regular.discardContext()
-        privateRuntime.discardContext()
         var appliedVersion: String?
         do {
-            let state = try packageStore.applyPending()
+            // WebKit must not hold the rule files while they are swapped.
+            try unloadForPackageChange()
+            let store = packageStore
+            let state = try await Task.detached(priority: .userInitiated) { try store.applyPending() }.value
             appliedVersion = state.rulesVersion
             rulesUpdater.setStatus("Applying \(state.rulesVersion)…")
             try await reloadRegularRuntime(expectedRulesets: Self.expectedRulesetCount())
             rulesVersion = state.rulesVersion
             rulesUpdater.setStatus("Rules \(state.rulesVersion) are active.")
+            // Hosts left to uBOL come from its rules, so the extra blocklist is regenerated for the new version.
+            Task(priority: .utility) { await ExtraBlocklistService.shared.prepare() }
         } catch {
-            let failed = appliedVersion ?? "update"
-            var message = "Rules update \(failed) failed to load and was rolled back: \(error.localizedDescription)"
+            var message: String
             if let appliedVersion {
-                _ = try? packageStore.rollback(rejecting: appliedVersion)
+                message = "Rules update \(appliedVersion) failed to load and was rolled back: \(error.localizedDescription)"
+                let store = packageStore
+                _ = try? await Task.detached(priority: .userInitiated) { try store.rollback(rejecting: appliedVersion) }.value
+            } else {
+                // `applyPending` undoes its own partial moves, so the previous rules are still in place.
+                message = "Rules update could not be installed; the previous rules were kept: \(error.localizedDescription)"
             }
             do {
                 try await reloadRegularRuntime(expectedRulesets: nil)
                 rulesVersion = packageStore.loadState()?.rulesVersion ?? version
             } catch {
                 message += " Restoring the previous rules also failed; Vortex protection is active."
-                await failOver(error)
+                await activateVortexFallback(persist: false)
+                errorMessage = "Lite filtering could not be restored: \(error.localizedDescription) Vortex protection is active."
             }
             rulesUpdater.setStatus(message)
         }
-        for runtime in [regular, privateRuntime] {
-            for window in runtime.windows {
-                for tab in window.tabBridges.values { tab.tab?.liveWebView?.reload() }
-            }
-        }
+        reloadOpenTabs()
+    }
+
+    /// Unloads both contexts and drops them, so the next load builds a new `WKWebExtension` context from the
+    /// rule files currently on disk instead of reusing one bound to the previous (or rejected) rules.
+    private func unloadForPackageChange() throws {
+        try regular.unload()
+        try privateRuntime.unload()
+        regular.discardContext()
+        privateRuntime.discardContext()
     }
 
     /// Recreates the extension from the package directory and requires the refreshed rulesets to load cleanly.
     private func reloadRegularRuntime(expectedRulesets: Int?) async throws {
+        try unloadForPackageChange()
         let resource = try await WKWebExtension(resourceBaseURL: packageStore.activeURL)
         extensionResource = resource
         try await regular.load(resource)
@@ -192,27 +229,57 @@ final class UBlockLiteService: ObservableObject {
         UserDefaults.standard.set(count, forKey: "experimental.ubolEnabledRulesetCount")
     }
 
-    /// Hold navigation until this view has native rules from the current controller load.
-    func preparePage(_ webView: WKWebView) async {
-        guard engine == .ublockLite else { return }
+    /// Hold navigation until this view has native rules from the current controller load. With the navigation's
+    /// `url`, also attaches or removes the extra blocklist for that site.
+    func preparePage(_ webView: WKWebView, url: URL? = nil) async {
         let isPrivate = !webView.configuration.websiteDataStore.isPersistent
-        do {
-            if isPrivate { try await loadPrivateRuntimeIfNeeded() }
-            try await runtime(isPrivate: isPrivate).preparePage(webView)
-            if !isPrivate { schedulePrivateRuntimeLoad() }
-        } catch {
+        if engine == .ublockLite {
+            do {
+                if isPrivate { try await loadPrivateRuntimeIfNeeded() }
+                try await runtime(isPrivate: isPrivate).preparePage(webView)
+                if !isPrivate { schedulePrivateRuntimeLoad() }
+            } catch {
+                await failOver(error)
+            }
+        }
+        guard let url else { return }
+        let noFiltering = engine == .ublockLite ? await runtime(isPrivate: isPrivate).noFilteringHosts() : []
+        ExtraBlocklistService.shared.apply(to: webView, url: url, noFilteringHosts: noFiltering)
+    }
+
+    /// Sites where Lite's filtering is off, as last read; for re-evaluating pages without a navigation.
+    func cachedNoFilteringHosts(for webView: WKWebView) -> Set<String> {
+        runtime(isPrivate: !webView.configuration.websiteDataStore.isPersistent).cachedNoFilteringHosts
+    }
+
+    /// Lite's popup and settings can change per-site modes; the next navigation re-reads them.
+    func filteringModesMayChange() {
+        regular.markFilteringModesStale()
+        privateRuntime.markFilteringModesStale()
+    }
+
+    /// Rule data of the rulesets the pinned manifest enables by default, from the package WebKit loads.
+    func defaultRulesetSource() -> UBOLPackageStore.RulesetSource? {
+        if loadsFromPackageStore { return .directory(packageStore.activeURL) }
+        return Bundle.main.url(forResource: "UBOLite.webkit", withExtension: "zip").map { .archive($0) }
+    }
+
+    /// A runtime that cannot become ready must not keep advertising Lite protection. When `generation` is
+    /// given, the failure is ignored if that load has since been replaced (for example by an update rollback).
+    func runtimeFailed(_ error: Error, runtime: UBlockLiteRuntime? = nil, generation: Int? = nil) {
+        Task { @MainActor in
+            if let runtime, let generation, !runtime.isCurrentGeneration(generation) { return }
             await failOver(error)
         }
     }
 
-    /// A runtime that cannot become ready must not keep advertising Lite protection.
-    func runtimeFailed(_ error: Error) {
-        Task { @MainActor in await failOver(error) }
-    }
-
+    /// Switches to Vortex for a failure outside an engine change or rules update; those handle their own
+    /// failures while holding `isChanging`.
     private func failOver(_ error: Error) async {
         guard engine == .ublockLite, !isChanging else { return }
-        await changeEngine(to: .vortex, reload: false)
+        isChanging = true
+        defer { isChanging = false }
+        await activateVortexFallback(persist: true)
         errorMessage = "Lite filtering could not become ready: \(error.localizedDescription) Vortex protection is active."
     }
 
@@ -255,7 +322,7 @@ final class UBlockLiteService: ObservableObject {
     /// the translated rules, so it stays valid until the package, app build or OS changes.
     private var compiledRulesMarker: String {
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
-        return "\(version)|\(rulesVersion)|\(build)|\(ProcessInfo.processInfo.operatingSystemVersionString)"
+        return "\(version)|\(rulesVersion)|p\(UBOLPackageStore.compatibilityPolicyVersion)|\(build)|\(ProcessInfo.processInfo.operatingSystemVersionString)"
     }
     var compiledRulesAreCurrent: Bool { UserDefaults.standard.string(forKey: Self.compiledRulesKey) == compiledRulesMarker }
     func markCompiledRulesCurrent() { UserDefaults.standard.set(compiledRulesMarker, forKey: Self.compiledRulesKey) }
@@ -321,6 +388,8 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
     #endif
     private var refreshTask: Task<[String], Error>?
     private var bridgePage: UBlockLiteBridgePage?
+    private(set) var cachedNoFilteringHosts: Set<String> = []
+    private var filteringModesStale = true
     private var generation = 0
     weak var owner: UBlockLiteService?
     var windows: [UBlockLiteWindow] = []
@@ -359,6 +428,7 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
         self.context = context
         generation += 1
         readyViews.removeAllObjects()
+        filteringModesStale = true
         try controller.load(context)
         try await context.loadBackgroundContent()
         startRulesRefresh(context)
@@ -391,10 +461,27 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
                 }
                 return enabled
             } catch {
-                if generation == currentGeneration, !(error is CancellationError) { owner?.runtimeFailed(error) }
+                if generation == currentGeneration, !(error is CancellationError) {
+                    owner?.runtimeFailed(error, runtime: self, generation: currentGeneration)
+                }
                 throw error
             }
         }
+    }
+
+    func isCurrentGeneration(_ value: Int) -> Bool { generation == value }
+
+    func markFilteringModesStale() { filteringModesStale = true }
+
+    /// Hostnames (or `all-urls`) where Lite's filtering mode is "no filtering". Read from the extension when
+    /// marked stale; the last known set if the extension cannot answer.
+    func noFilteringHosts() async -> Set<String> {
+        guard filteringModesStale, context?.isLoaded == true, let refreshTask else { return cachedNoFilteringHosts }
+        _ = try? await refreshTask.value
+        guard let bridgePage, let hosts = try? await bridgePage.noFilteringHosts() else { return cachedNoFilteringHosts }
+        cachedNoFilteringHosts = Set(hosts)
+        filteringModesStale = owner?.isPresentingPanel == true
+        return cachedNoFilteringHosts
     }
 
     /// Waits for this load's ruleset refresh and returns the enabled ruleset identifiers.
@@ -578,18 +665,33 @@ final class UBlockLiteTab: NSObject, WKWebExtensionTab {
     weak var hostWindow: UBlockLiteWindow?
     var position: Int
     private var subscriptions: Set<AnyCancellable> = []
+    private var reportedURL: URL?
+    private var reportedTitle: String?
+    private var reportedLoading = false
 
     init(tab: BrowserTab, window: UBlockLiteWindow, position: Int) {
         self.tab = tab
         self.hostWindow = window
         self.position = position
+        reportedURL = tab.currentURL
+        reportedTitle = tab.title
+        reportedLoading = tab.liveWebView?.isLoading ?? false
         super.init()
+        // `objectWillChange` also fires for progress and UI state; only forward URL, title and loading changes.
         tab.objectWillChange.sink { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self, let window = self.hostWindow else { return }
-                window.runtime.controller.didChangeTabProperties([.URL, .title, .loading], for: self)
-            }
+            Task { @MainActor [weak self] in self?.reportChangedProperties() }
         }.store(in: &subscriptions)
+    }
+
+    private func reportChangedProperties() {
+        guard let tab, let window = hostWindow else { return }
+        var changed: WKWebExtension.TabChangedProperties = []
+        let url = tab.currentURL, title = tab.title, loading = tab.liveWebView?.isLoading ?? false
+        if url != reportedURL { changed.insert(.URL); reportedURL = url }
+        if title != reportedTitle { changed.insert(.title); reportedTitle = title }
+        if loading != reportedLoading { changed.insert(.loading); reportedLoading = loading }
+        guard !changed.isEmpty else { return }
+        window.runtime.controller.didChangeTabProperties(changed, for: self)
     }
 
     func window(for context: WKWebExtensionContext) -> (any WKWebExtensionWindow)? { hostWindow }
@@ -671,6 +773,15 @@ final class UBlockLiteBridgePage: NSObject, WKNavigationDelegate {
         try Task.checkCancellation()
         return result as? [String] ?? []
     }
+    /// The hostnames whose filtering mode is "none" (uBOL's per-site off switch).
+    func noFilteringHosts() async throws -> [String] {
+        let result = try await webView.callAsyncJavaScript("""
+        const details = await browser.runtime.sendMessage({what: 'getFilteringModeDetails'});
+        return Array.from(details?.none ?? []);
+        """, contentWorld: .page)
+        return result as? [String] ?? []
+    }
+
     private func finish(_ error: Error? = nil) {
         timeout?.cancel(); timeout = nil
         guard let continuation else { return }

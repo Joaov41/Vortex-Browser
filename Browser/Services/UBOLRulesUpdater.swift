@@ -120,15 +120,23 @@ final class UBOLRulesUpdater: ObservableObject {
             let (fileURL, response) = try await session.download(from: release.downloadURL)
             defer { try? FileManager.default.removeItem(at: fileURL) }
             guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { throw Error.badResponse("download status") }
-            let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
-            guard data.count <= Self.maximumArchiveSize else { throw Error.tooLarge(data.count) }
-            guard UBOLPackageStore.sha256Hex(data) == release.sha256 else { throw Error.digestMismatch }
-            let archive = try ZipArchive(data: data)
-            let manifest = try UBOLPackageStore.readManifest(at: store.activeURL)
-            let overlay = try UBOLPackageStore.makeOverlay(from: archive, pinnedManifest: manifest, version: release.tag)
-            try store.stage(overlay, digest: release.sha256)
+            let size = (try FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int) ?? 0
+            guard size <= Self.maximumArchiveSize else { throw Error.tooLarge(size) }
+            statusMessage = "Verifying \(release.tag)…"
+            // Hashing, unzipping and validating tens of megabytes stays off the main actor.
+            let store = self.store, tag = release.tag, digest = release.sha256
+            let omittedCount: Int? = try await Task.detached(priority: .userInitiated) {
+                let data = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+                // Nothing in the archive is read before it matches GitHub's digest.
+                guard UBOLPackageStore.sha256Hex(data) == digest else { return nil }
+                let archive = try ZipArchive(data: data)
+                let manifest = try UBOLPackageStore.readManifest(at: store.activeURL)
+                let overlay = try UBOLPackageStore.makeOverlay(from: archive, pinnedManifest: manifest, pinnedPackageURL: store.activeURL, version: tag)
+                try store.stage(overlay, digest: digest)
+                return overlay.omittedRuleIDs.values.reduce(0) { $0 + $1.count }
+            }.value
+            guard let omitted = omittedCount else { throw Error.digestMismatch }
             availableRelease = nil
-            let omitted = overlay.omittedRuleIDs.values.reduce(0) { $0 + $1.count }
             statusMessage = "Update \(release.tag) verified and ready to apply" + (omitted > 0 ? " (\(omitted) WebKit-incompatible rules omitted)." : ".")
         } catch {
             statusMessage = "Download failed: \(error.localizedDescription)"

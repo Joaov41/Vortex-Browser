@@ -4,8 +4,8 @@ import zlib
 
 /// Minimal read-only ZIP reader for the uBlock Origin Lite release archives (Stored and Deflate entries).
 /// Every extracted entry is CRC-32 checked against the archive's own record.
-struct ZipArchive {
-    struct Entry {
+nonisolated struct ZipArchive: Sendable {
+    struct Entry: Sendable {
         let path: String
         let compressedSize: Int
         let uncompressedSize: Int

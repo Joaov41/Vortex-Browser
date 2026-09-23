@@ -11,10 +11,13 @@ import Foundation
 /// - `state.json` provenance for all of the above.
 ///
 /// Only rule *data* (JSON) is ever replaced. The extension's JavaScript, manifest and resources stay pinned.
-struct UBOLPackageStore {
-    struct State: Codable, Equatable {
+/// Nonisolated so extraction, validation and file moves can run off the main actor.
+nonisolated struct UBOLPackageStore: Sendable {
+    struct State: Codable, Equatable, Sendable {
         var bundleBuild: String
         var packageVersion: String
+        /// `compatibilityPolicyVersion` the active package was filtered with; nil for packages prepared before it existed.
+        var policyVersion: Int?
         var rulesVersion: String
         var appliedRulesVersion: String?
         var previousRulesVersion: String?
@@ -26,7 +29,7 @@ struct UBOLPackageStore {
         var availableRelease: String?
     }
 
-    struct RuleOverlay {
+    struct RuleOverlay: Sendable {
         /// Relative path inside the package (e.g. `rulesets/main/easylist.json`) to validated JSON data.
         var files: [String: Data]
         var version: String
@@ -49,8 +52,13 @@ struct UBOLPackageStore {
 
     /// Rule-data directories inside the package; everything else is code or resources and stays pinned.
     static let ruleDataDirectories = ["rulesets/main", "rulesets/regex", "rulesets/strictblock", "rulesets/urlskip"]
+    /// Directories holding declarative rules: the static rulesets (`main`) and the regex and strict-block rules
+    /// uBOL registers as dynamic rules. WebKit converts all of them the same way, so all get the compatibility policy.
+    static let declarativeRuleDirectories = ["rulesets/main", "rulesets/regex", "rulesets/strictblock"]
     static let ruleDetailsPath = "rulesets/ruleset-details.json"
     static let knownActionTypes: Set<String> = ["block", "allow", "allowAllRequests", "redirect", "upgradeScheme", "modifyHeaders"]
+    /// Bump when `applyCompatibilityPolicy` changes so existing installs re-filter their active package.
+    static let compatibilityPolicyVersion = 3
 
     let root: URL
     var activeURL: URL { root.appendingPathComponent("active", isDirectory: true) }
@@ -83,6 +91,7 @@ struct UBOLPackageStore {
         let fileManager = FileManager.default
         try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
         if let state = loadState(), state.bundleBuild == Self.bundleBuild, state.packageVersion == packageVersion,
+           state.policyVersion == Self.compatibilityPolicyVersion,
            fileManager.fileExists(atPath: activeURL.appendingPathComponent("manifest.json").path) {
             return state
         }
@@ -90,18 +99,13 @@ struct UBOLPackageStore {
         let staging = root.appendingPathComponent("staging-\(UUID().uuidString)", isDirectory: true)
         defer { try? fileManager.removeItem(at: staging) }
         try archive.extract(to: staging)
-        let manifest = try Self.readManifest(at: staging)
-        var omitted: [String: [Int]] = [:]
-        for (id, path) in manifest.rulesets {
-            let url = staging.appendingPathComponent(path)
-            let filtered = try Self.applyCompatibilityPolicy(to: try Data(contentsOf: url), path: path)
-            if !filtered.omittedRuleIDs.isEmpty { omitted[id] = filtered.omittedRuleIDs }
-            try filtered.data.write(to: url, options: .atomic)
-        }
+        // Reject an archive without a valid manifest before it replaces the active package.
+        _ = try Self.readManifest(at: staging)
         let previousState = loadState()
         // A rules overlay accepted by an earlier build stays valid only for the same upstream package.
-        if let previousState, previousState.packageVersion == packageVersion, previousState.appliedRulesVersion != nil,
-           fileManager.fileExists(atPath: activeURL.path) {
+        let carriesOverlay = previousState.map { $0.packageVersion == packageVersion && $0.appliedRulesVersion != nil } == true
+            && fileManager.fileExists(atPath: activeURL.path)
+        if carriesOverlay {
             for directory in Self.ruleDataDirectories + [Self.ruleDetailsPath] {
                 let source = activeURL.appendingPathComponent(directory)
                 let destination = staging.appendingPathComponent(directory)
@@ -110,9 +114,21 @@ struct UBOLPackageStore {
                 try fileManager.copyItem(at: source, to: destination)
             }
         }
+        // Filter after the overlay copy so an accepted update is re-filtered by the current policy too.
+        var omitted: [String: [Int]] = [:]
+        for directory in Self.declarativeRuleDirectories {
+            let folder = staging.appendingPathComponent(directory, isDirectory: true)
+            guard let names = try? fileManager.contentsOfDirectory(atPath: folder.path) else { continue }
+            for name in names where name.hasSuffix(".json") {
+                let url = folder.appendingPathComponent(name)
+                let filtered = try Self.applyCompatibilityPolicy(to: try Data(contentsOf: url), path: "\(directory)/\(name)")
+                if !filtered.omittedRuleIDs.isEmpty { omitted[Self.omissionKey(directory: directory, id: String(name.dropLast(5)))] = filtered.omittedRuleIDs }
+                try filtered.data.write(to: url, options: .atomic)
+            }
+        }
         try? fileManager.removeItem(at: activeURL)
         try fileManager.moveItem(at: staging, to: activeURL)
-        var state = State(bundleBuild: Self.bundleBuild, packageVersion: packageVersion, rulesVersion: packageVersion)
+        var state = State(bundleBuild: Self.bundleBuild, packageVersion: packageVersion, policyVersion: Self.compatibilityPolicyVersion, rulesVersion: packageVersion)
         if let previousState, previousState.packageVersion == packageVersion {
             state.rulesVersion = previousState.rulesVersion
             state.appliedRulesVersion = previousState.appliedRulesVersion
@@ -121,19 +137,23 @@ struct UBOLPackageStore {
             state.rejectedReleases = previousState.rejectedReleases
             state.lastCheck = previousState.lastCheck
             state.availableRelease = previousState.availableRelease
-            state.omittedRuleIDs = previousState.omittedRuleIDs
         } else {
             try? fileManager.removeItem(at: pendingURL)
             try? fileManager.removeItem(at: previousURL)
         }
-        if state.appliedRulesVersion == nil { state.omittedRuleIDs = omitted }
+        // Rules the overlay's own filtering already removed are no longer present to count again.
+        if carriesOverlay, let previousState {
+            state.omittedRuleIDs = previousState.omittedRuleIDs.merging(omitted) { Array(Set($0 + $1)).sorted() }
+        } else {
+            state.omittedRuleIDs = omitted
+        }
         try save(state)
         return state
     }
 
     // MARK: Manifest
 
-    struct Manifest {
+    struct Manifest: Sendable {
         let version: String
         /// ruleset id → manifest path without leading slash.
         let rulesets: [String: String]
@@ -153,9 +173,38 @@ struct UBOLPackageStore {
         return Manifest(version: version, rulesets: rulesets)
     }
 
+    enum RulesetSource: Sendable {
+        case directory(URL), archive(URL)
+    }
+
+    /// Rule data of the static rulesets the manifest enables by default.
+    static func defaultEnabledRulesetData(from source: RulesetSource) throws -> [Data] {
+        switch source {
+        case .directory(let url):
+            return try enabledRulesetPaths(manifest: Data(contentsOf: url.appendingPathComponent("manifest.json")))
+                .map { try Data(contentsOf: url.appendingPathComponent($0)) }
+        case .archive(let url):
+            let archive = try ZipArchive(url: url)
+            guard let manifest = archive.entry(named: "manifest.json") else { throw Error.manifestInvalid("missing manifest.json") }
+            return try enabledRulesetPaths(manifest: archive.contents(of: manifest)).compactMap { path in
+                try archive.entry(named: path).map { try archive.contents(of: $0) }
+            }
+        }
+    }
+
+    private static func enabledRulesetPaths(manifest data: Data) throws -> [String] {
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dnr = object["declarative_net_request"] as? [String: Any],
+              let resources = dnr["rule_resources"] as? [[String: Any]] else { throw Error.manifestInvalid("missing declarative_net_request") }
+        return resources.compactMap { resource in
+            guard resource["enabled"] as? Bool == true, let path = resource["path"] as? String else { return nil }
+            return path.hasPrefix("/") ? String(path.dropFirst()) : path
+        }
+    }
+
     // MARK: WebKit compatibility policy
 
-    struct FilteredRules {
+    struct FilteredRules: Sendable {
         let data: Data
         let omittedRuleIDs: [Int]
     }
@@ -164,8 +213,9 @@ struct UBOLPackageStore {
     /// domain, losing the original URL filter (see _WKWebExtensionDeclarativeNetRequestRule.mm). For a rule that
     /// applies on every page that suppresses unrelated blocking for any request containing those domain strings
     /// (root cause of the tracker-script bypass, upstream rule 5154). Rules limited to specific initiator sites
-    /// only affect those sites and are kept. Block rules with `excludedRequestDomains` and no `initiatorDomains`
-    /// are omitted; the JSON is otherwise rewritten unchanged in content.
+    /// only affect those sites and are kept. Block and redirect rules with `excludedRequestDomains` and no
+    /// `initiatorDomains` are omitted (a redirect is a block with a substitute response and is converted the same
+    /// way); the JSON is otherwise rewritten unchanged in content.
     static func applyCompatibilityPolicy(to data: Data, path: String) throws -> FilteredRules {
         guard let rules = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw Error.ruleFileInvalid(path, "not an array of rules")
@@ -174,7 +224,7 @@ struct UBOLPackageStore {
         var omitted: [Int] = []
         kept.reserveCapacity(rules.count)
         for rule in rules {
-            if let action = rule["action"] as? [String: Any], action["type"] as? String == "block",
+            if let action = rule["action"] as? [String: Any], let type = action["type"] as? String, type == "block" || type == "redirect",
                let condition = rule["condition"] as? [String: Any],
                condition["excludedRequestDomains"] != nil, condition["initiatorDomains"] == nil {
                 omitted.append(rule["id"] as? Int ?? -1)
@@ -186,10 +236,17 @@ struct UBOLPackageStore {
         return FilteredRules(data: output, omittedRuleIDs: omitted)
     }
 
+    /// Key for `State.omittedRuleIDs`: the ruleset id for static rules, prefixed by folder for regex and strict-block
+    /// rules, which reuse the same ruleset ids.
+    static func omissionKey(directory: String, id: String) -> String {
+        directory == "rulesets/main" ? id : "\(directory.dropFirst("rulesets/".count))/\(id)"
+    }
+
     // MARK: Rule-data validation
 
     /// Accepts only the rule data of rulesets declared by the pinned manifest and checks each file's shape.
-    static func makeOverlay(from archive: ZipArchive, pinnedManifest: Manifest, version: String) throws -> RuleOverlay {
+    /// Redirect targets must already exist in `pinnedPackageURL`, because only rule data is updated.
+    static func makeOverlay(from archive: ZipArchive, pinnedManifest: Manifest, pinnedPackageURL: URL, version: String) throws -> RuleOverlay {
         var files: [String: Data] = [:]
         var omitted: [String: [Int]] = [:]
         let pinnedIDs = Set(pinnedManifest.rulesets.keys)
@@ -200,10 +257,10 @@ struct UBOLPackageStore {
             let id = String(fileName.dropLast(5))
             guard pinnedIDs.contains(id) else { continue }
             let data = try archive.contents(of: entry)
-            if directory == "rulesets/main" || directory == "rulesets/regex" || directory == "rulesets/strictblock" {
-                try validateDeclarativeRules(data, path: entry.path)
+            if declarativeRuleDirectories.contains(directory) {
+                try validateDeclarativeRules(data, path: entry.path, packageURL: pinnedPackageURL)
                 let filtered = try applyCompatibilityPolicy(to: data, path: entry.path)
-                if !filtered.omittedRuleIDs.isEmpty { omitted[id] = filtered.omittedRuleIDs }
+                if !filtered.omittedRuleIDs.isEmpty { omitted[omissionKey(directory: directory, id: id)] = filtered.omittedRuleIDs }
                 files[entry.path] = filtered.data
             } else {
                 try validateURLSkipRules(data, path: entry.path)
@@ -225,7 +282,7 @@ struct UBOLPackageStore {
         return RuleOverlay(files: files, version: version, omittedRuleIDs: omitted)
     }
 
-    static func validateDeclarativeRules(_ data: Data, path: String) throws {
+    static func validateDeclarativeRules(_ data: Data, path: String, packageURL: URL) throws {
         guard let rules = try JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
             throw Error.ruleFileInvalid(path, "not an array of rules")
         }
@@ -237,8 +294,12 @@ struct UBOLPackageStore {
             }
             guard let condition = rule["condition"] as? [String: Any], !condition.isEmpty else { throw Error.ruleFileInvalid(path, "missing condition in rule \(id)") }
             if let priority = rule["priority"], !(priority is Int) { throw Error.ruleFileInvalid(path, "invalid priority in rule \(id)") }
-            if let redirect = action["redirect"] as? [String: Any], let extensionPath = redirect["extensionPath"] as? String, extensionPath.contains("..") {
-                throw Error.ruleFileInvalid(path, "unsafe redirect in rule \(id)")
+            if let redirect = action["redirect"] as? [String: Any], let extensionPath = redirect["extensionPath"] as? String {
+                guard !extensionPath.contains("..") else { throw Error.ruleFileInvalid(path, "unsafe redirect in rule \(id)") }
+                let resource = packageURL.appendingPathComponent(String(extensionPath.drop { $0 == "/" }))
+                guard FileManager.default.fileExists(atPath: resource.path) else {
+                    throw Error.ruleFileInvalid(path, "rule \(id) redirects to \(extensionPath), which the pinned package does not contain")
+                }
             }
         }
     }
@@ -268,29 +329,55 @@ struct UBOLPackageStore {
     }
 
     /// Moves the pending rule files into the active package, keeping the replaced files for rollback.
+    /// All or nothing: if any move or the state write fails, the moves already made are undone, the update
+    /// stays pending, and the error is rethrown.
     func applyPending() throws -> State {
         let fileManager = FileManager.default
         guard var state = loadState(), let version = state.pendingRulesVersion, fileManager.fileExists(atPath: pendingURL.path) else {
             throw Error.nothingPending
         }
         try? fileManager.removeItem(at: previousURL)
-        for directory in Self.ruleDataDirectories + [Self.ruleDetailsPath] {
-            let source = pendingURL.appendingPathComponent(directory)
-            guard fileManager.fileExists(atPath: source.path) else { continue }
-            let target = activeURL.appendingPathComponent(directory)
-            let backup = previousURL.appendingPathComponent(directory)
-            try fileManager.createDirectory(at: backup.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if fileManager.fileExists(atPath: target.path) { try fileManager.moveItem(at: target, to: backup) }
-            try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fileManager.moveItem(at: source, to: target)
+        var moved: [String] = []
+        do {
+            for directory in Self.ruleDataDirectories + [Self.ruleDetailsPath] {
+                let source = pendingURL.appendingPathComponent(directory)
+                guard fileManager.fileExists(atPath: source.path) else { continue }
+                let target = activeURL.appendingPathComponent(directory)
+                let backup = previousURL.appendingPathComponent(directory)
+                try fileManager.createDirectory(at: backup.deletingLastPathComponent(), withIntermediateDirectories: true)
+                if fileManager.fileExists(atPath: target.path) { try fileManager.moveItem(at: target, to: backup) }
+                do {
+                    try fileManager.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try fileManager.moveItem(at: source, to: target)
+                } catch {
+                    if fileManager.fileExists(atPath: backup.path), !fileManager.fileExists(atPath: target.path) {
+                        try? fileManager.moveItem(at: backup, to: target)
+                    }
+                    throw error
+                }
+                moved.append(directory)
+            }
+            var applied = state
+            applied.previousRulesVersion = state.rulesVersion
+            applied.rulesVersion = version
+            applied.appliedRulesVersion = version
+            applied.pendingRulesVersion = nil
+            applied.pendingDigest = nil
+            try save(applied)
+            state = applied
+        } catch {
+            for directory in moved.reversed() {
+                let source = pendingURL.appendingPathComponent(directory)
+                let target = activeURL.appendingPathComponent(directory)
+                let backup = previousURL.appendingPathComponent(directory)
+                try? fileManager.createDirectory(at: source.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? fileManager.moveItem(at: target, to: source)
+                if fileManager.fileExists(atPath: backup.path) { try? fileManager.moveItem(at: backup, to: target) }
+            }
+            try? fileManager.removeItem(at: previousURL)
+            throw error
         }
         try? fileManager.removeItem(at: pendingURL)
-        state.previousRulesVersion = state.rulesVersion
-        state.rulesVersion = version
-        state.appliedRulesVersion = version
-        state.pendingRulesVersion = nil
-        state.pendingDigest = nil
-        try save(state)
         return state
     }
 
@@ -322,15 +409,15 @@ struct UBOLPackageStore {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    private static let encoder: JSONEncoder = {
+    private static var encoder: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         encoder.dateEncodingStrategy = .iso8601
         return encoder
-    }()
-    private static let decoder: JSONDecoder = {
+    }
+    private static var decoder: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return decoder
-    }()
+    }
 }

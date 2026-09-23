@@ -50,6 +50,9 @@ struct UBlockLiteControls: View {
             if blocker.engine == .ublockLite, blocker.loadsFromPackageStore {
                 UBlockLiteRulesUpdateControls(blocker: blocker)
             }
+            if blocker.engine == .ublockLite {
+                ExtraBlocklistControls()
+            }
             Text("Vortex Browser · uBOL \(blocker.version)" + (blocker.rulesVersion == blocker.version ? "" : " · rules \(blocker.rulesVersion)"))
                 .font(.caption2).foregroundStyle(.secondary)
         }
@@ -71,20 +74,20 @@ struct UBlockLiteRulesUpdateControls: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
-                Button("Check for rule updates", systemImage: "arrow.triangle.2.circlepath") {
+                Button("Check for network rule updates", systemImage: "arrow.triangle.2.circlepath") {
                     Task { await updater.check() }
                 }
                 .disabled(updater.phase != .idle || blocker.isChanging)
                 if updater.phase != .idle { ProgressView().controlSize(.small) }
             }
             if let release = updater.availableRelease {
-                Button("Download rules \(release.tag) (\(release.size / 1_048_576) MB)", systemImage: "arrow.down.circle") {
+                Button("Download network rules \(release.tag) (\(release.size / 1_048_576) MB)", systemImage: "arrow.down.circle") {
                     Task { await updater.downloadAndStage() }
                 }
                 .disabled(updater.phase != .idle)
             }
             if let pendingVersion, updater.phase == .idle {
-                Button("Apply rules \(pendingVersion) now (reloads open tabs)", systemImage: "checkmark.circle") {
+                Button("Apply network rules \(pendingVersion) now (reloads open tabs)", systemImage: "checkmark.circle") {
                     Task { await blocker.applyRulesUpdate() }
                 }
                 .disabled(blocker.isChanging)
@@ -93,12 +96,45 @@ struct UBlockLiteRulesUpdateControls: View {
                 Text(status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
             }
             if let lastCheck = updater.lastCheck {
-                Text("Last check: \(lastCheck.formatted(date: .abbreviated, time: .shortened)). Only the filter rule data is updated; the extension code stays pinned.")
+                Text("Last check: \(lastCheck.formatted(date: .abbreviated, time: .shortened)). Network rules only: cosmetic filters and page scripts stay at uBOL \(blocker.version) until the app is updated.")
                     .font(.caption2).foregroundStyle(.secondary)
             } else {
-                Text("Checks GitHub for new uBlock Origin Lite releases once a day. Downloads and applying happen only when you tap.")
+                Text("Checks GitHub for new uBlock Origin Lite releases once a day. Downloads and applying happen only when you tap. Network rules only: cosmetic filters and page scripts stay at uBOL \(blocker.version) until the app is updated.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
+        }
+        .buttonStyle(.bordered)
+    }
+}
+
+/// The HaGeZi Pro extra blocklist: on/off, status, and a manual update.
+struct ExtraBlocklistControls: View {
+    @ObservedObject private var blocklist = ExtraBlocklistService.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Toggle("Extra blocklist: HaGeZi Pro", isOn: $blocklist.isEnabled)
+            if let version = blocklist.version {
+                Text("\(blocklist.blockedDomains.formatted()) domains · version \(version)")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            HStack(spacing: 12) {
+                Button("Check for blocklist update", systemImage: "arrow.triangle.2.circlepath") {
+                    Task { await blocklist.check() }
+                }
+                .disabled(blocklist.phase != .idle)
+                if blocklist.phase != .idle { ProgressView().controlSize(.small) }
+            }
+            if let available = blocklist.availableVersion, blocklist.phase == .idle {
+                Button("Download and apply HaGeZi Pro \(available)", systemImage: "arrow.down.circle") {
+                    Task { await blocklist.downloadAndApply() }
+                }
+            }
+            if let status = blocklist.statusMessage {
+                Text(status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+            }
+            Text("Blocks ad, tracker and malware domains that uBlock Origin Lite's lists don't cover. Pages you open yourself are never blocked, only what they load. Turned off on sites where you turn off uBlock.")
+                .font(.caption2).foregroundStyle(.secondary)
         }
         .buttonStyle(.bordered)
     }
@@ -134,16 +170,26 @@ final class UBlockLitePanelController: UIViewController {
         super.viewDidDisappear(animated)
         if isBeingDismissed || navigationController?.isBeingDismissed == true || isMovingFromParent {
             action?.closePopup()
+            UBlockLiteService.shared.panelDidClose()
         }
     }
 }
 
 extension UBlockLiteService {
+    var isPresentingPanel: Bool { openPanels > 0 }
+
+    func panelDidClose() {
+        openPanels = max(0, openPanels - 1)
+        filteringModesMayChange()
+    }
+
     func present(title: String, webView: WKWebView, action: WKWebExtension.Action? = nil) {
         guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first(where: { $0.activationState == .foregroundActive }),
               var presenter = scene.windows.first(where: \.isKeyWindow)?.rootViewController else { return }
         while let next = presenter.presentedViewController { presenter = next }
         let panel = UBlockLitePanelController(title: title, webView: webView, action: action)
+        openPanels += 1
+        filteringModesMayChange()
         if let navigation = presenter as? UINavigationController, navigation.viewControllers.first is UBlockLitePanelController {
             navigation.pushViewController(panel, animated: true)
         } else {

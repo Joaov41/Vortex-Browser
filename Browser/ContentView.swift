@@ -7087,7 +7087,7 @@ struct ContentView: View {
                     let enabled = !SitePrivacyStore.shared.isCookieBlockingAllowed(for: navigationAction.request.url)
                     ThirdPartyCookieBlocker.shared.setProtectionEnabled(enabled, for: webView)
                     Task { @MainActor in
-                        await UBlockLiteService.shared.preparePage(webView)
+                        await UBlockLiteService.shared.preparePage(webView, url: navigationAction.request.url)
                         decisionHandler(.allow)
                     }
                     return
