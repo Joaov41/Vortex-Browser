@@ -31,6 +31,8 @@ final class BrowserTab: ObservableObject, Identifiable {
     @Published var hasDarkModeOverride = false
     @Published var canGoBack = false
     @Published var canGoForward = false
+    @Published private(set) var isLoading = false
+    @Published private(set) var estimatedProgress: Double = 0
     @Published var groupID: UUID?
     @Published private(set) var showsHibernationIndicator: Bool
 
@@ -47,6 +49,8 @@ final class BrowserTab: ObservableObject, Identifiable {
 
     private var canGoBackObserver: NSKeyValueObservation?
     private var canGoForwardObserver: NSKeyValueObservation?
+    private var isLoadingObserver: NSKeyValueObservation?
+    private var estimatedProgressObserver: NSKeyValueObservation?
     private var pendingForwardNavigationTask: Task<Void, Never>?
     private var useDesktopUserAgent: Bool
     private var pendingScrollRestoration = false
@@ -116,6 +120,17 @@ final class BrowserTab: ObservableObject, Identifiable {
         canGoForwardObserver = created.observe(\.canGoForward, options: [.new]) { [weak self] webView, _ in
             Task { @MainActor [weak self, weak webView] in
                 self?.canGoForward = webView?.canGoForward ?? false
+            }
+        }
+
+        isLoadingObserver = created.observe(\.isLoading, options: [.new]) { [weak self] webView, _ in
+            Task { @MainActor [weak self, weak webView] in
+                self?.isLoading = webView?.isLoading ?? false
+            }
+        }
+        estimatedProgressObserver = created.observe(\.estimatedProgress, options: [.new]) { [weak self] webView, _ in
+            Task { @MainActor [weak self, weak webView] in
+                self?.estimatedProgress = webView?.estimatedProgress ?? 0
             }
         }
 
@@ -278,6 +293,12 @@ final class BrowserTab: ObservableObject, Identifiable {
         pendingForwardNavigationTask = nil
         canGoBackObserver = nil
         canGoForwardObserver = nil
+        isLoadingObserver?.invalidate()
+        isLoadingObserver = nil
+        estimatedProgressObserver?.invalidate()
+        estimatedProgressObserver = nil
+        isLoading = false
+        estimatedProgress = 0
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
