@@ -1960,7 +1960,8 @@ struct ContentView: View {
     }
 
     private func toolbarCollapsedPill(for tab: BrowserTab) -> some View {
-        HStack(spacing: 8) {
+        // Phone widths are tight: toggles + pill must fit a 402pt screen with margins.
+        HStack(spacing: isPhone ? 4 : 8) {
             Button { tab.navigateBack() } label: {
                 Image(systemName: "chevron.left")
             }
@@ -1980,14 +1981,14 @@ struct ContentView: View {
                 onOpenAdBlockSettings: { showFilterListSettings = true }
             )
 
-            ToolbarAddressButton(tab: tab, maxWidth: isPhone ? (splitMode == nil ? 120 : 72) : 220) {
+            ToolbarAddressButton(tab: tab, maxWidth: isPhone ? (splitMode == nil ? 112 : 64) : 220) {
                 expandToolbar(focusOmnibox: true)
             }
         }
         .font(.subheadline.weight(.semibold))
         .dynamicTypeSize(...DynamicTypeSize.large)
         .foregroundColor(darkModeService.isDarkMode ? .white : .primary)
-        .padding(.horizontal, 12)
+        .padding(.horizontal, isPhone ? 10 : 12)
         .frame(height: toolbarPillHeight)
         .overlay(alignment: .bottom) {
             ToolbarLoadingProgressBar(tab: tab)
@@ -2825,7 +2826,7 @@ struct ContentView: View {
             // Toolbar - outside GeometryReader for proper keyboard avoidance
             if let idx = vm.selectedIndex {
                 if (!isPhone || !phoneSecondaryPanelIsPresented) && isToolbarCollapsed {
-                    HStack(spacing: 12) {
+                    HStack(spacing: isPhone ? 8 : 12) {
                         if isPhone || isSidebarCollapsed {
                             sidebarToggleButton
                         }
