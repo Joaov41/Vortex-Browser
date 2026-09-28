@@ -173,7 +173,7 @@ struct GlassTextField: View {
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 36)
-        .dynamicTypeSize(...DynamicTypeSize.large)
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .glassEffectCompat(
             in: Capsule(),
             material: .regularMaterial,
@@ -1981,7 +1981,7 @@ struct ContentView: View {
             }
         }
         .font(.subheadline.weight(.semibold))
-        .dynamicTypeSize(...DynamicTypeSize.large)
+        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
         .foregroundColor(darkModeService.isDarkMode ? .white : .primary)
         .padding(.horizontal, 12)
         .frame(height: toolbarPillHeight)
@@ -2832,12 +2832,12 @@ struct ContentView: View {
                         aiSidebarToggleButton
                     }
                     .glassEffectContainerCompat(spacing: 12)
-                    .dynamicTypeSize(...DynamicTypeSize.large)
+                    .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                     .padding(.bottom, 24)
                     .opacity(isScrolling ? 0 : 1)
                 } else if (!isPhone || !phoneSecondaryPanelIsPresented) {
                     toolbarView(for: vm.tabs[idx])
-                        .dynamicTypeSize(...DynamicTypeSize.large)
+                        .dynamicTypeSize(...DynamicTypeSize.xxLarge)
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal)
                         .padding(.bottom, 24)
