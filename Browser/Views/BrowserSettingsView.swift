@@ -17,7 +17,6 @@ struct BrowserSettingsView: View {
     let onAppear: () -> Void
     let onDone: () -> Void
 
-    @ObservedObject private var adBlockService = AdBlockService.shared
     @ObservedObject private var cookieBlocker = ThirdPartyCookieBlocker.shared
     @ObservedObject private var darkModeService = DarkModeService.shared
     @ObservedObject private var fontSizeService = FontSizeService.shared
@@ -64,20 +63,7 @@ struct BrowserSettingsView: View {
 
     private var privacySection: some View {
         Section {
-            Toggle(isOn: $adBlockService.isEnabled) {
-                Label {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Block Ads and Trackers")
-                        if adBlockService.isEnabled {
-                            Text("\(adBlockService.blockedCount) blocked this session")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                } icon: {
-                    Image(systemName: adBlockService.isEnabled ? "shield.fill" : "shield")
-                }
-            }
+            UBlockLiteControls()
             Toggle(isOn: $cookieBlocker.isEnabled) {
                 Label("Block Third-Party Cookies", systemImage: "shield.lefthalf.filled")
             }

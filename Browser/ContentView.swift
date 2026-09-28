@@ -265,7 +265,6 @@ private struct BrowserWebAIRequest: Identifiable, Equatable {
 private final class BrowserWebAISessionManager {
     static let shared = BrowserWebAISessionManager()
 
-    private let websiteDataStore = WKWebsiteDataStore.default()
     private var webViews: [WebAIProvider: WKWebView] = [:]
 
     private init() {}
@@ -289,7 +288,7 @@ private final class BrowserWebAISessionManager {
 
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = true
-        configuration.websiteDataStore = websiteDataStore
+        configuration.websiteDataStore = WebAISessionStore.dataStore(for: provider)
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
@@ -315,21 +314,16 @@ private final class BrowserWebAISessionManager {
             webView.uiDelegate = nil
         }
 
-        let dataTypes = WKWebsiteDataStore.allWebsiteDataTypes()
-        websiteDataStore.fetchDataRecords(ofTypes: dataTypes) { [weak self] records in
-            guard let self else { return }
-            let matching = records.filter { record in
-                provider.matchesSessionHost(record.displayName)
-            }
-
-            self.websiteDataStore.removeData(ofTypes: dataTypes, for: matching) {
-                completion("\(provider.displayName) session reset.")
-            }
+        // Only the provider's own store is cleared, so regular tabs stay signed in
+        // (for Gemini, that means the rest of Google).
+        Task {
+            await WebAISessionStore.signOut(of: provider)
+            completion("Signed out of \(provider.displayName).")
         }
     }
 
     func isLoggedIn(to provider: WebAIProvider, completion: @escaping (Bool) -> Void) {
-        websiteDataStore.httpCookieStore.getAllCookies { [weak self] cookies in
+        WebAISessionStore.dataStore(for: provider).httpCookieStore.getAllCookies { [weak self] cookies in
             let hasAuthenticatedCookie = cookies.contains { cookie in
                 let domain = cookie.domain.lowercased()
                 let name = cookie.name.lowercased()
@@ -3372,6 +3366,12 @@ struct ContentView: View {
                 self.webAISettingsStatusMessage = message
                 if self.activeWebAIRequest?.provider == provider {
                     self.dismissWebAIOverlay(userCancelled: false)
+                }
+                // A split-view provider tab shares the same store; reload it so
+                // it shows the signed-out page instead of a stale session.
+                if let providerTab = self.activeWebProviderTab,
+                   providerTab.webAIProvider == provider {
+                    providerTab.activateWebView().load(URLRequest(url: provider.url))
                 }
             }
         }

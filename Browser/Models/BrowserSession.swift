@@ -342,6 +342,8 @@ final class BrowserTab: ObservableObject, Identifiable {
                     forMainFrameOnly: false
                 )
             )
+        } else if let webAIProvider {
+            configuration.websiteDataStore = WebAISessionStore.dataStore(for: webAIProvider)
         } else {
             configuration.websiteDataStore = .default()
         }
