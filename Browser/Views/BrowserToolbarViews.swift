@@ -17,14 +17,22 @@ struct ToolbarAddressButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
+            Group {
                 if let host {
-                    Image(systemName: isSecure ? "lock.fill" : "exclamationmark.triangle.fill")
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(isSecure ? AnyShapeStyle(.secondary) : AnyShapeStyle(BrowserDesign.Tint.warning))
-                    Text(host)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    ViewThatFits(in: .horizontal) {
+                        addressLabel(host)
+                        if let registrableHost, registrableHost != host {
+                            addressLabel(registrableHost)
+                        }
+                        HStack(spacing: 4) {
+                            securityIcon
+                            Text(registrableHost ?? host)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(width: 64)
+                        }
+                        securityIcon
+                    }
                 } else {
                     Image(systemName: "magnifyingglass")
                 }
@@ -35,6 +43,29 @@ struct ToolbarAddressButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Edit the address or search")
+    }
+
+    /// Last two labels of the host, e.g. "news.example.com" -> "example.com".
+    private var registrableHost: String? {
+        guard let host else { return nil }
+        let labels = host.split(separator: ".")
+        guard labels.count > 2 else { return nil }
+        return labels.suffix(2).joined(separator: ".")
+    }
+
+    private var securityIcon: some View {
+        Image(systemName: isSecure ? "lock.fill" : "exclamationmark.triangle.fill")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(isSecure ? AnyShapeStyle(.secondary) : AnyShapeStyle(BrowserDesign.Tint.warning))
+    }
+
+    private func addressLabel(_ text: String) -> some View {
+        HStack(spacing: 4) {
+            securityIcon
+            Text(text)
+                .lineLimit(1)
+                .fixedSize()
+        }
     }
 
     private var accessibilityLabel: String {
