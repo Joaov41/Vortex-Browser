@@ -164,7 +164,8 @@ struct GlassTextField: View {
             }
         }
         .padding(.horizontal, 12)
-        .frame(height: 36)
+        .frame(minHeight: 36)
+        .dynamicTypeSize(...DynamicTypeSize.large)
         .glassEffectCompat(
             in: Capsule(),
             material: .regularMaterial,
@@ -4559,8 +4560,9 @@ struct ContentView: View {
                 Image(systemName: "eye.slash")
                     .font(.system(size: sidebarIconFontSize, weight: .semibold))
                     .foregroundStyle(BrowserDesign.Tint.incognito)
+                    .padding(.horizontal, 10)
                     .frame(maxHeight: .infinity)
-                    .frame(width: BrowserDesign.Size.hitTarget + 2)
+                    .frame(minWidth: BrowserDesign.Size.hitTarget + 2)
                     .contentShape(Rectangle())
                     .glassEffectCompat(
                         in: RoundedRectangle(cornerRadius: BrowserDesign.Radius.row, style: .continuous),
