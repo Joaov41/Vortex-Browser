@@ -31,6 +31,7 @@ struct AISidebar: View {
     var onContextSelected: ((UUID) -> Void)? = nil
     var onClearConversation: (() -> Void)? = nil
     var onInputFocusChanged: ((Bool) -> Void)? = nil
+    var isPinned: Binding<Bool>? = nil
 
     @State private var input: String = ""
     @AppStorage("customPrompts") private var customPromptsData: String = "[]"
@@ -199,11 +200,13 @@ struct AISidebar: View {
     var body: some View {
         VStack(spacing: 12) {
             headerRow
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
             if let contextStatus = trimmedContextStatusText {
                 contextStatusRow(contextStatus)
             }
             if effectiveControlsExpanded {
                 controlsSection
+                    .dynamicTypeSize(...DynamicTypeSize.xLarge)
             }
             if effectiveControlsExpanded {
                 Divider()
@@ -277,11 +280,11 @@ struct AISidebar: View {
             HStack(spacing: 10) {
                 iconContainer {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundColor(primaryText)
                 }
                 Text(backendLabel)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundColor(secondaryText)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -296,7 +299,7 @@ struct AISidebar: View {
                         }
                     } label: {
                         Image(systemName: effectiveControlsExpanded ? "rectangle.compress.vertical" : "slider.horizontal.3")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.caption.weight(.bold))
                             .foregroundColor(secondaryText)
                             .padding(6)
                             .background(
@@ -312,7 +315,7 @@ struct AISidebar: View {
                         showFullConversation = true
                     } label: {
                         Image(systemName: "clock.arrow.circlepath")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.caption.weight(.bold))
                             .foregroundColor(secondaryText)
                             .padding(6)
                             .background(
@@ -323,11 +326,28 @@ struct AISidebar: View {
                     .frame(width: 44, height: 44)
                     .accessibilityLabel("View full conversation")
                 }
+                if let isPinned {
+                    Button {
+                        isPinned.wrappedValue.toggle()
+                    } label: {
+                        Image(systemName: isPinned.wrappedValue ? "pin.fill" : "pin")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(isPinned.wrappedValue ? AnyShapeStyle(.tint) : AnyShapeStyle(secondaryText))
+                            .padding(6)
+                            .background(
+                                Circle().fill(iconBackground)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel(isPinned.wrappedValue ? "Unpin AI sidebar" : "Pin AI sidebar")
+                    .accessibilityHint("When pinned, tapping the page keeps the sidebar open")
+                }
                 Button {
                     onDismiss()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.caption.weight(.bold))
                         .foregroundColor(secondaryText)
                         .padding(6)
                         .background(
@@ -359,11 +379,11 @@ struct AISidebar: View {
             HStack(spacing: 10) {
                 iconContainer {
                     Image(systemName: "text.bubble")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundColor(primaryText)
                 }
                 Text(text)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundColor(secondaryText)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -378,11 +398,11 @@ struct AISidebar: View {
                     HStack(spacing: 10) {
                         iconContainer {
                             Image(systemName: "switch.2")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundColor(primaryText)
                         }
                         Text("Model")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(primaryText)
                     }
                     Menu {
@@ -402,13 +422,13 @@ struct AISidebar: View {
                     } label: {
                         HStack(spacing: 8) {
                             Text(modelMenuTitle(for: aiService.backend))
-                                .font(.system(size: 14, weight: .medium))
+                                .font(.subheadline.weight(.medium))
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.8)
                                 .allowsTightening(true)
                             Spacer(minLength: 4)
                             Image(systemName: "chevron.up.chevron.down")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(.caption.weight(.semibold))
                         }
                         .foregroundColor(primaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -423,11 +443,11 @@ struct AISidebar: View {
                 HStack(spacing: 10) {
                     iconContainer {
                         Image(systemName: "switch.2")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.footnote.weight(.semibold))
                             .foregroundColor(primaryText)
                     }
                     Text("Model")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(primaryText)
                     Spacer()
                     Picker("Model", selection: $aiService.backend) {
@@ -547,15 +567,15 @@ struct AISidebar: View {
                 HStack(spacing: 10) {
                     iconContainer {
                         Image(systemName: "doc.text")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.footnote.weight(.semibold))
                             .foregroundColor(primaryText)
                     }
                     Text("Summarize")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(primaryText)
                     Spacer()
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundColor(secondaryText)
                 }
             }
@@ -571,16 +591,16 @@ struct AISidebar: View {
                     HStack(spacing: 10) {
                         iconContainer {
                             Image(systemName: "text.quote")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundColor(primaryText)
                         }
                         Text("Selected text")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(primaryText)
                         Spacer()
                     }
                     Text(selection)
-                        .font(.system(size: 12))
+                        .font(.caption)
                         .foregroundColor(secondaryText)
                         .lineLimit(6)
                         .multilineTextAlignment(.leading)
@@ -619,15 +639,15 @@ struct AISidebar: View {
                     HStack(spacing: 10) {
                         iconContainer {
                             Image(systemName: "text.badge.plus")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                                 .foregroundColor(primaryText)
                         }
                         Text("Custom Prompts")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(primaryText)
                         Spacer()
                         Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundColor(secondaryText)
                     }
                     .padding(.trailing, 28)
@@ -640,7 +660,7 @@ struct AISidebar: View {
                     showCustomPromptEditor = true
                 } label: {
                     Image(systemName: "plus")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundColor(secondaryText)
                         .padding(6)
                         .background(
@@ -663,7 +683,7 @@ struct AISidebar: View {
         NavigationView {
             VStack(spacing: 12) {
                 TextEditor(text: $newCustomPrompt)
-                    .font(.system(size: 14))
+                    .font(.subheadline)
                     .foregroundColor(primaryText)
                     .frame(minHeight: 140)
                     .padding(8)
@@ -718,21 +738,21 @@ struct AISidebar: View {
                 HStack(spacing: 10) {
                     iconContainer {
                         Image(systemName: "square.on.square")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.footnote.weight(.semibold))
                             .foregroundColor(primaryText)
                     }
                     Text("Tabs")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.subheadline.weight(.semibold))
                         .foregroundColor(primaryText)
                     Spacer()
                     if let current = currentContext {
                         Text(current.title)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundColor(secondaryText)
                             .lineLimit(1)
                     }
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundColor(secondaryText)
                 }
             }
@@ -778,7 +798,7 @@ struct AISidebar: View {
     private var inputRow: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundColor(primaryText)
                 .frame(width: 30, height: 30)
                 .glassEffectCompat(
@@ -812,7 +832,7 @@ struct AISidebar: View {
                     send()
                 } label: {
                     Image(systemName: "arrow.up")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.footnote.weight(.semibold))
                         .foregroundColor(primaryText)
                         .frame(width: 44, height: 44)
                         .glassEffectCompat(
@@ -1006,7 +1026,7 @@ private struct AISidebarMessagesSection: View {
                    !showsSlowRedditProcessingNotice || throughput.tokens > 0 {
                     rowContainer {
                         Text(throughputInlineText(throughput))
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.caption.weight(.semibold))
                             .foregroundColor(secondaryText)
                     }
                 }
@@ -1156,7 +1176,7 @@ private struct AISidebarMessagesSection: View {
         HStack(alignment: .top, spacing: 10) {
             iconContainer {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.caption.weight(.semibold))
                     .foregroundColor(primaryText)
             }
             Text(AIResponseMarkdown.inline(text))
@@ -1276,12 +1296,12 @@ private struct AISidebarConversationHistoryView: View, Equatable {
             HStack(alignment: .top, spacing: 10) {
                 iconContainer {
                     Image(systemName: msg.role == .user ? "person.fill" : "sparkles")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.caption.weight(.semibold))
                         .foregroundColor(primaryText)
                 }
                 if msg.role == .user {
                     Text(verbatim: msg.text)
-                        .font(.system(size: 14))
+                        .font(.subheadline)
                         .foregroundColor(primaryText)
                 } else {
                     let responseCanvas = AIResponseCanvasPresentation(message: msg)
@@ -1297,7 +1317,7 @@ private struct AISidebarConversationHistoryView: View, Equatable {
                             onOpenResponseCanvas(responseCanvas)
                         } label: {
                             Label("Open Full Reply", systemImage: "rectangle.expand.diagonal")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.footnote.weight(.semibold))
                         }
                         .browserResponseCanvasButtonStyle()
                         .accessibilityHint("Opens this model reply in the full-screen canvas")
