@@ -1,0 +1,295 @@
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct BrowserSettingsView: View {
+    @ObservedObject var vm: BrowserViewModel
+    let isChatGPTSignedIn: Bool
+    let isGeminiSignedIn: Bool
+    let webAIStatusMessage: String?
+    @Binding var isLoadingMLXModel: Bool
+    @Binding var mlxDownloadProgress: Progress?
+    @Binding var mlxLoadError: String?
+    let onOpenFilterLists: () -> Void
+    let onSignIn: (WebAIProvider) -> Void
+    let onSignOut: (WebAIProvider) -> Void
+    let onFontSizeChanged: () -> Void
+    let onDownloadMLXModel: (URL) -> Void
+    let onAppear: () -> Void
+    let onDone: () -> Void
+
+    @ObservedObject private var adBlockService = AdBlockService.shared
+    @ObservedObject private var cookieBlocker = ThirdPartyCookieBlocker.shared
+    @ObservedObject private var darkModeService = DarkModeService.shared
+    @ObservedObject private var fontSizeService = FontSizeService.shared
+    @AppStorage("requestDesktopSite") private var requestDesktopSite = false
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                generalSection
+                privacySection
+                appearanceSection
+                aiSection
+                advancedSection
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: onDone)
+                }
+            }
+        }
+        .onAppear(perform: onAppear)
+    }
+
+    private var generalSection: some View {
+        Section {
+            Picker(selection: $vm.defaultSearchEngine) {
+                ForEach(BrowserSearchEngine.allCases) { engine in
+                    Text(engine.displayName).tag(engine)
+                }
+            } label: {
+                Label("Search Engine", systemImage: "magnifyingglass")
+            }
+            Toggle(isOn: $requestDesktopSite) {
+                Label("Request Desktop Site", systemImage: "desktopcomputer")
+            }
+        } header: {
+            Text("General")
+        } footer: {
+            Text("The search engine is used for searches typed in the address bar.")
+        }
+    }
+
+    private var privacySection: some View {
+        Section {
+            Toggle(isOn: $adBlockService.isEnabled) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Block Ads and Trackers")
+                        if adBlockService.isEnabled {
+                            Text("\(adBlockService.blockedCount) blocked this session")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                } icon: {
+                    Image(systemName: adBlockService.isEnabled ? "shield.fill" : "shield")
+                }
+            }
+            Toggle(isOn: $cookieBlocker.isEnabled) {
+                Label("Block Third-Party Cookies", systemImage: "shield.lefthalf.filled")
+            }
+            .disabled(!cookieBlocker.isSupported)
+            Button(action: onOpenFilterLists) {
+                Label("Filter Lists", systemImage: "list.bullet.rectangle")
+            }
+        } header: {
+            Text("Privacy & Blocking")
+        } footer: {
+            if !cookieBlocker.isSupported {
+                Text(cookieBlocker.unavailabilityReason)
+            }
+        }
+    }
+
+    private var appearanceSection: some View {
+        Section("Appearance") {
+            Toggle(isOn: $darkModeService.isDarkMode) {
+                Label("Dark Web Pages", systemImage: darkModeService.isDarkMode ? "moon.fill" : "moon")
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                LabeledContent {
+                    Text("\(Int(fontSizeService.baseFontSize)) pt")
+                } label: {
+                    Label("Page Text Size", systemImage: "textformat.size")
+                }
+                HStack {
+                    Image(systemName: "textformat.size.smaller")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Slider(value: $fontSizeService.baseFontSize, in: 10...24, step: 1) { _ in
+                        onFontSizeChanged()
+                    }
+                    .accessibilityLabel("Page text size")
+                    .accessibilityValue("\(Int(fontSizeService.baseFontSize)) points")
+                    Image(systemName: "textformat.size.larger")
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+    }
+
+    private var aiSection: some View {
+        Section {
+            webAIAccountRow(for: .chatgpt, isSignedIn: isChatGPTSignedIn)
+            webAIAccountRow(for: .gemini, isSignedIn: isGeminiSignedIn)
+        } header: {
+            Text("AI Accounts")
+        } footer: {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Sign in inside Vortex so the in-app ChatGPT and Gemini assistants reuse your session.")
+                if let webAIStatusMessage, !webAIStatusMessage.isEmpty {
+                    Text(webAIStatusMessage)
+                }
+            }
+        }
+    }
+
+    private func webAIAccountRow(for provider: WebAIProvider, isSignedIn: Bool) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(provider.displayName)
+                Label(
+                    isSignedIn ? "Signed in" : "Not signed in",
+                    systemImage: isSignedIn ? "checkmark.circle.fill" : "circle.dashed"
+                )
+                .font(.caption)
+                .foregroundStyle(isSignedIn ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
+            }
+            Spacer()
+            if isSignedIn {
+                Button("Sign Out", role: .destructive) {
+                    onSignOut(provider)
+                }
+                .accessibilityLabel("Sign out of \(provider.displayName)")
+            } else {
+                Button("Sign In") {
+                    onSignIn(provider)
+                }
+                .accessibilityLabel("Sign in to \(provider.displayName)")
+            }
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private var advancedSection: some View {
+        Section("Advanced") {
+            NavigationLink {
+                MLXAdvancedSettingsView(
+                    isLoadingModel: $isLoadingMLXModel,
+                    downloadProgress: $mlxDownloadProgress,
+                    loadError: $mlxLoadError,
+                    onDownload: onDownloadMLXModel
+                )
+            } label: {
+                Label("On-Device Models (MLX)", systemImage: "cpu")
+            }
+        }
+    }
+}
+
+private struct MLXAdvancedSettingsView: View {
+    @Binding var isLoadingModel: Bool
+    @Binding var downloadProgress: Progress?
+    @Binding var loadError: String?
+    let onDownload: (URL) -> Void
+
+    @AppStorage("mlxModelID") private var modelID: String = MLXLocalSettings.defaultModelID
+    @AppStorage("mlxMaxOutputTokens") private var maxOutputTokens: Int = MLXLocalSettings.defaultMaxOutputTokens
+    @AppStorage("mlxMaxContextTokens") private var maxContextTokens: Int = MLXLocalSettings.defaultMaxContextTokens
+    @State private var showDownloadLocationPicker = false
+    @State private var showModelManager = false
+
+    private var isAvailable: Bool { MLXLocalService.isAvailable() }
+
+    private var trimmedModelID: String {
+        modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var body: some View {
+        Form {
+            Section {
+                TextField("Model ID", text: $modelID, prompt: Text(MLXLocalSettings.defaultModelID))
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+            } header: {
+                Text("Hugging Face Model")
+            } footer: {
+                Text("Paste any MLX model ID from Hugging Face.")
+            }
+
+            Section("Generation") {
+                Stepper(value: $maxOutputTokens, in: 64...512, step: 64) {
+                    LabeledContent("Max Output Tokens", value: "\(maxOutputTokens)")
+                }
+                Stepper(value: $maxContextTokens, in: 0...8192, step: 512) {
+                    LabeledContent("Context Tokens", value: maxContextTokens == 0 ? "Auto" : "\(maxContextTokens)")
+                }
+            }
+
+            Section {
+                Button {
+                    showDownloadLocationPicker = true
+                } label: {
+                    HStack {
+                        Label("Download Model", systemImage: "arrow.down.circle")
+                        if isLoadingModel {
+                            Spacer()
+                            ProgressView()
+                        }
+                    }
+                }
+                .disabled(isLoadingModel || !isAvailable || trimmedModelID.isEmpty)
+
+                if let downloadProgress {
+                    ProgressView(downloadProgress)
+                }
+
+                Button {
+                    loadError = nil
+                    downloadProgress = nil
+                    let id = trimmedModelID
+                    guard !id.isEmpty else { return }
+                    Task {
+                        await MLXLocalService.shared.unloadModel(modelID: id)
+                    }
+                } label: {
+                    Label("Unload from Memory", systemImage: "memorychip")
+                }
+                .disabled(isLoadingModel || !isAvailable)
+
+                Button {
+                    showModelManager = true
+                } label: {
+                    Label("Manage Downloaded Models", systemImage: "folder")
+                }
+                .disabled(isLoadingModel || !isAvailable)
+            } header: {
+                Text("Model")
+            } footer: {
+                if !isAvailable {
+                    Text("Requires the MLX packages and an Apple silicon device.")
+                }
+            }
+
+            if let loadError {
+                Section {
+                    Label(loadError, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(BrowserDesign.Tint.error)
+                }
+            }
+        }
+        .navigationTitle("On-Device Models")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showModelManager) {
+            ManageMLXModelsView(selectedModelID: $modelID)
+        }
+        .fileImporter(
+            isPresented: $showDownloadLocationPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    onDownload(url)
+                }
+            case .failure(let error):
+                loadError = error.localizedDescription
+            }
+        }
+    }
+}

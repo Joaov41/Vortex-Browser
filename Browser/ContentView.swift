@@ -174,38 +174,6 @@ struct GlassTextField: View {
     }
 }
 
-private struct GlassEffectCompatModifier<S: InsettableShape>: ViewModifier {
-    let shape: S
-    let material: Material
-    let tint: Color?
-    let strokeOpacity: Double
-
-    func body(content: Content) -> some View {
-        content
-            .background {
-                ZStack {
-                    shape.fill(material)
-                    if let tint {
-                        shape.fill(tint)
-                    }
-                }
-            }
-            .overlay(
-                shape.strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            Color.white.opacity(strokeOpacity),
-                            Color.white.opacity(strokeOpacity * 0.35)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.6
-                )
-            )
-    }
-}
-
 private extension View {
     func browserToolbarControl() -> some View {
         frame(width: 44, height: 44)
@@ -231,53 +199,6 @@ private extension View {
             self
                 .frame(width: 44, height: 44)
                 .contentShape(.interaction, Rectangle())
-        } else {
-            self
-        }
-    }
-}
-
-extension View {
-    @ViewBuilder
-    func glassEffectCompat<S: InsettableShape>(
-        in shape: S,
-        material: Material = .ultraThinMaterial,
-        tint: Color? = nil,
-        strokeOpacity: Double = 0.25,
-        isInteractive: Bool = true
-    ) -> some View {
-        if #available(iOS 26.0, *) {
-            if let tint {
-                if isInteractive {
-                    self.glassEffect(.regular.interactive().tint(tint), in: shape)
-                } else {
-                    self.glassEffect(.regular.tint(tint), in: shape)
-                }
-            } else {
-                if isInteractive {
-                    self.glassEffect(.regular.interactive(), in: shape)
-                } else {
-                    self.glassEffect(.regular, in: shape)
-                }
-            }
-        } else {
-            modifier(
-                GlassEffectCompatModifier(
-                    shape: shape,
-                    material: material,
-                    tint: tint,
-                    strokeOpacity: strokeOpacity
-                )
-            )
-        }
-    }
-
-    @ViewBuilder
-    func glassEffectContainerCompat(spacing: CGFloat) -> some View {
-        if #available(iOS 26.0, *) {
-            GlassEffectContainer(spacing: spacing) {
-                self
-            }
         } else {
             self
         }
@@ -1574,6 +1495,8 @@ struct ContentView: View {
     @StateObject private var downloadManager = BrowserDownloadManager()
     @State private var showFontSizeSettings = false
     @State private var showSettingsMenu = false
+    @AppStorage("pinTabSidebar") private var pinTabSidebar = false
+    @AppStorage("pinAISidebar") private var pinAISidebar = false
     @State private var showFilterListSettings = false
     @AppStorage("requestDesktopSite") private var requestDesktopSite: Bool = false
     @State private var pendingAISelection: AISelection?
@@ -1608,8 +1531,6 @@ struct ContentView: View {
     @State private var isLoadingMLXModel: Bool = false
     @State private var mlxDownloadProgress: Progress? = nil
     @State private var mlxLoadError: String? = nil
-    @State private var showMLXModelManager: Bool = false
-    @State private var showDownloadLocationPicker: Bool = false
     @State private var mlxWarmupTask: Task<Void, Never>? = nil
     private let webProviderContextMaxChars = 80000
     private var redditWebProviderContextMaxChars: Int {
@@ -1790,7 +1711,7 @@ struct ContentView: View {
             Image(systemName: isPhone
                 ? (phoneSecondaryPanel == .tabs ? "rectangle.on.rectangle.fill" : "rectangle.on.rectangle")
                 : (isSidebarCollapsed ? "chevron.right" : "chevron.left"))
-                .font(.system(size: 13, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundColor(sidebarToggleForeground)
                 .padding(.horizontal, 12)
                 .frame(height: toolbarPillHeight)
@@ -1829,7 +1750,7 @@ struct ContentView: View {
             }
         } label: {
             Image(systemName: "sparkles")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.footnote.weight(.semibold))
                 .foregroundColor(isSidebarDark ? .white.opacity(0.85) : .primary)
                 .padding(.horizontal, 12)
                 .frame(height: toolbarPillHeight)
@@ -1861,7 +1782,7 @@ struct ContentView: View {
         } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: splitMode == .horizontal ? "rectangle.split.1x2" : "rectangle.split.2x1")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 8, weight: .bold))
                     .symbolRenderingMode(.palette)
@@ -2044,17 +1965,19 @@ struct ContentView: View {
     }
 
     private func toolbarCollapsedPill(for tab: BrowserTab) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             Button { tab.navigateBack() } label: {
                 Image(systemName: "chevron.left")
             }
             .browserToolbarControl()
             .disabled(!tab.canGoBack)
+            .accessibilityLabel("Back")
 
             Button { tab.navigateForward() } label: {
                 Image(systemName: "chevron.right")
             }
             .browserToolbarControl()
+            .accessibilityLabel("Forward")
 
             SitePrivacyShieldButton(
                 url: tab.currentURL,
@@ -2062,23 +1985,25 @@ struct ContentView: View {
                 onOpenAdBlockSettings: { showFilterListSettings = true }
             )
 
-            Button {
+            ToolbarAddressButton(tab: tab, maxWidth: isPhone ? 120 : 220) {
                 expandToolbar(focusOmnibox: true)
-            } label: {
-                Image(systemName: "magnifyingglass")
             }
-            .browserToolbarControl()
         }
-        .font(.system(size: 13, weight: .semibold))
+        .font(.subheadline.weight(.semibold))
+        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
         .foregroundColor(darkModeService.isDarkMode ? .white : .primary)
         .padding(.horizontal, 12)
         .frame(height: toolbarPillHeight)
+        .overlay(alignment: .bottom) {
+            ToolbarLoadingProgressBar(tab: tab)
+                .padding(.horizontal, 18)
+        }
         .glassEffectCompat(
             in: Capsule(),
             material: .ultraThinMaterial,
             strokeOpacity: 0.18
         )
-        .shadow(radius: 8, y: 4)
+        .shadow(radius: BrowserDesign.Shadow.controlRadius, y: 4)
     }
 
     private var splitPrimaryTab: BrowserTab? {
@@ -2537,6 +2462,12 @@ struct ContentView: View {
             }
             .keyboardShortcut("t", modifiers: .command)
 
+            Button("New Incognito Tab") {
+                openIncognitoTab()
+                expandToolbar(focusOmnibox: true)
+            }
+            .keyboardShortcut("n", modifiers: [.command, .shift])
+
             Button("Close Tab") {
                 if let index = vm.selectedIndex {
                     performClose(vm.tabs[index])
@@ -2707,12 +2638,18 @@ struct ContentView: View {
     }
 
     private func phoneSecondaryPanels(in proxy: GeometryProxy) -> some View {
-        let sheetWidth = max(0, proxy.size.width - 24)
+        let sheetWidth = max(0, proxy.size.width - BrowserDesign.Phone.panelHorizontalInset)
         let availableHeight = max(0, proxy.size.height - 8)
-        let tabsHeight = min(availableHeight, max(420, proxy.size.height * 0.88))
+        let tabsHeight = min(
+            availableHeight,
+            max(BrowserDesign.Phone.tabsPanelMinHeight, proxy.size.height * BrowserDesign.Phone.tabsPanelHeightFraction)
+        )
         let aiHeight = phoneAIPanelExpanded
-            ? min(availableHeight, max(520, proxy.size.height - 18))
-            : min(availableHeight, max(360, proxy.size.height * 0.52))
+            ? min(availableHeight, max(BrowserDesign.Phone.aiPanelExpandedMinHeight, proxy.size.height - 18))
+            : min(
+                availableHeight,
+                max(BrowserDesign.Phone.aiPanelMinHeight, proxy.size.height * BrowserDesign.Phone.aiPanelHeightFraction)
+            )
         let tabsVisible = phoneSecondaryPanel == .tabs && !phonePanelHiddenForTabDrag
         let aiVisible = phoneSecondaryPanel == .ai && !phonePanelHiddenForTabDrag
         let panelOffset = phonePanelDragOffset
@@ -2740,6 +2677,9 @@ struct ContentView: View {
                 // Keep the row gesture alive while the sheet moves offscreen
                 // for a tab-to-split drag.
                 .allowsHitTesting(phoneSecondaryPanel == .tabs)
+                .accessibilityHidden(!tabsVisible)
+                .accessibilityAddTraits(tabsVisible ? .isModal : [])
+                .accessibilityAction(.escape) { dismissPhoneSecondaryPanel() }
                 .zIndex(phoneSecondaryPanel == .tabs ? 2 : 1)
 
             phoneAISidebarPanel
@@ -2751,6 +2691,9 @@ struct ContentView: View {
                 .offset(y: aiVisible ? panelOffset : availableHeight + 40)
                 .opacity(aiVisible ? 1 : 0)
                 .allowsHitTesting(phoneSecondaryPanel == .ai)
+                .accessibilityHidden(!aiVisible)
+                .accessibilityAddTraits(aiVisible ? .isModal : [])
+                .accessibilityAction(.escape) { dismissPhoneSecondaryPanel() }
                 .zIndex(phoneSecondaryPanel == .ai ? 2 : 1)
 
             if phoneSecondaryPanelIsVisible {
@@ -2813,13 +2756,13 @@ struct ContentView: View {
                                         }
                                         return
                                     }
-                                    if !isSidebarCollapsed {
+                                    if !isSidebarCollapsed && !pinTabSidebar {
                                         withAnimation(.easeOut(duration: 0.15)) {
                                             isSidebarCollapsed = true
                                             sidebarDrag = 0
                                         }
                                     }
-                                    if showAIPanel {
+                                    if showAIPanel && !pinAISidebar {
                                         dismissAIPanel()
                                     }
                                 }
@@ -2854,10 +2797,6 @@ struct ContentView: View {
                                     .transition(.move(edge: .trailing).combined(with: .opacity))
                             }
                         }
-                    }
-
-                    if !isPhone {
-                        edgeDragDetector
                     }
 
                     if isPhone {
@@ -2902,6 +2841,7 @@ struct ContentView: View {
                         aiSidebarToggleButton
                     }
                     .glassEffectContainerCompat(spacing: 12)
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .padding(.bottom, 24)
                     .opacity(isScrolling ? 0 : 1)
                 } else if (!isPhone || !phoneSecondaryPanelIsPresented) {
@@ -2916,10 +2856,6 @@ struct ContentView: View {
 
             if let request = activeWebAIRequest {
                 webAIOverlay(for: request)
-            }
-
-            if isCompactWidth && showSettingsMenu {
-                compactSettingsOverlay
             }
 
             if showFilterListSettings {
@@ -3069,21 +3005,28 @@ struct ContentView: View {
                                 minimizeWebAIOverlay()
                             } label: {
                                 Image(systemName: "minus")
+                                    .frame(width: BrowserDesign.Size.hitTarget, height: BrowserDesign.Size.hitTarget)
+                                    .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .foregroundStyle(.secondary)
+                            .accessibilityLabel("Minimize \(request.provider.displayName)")
+                            .accessibilityHint("Keeps the request running in the background")
                         }
                         Button {
                             dismissWebAIOverlay(userCancelled: true)
                         } label: {
                             Image(systemName: "xmark")
+                                .frame(width: BrowserDesign.Size.hitTarget, height: BrowserDesign.Size.hitTarget)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(.secondary)
+                        .accessibilityLabel(request.shouldAutoCapture ? "Cancel \(request.provider.displayName) request" : "Close \(request.provider.displayName)")
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                    .background(Color(UIColor.secondarySystemBackground))
+                    .padding(.leading, 16)
+                    .padding(.trailing, 6)
+                    .padding(.vertical, 4)
 
                     Divider()
 
@@ -3129,13 +3072,23 @@ struct ContentView: View {
                 // 1x1 breaks provider DOM/composer detection and delays capture
                 // until the overlay is reopened.
                 .frame(width: panelWidth, height: panelHeight)
-                .background(Color(UIColor.systemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 24, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
+                .glassEffectCompat(
+                    in: RoundedRectangle(cornerRadius: BrowserDesign.Radius.panel, style: .continuous),
+                    material: .regularMaterial,
+                    strokeOpacity: 0.2,
+                    isInteractive: false
                 )
-                .shadow(color: .black.opacity(0.24), radius: 24, x: 0, y: 12)
+                .clipShape(RoundedRectangle(cornerRadius: BrowserDesign.Radius.panel, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: BrowserDesign.Radius.panel, style: .continuous)
+                        .strokeBorder(BrowserDesign.chromeBorder(isDark: isSidebarDark), lineWidth: 1)
+                )
+                .shadow(
+                    color: BrowserDesign.Shadow.color(isDark: isSidebarDark),
+                    radius: BrowserDesign.Shadow.panelRadius,
+                    x: 0,
+                    y: 12
+                )
                 .opacity(isWebAIOverlayExpanded ? 1 : 0.001)
                 .allowsHitTesting(isWebAIOverlayExpanded)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: isWebAIOverlayExpanded ? .center : .bottomTrailing)
@@ -3149,7 +3102,7 @@ struct ContentView: View {
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(request.title)
-                                .font(.system(size: 15, weight: .semibold))
+                                .font(.subheadline.weight(.semibold))
                             Text("\(request.provider.displayName) working · Tap to open")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -3577,7 +3530,8 @@ struct ContentView: View {
                     phonePanelDragOffset = 0
                     phonePanelHiddenForTabDrag = false
                 }
-            }
+            },
+            isPinned: isPhone ? nil : $pinAISidebar
         )
     }
 
@@ -3822,15 +3776,15 @@ struct ContentView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             } else {
                 Image(systemName: tab.isIncognito ? "eye.slash" : "globe")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.body.weight(.semibold))
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(tab.title.isEmpty ? "New Tab" : tab.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 Text(tab.url?.host ?? (tab.isBlank ? "Blank Tab" : tab.address))
-                    .font(.system(size: 12))
+                    .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -3887,7 +3841,7 @@ struct ContentView: View {
                 )
 
             Label(zone.title, systemImage: zone.systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.primary)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -4496,7 +4450,7 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(isSidebarDark ? 0.2 : 0.2), lineWidth: 1)
+                .strokeBorder(BrowserDesign.chromeBorder(isDark: isSidebarDark), lineWidth: 1)
         )
         .shadow(
             color: Color.black.opacity(isSidebarDark ? 0.4 : 0.2),
@@ -4520,7 +4474,7 @@ struct ContentView: View {
         .clipShape(RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: sidebarCornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(isSidebarDark ? 0.2 : 0.2), lineWidth: 1)
+                .strokeBorder(BrowserDesign.chromeBorder(isDark: isSidebarDark), lineWidth: 1)
         )
         .shadow(
             color: Color.black.opacity(isSidebarDark ? 0.4 : 0.2),
@@ -4542,7 +4496,16 @@ struct ContentView: View {
                     onManageGroups: { showTabGroupManager = true },
                     onShowRecentlyClosed: { showRecentlyClosedTabs = true }
                 )
-                sidebarSectionHeader("Tabs", systemImage: "rectangle.on.rectangle")
+                HStack {
+                    sidebarSectionHeader("Tabs", systemImage: "rectangle.on.rectangle")
+                    Spacer(minLength: 0)
+                    if !isPhone {
+                        sidebarPinButton(
+                            isPinned: $pinTabSidebar,
+                            label: "tab sidebar"
+                        )
+                    }
+                }
                 sidebarNewTabRow
 
                 ForEach(visibleSidebarTabs) { tab in
@@ -4572,17 +4535,76 @@ struct ContentView: View {
     }
 
     private var sidebarNewTabRow: some View {
-        sidebarRow(
-            title: "New Tab",
-            action: {
-                vm.addTabBlank()
-                omniboxFocused = true
+        HStack(spacing: 8) {
+            sidebarRow(
+                title: "New Tab",
+                action: {
+                    vm.addTabBlank()
+                    omniboxFocused = true
+                }
+            ) {
+                Image(systemName: "plus")
+                    .font(.system(size: sidebarIconFontSize, weight: .semibold))
+                    .foregroundColor(sidebarPrimaryText)
             }
-        ) {
-            Image(systemName: "plus")
-                .font(.system(size: sidebarIconFontSize, weight: .semibold))
-                .foregroundColor(sidebarPrimaryText)
+
+            Button {
+                if isPhone {
+                    dismissPhoneSecondaryPanel()
+                }
+                openIncognitoTab()
+            } label: {
+                Image(systemName: "eye.slash")
+                    .font(.system(size: sidebarIconFontSize, weight: .semibold))
+                    .foregroundStyle(BrowserDesign.Tint.incognito)
+                    .frame(maxHeight: .infinity)
+                    .frame(width: BrowserDesign.Size.hitTarget + 2)
+                    .contentShape(Rectangle())
+                    .glassEffectCompat(
+                        in: RoundedRectangle(cornerRadius: BrowserDesign.Radius.row, style: .continuous),
+                        tint: sidebarRowBackground,
+                        strokeOpacity: isSidebarDark ? 0.35 : 0.45
+                    )
+            }
+            .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
+            .accessibilityLabel("New Incognito Tab")
         }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func sidebarPinButton(isPinned: Binding<Bool>, label: String) -> some View {
+        Button {
+            isPinned.wrappedValue.toggle()
+        } label: {
+            Image(systemName: isPinned.wrappedValue ? "pin.fill" : "pin")
+                .font(.system(size: sidebarSectionFontSize, weight: .semibold))
+                .foregroundStyle(isPinned.wrappedValue ? AnyShapeStyle(.tint) : AnyShapeStyle(sidebarSecondaryText))
+                .frame(width: BrowserDesign.Size.hitTarget, height: BrowserDesign.Size.hitTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 8)
+        .accessibilityLabel(isPinned.wrappedValue ? "Unpin \(label)" : "Pin \(label)")
+        .accessibilityHint("When pinned, tapping the page keeps the sidebar open")
+    }
+
+    @ViewBuilder
+    private func splitViewMenuItems(canSplit: Bool, open: @escaping (SplitMode) -> Void) -> some View {
+        if !isPhone {
+            Button {
+                open(.vertical)
+            } label: {
+                Label("Open Side by Side", systemImage: "rectangle.split.2x1")
+            }
+            .disabled(!canSplit)
+        }
+        Button {
+            open(.horizontal)
+        } label: {
+            Label("Open Top and Bottom", systemImage: "rectangle.split.1x2")
+        }
+        .disabled(!canSplit)
     }
 
     private var visibleSidebarTabs: [BrowserTab] {
@@ -4686,7 +4708,7 @@ struct ContentView: View {
 
                         if tab.isIncognito {
                             Circle()
-                                .fill(Color.purple)
+                                .fill(BrowserDesign.Tint.incognito)
                                 .frame(width: 8, height: 8)
                                 .overlay(
                                     Image(systemName: "eye.slash.fill")
@@ -4709,7 +4731,7 @@ struct ContentView: View {
                 }
                 if tab.showsHibernationIndicator {
                     Image(systemName: "moon.zzz.fill")
-                        .font(.system(size: 10, weight: .semibold))
+                        .font(.caption2.weight(.semibold))
                         .foregroundColor(sidebarSecondaryText)
                         .frame(width: 24, height: 24)
                         .background(Circle().fill(sidebarIconBackground))
@@ -4737,6 +4759,25 @@ struct ContentView: View {
 
         return ZStack(alignment: .topTrailing) {
             Menu {
+                if !tab.isBlank && tab.url != nil {
+                    Button {
+                        toggleReaderMode(for: tab)
+                    } label: {
+                        Label(
+                            tab.isReaderMode ? "Disable Reader Mode" : "Enable Reader Mode",
+                            systemImage: tab.isReaderMode ? "text.book.closed.fill" : "text.book.closed"
+                        )
+                    }
+                    Button {
+                        toggleDarkMode(for: tab)
+                    } label: {
+                        Label(
+                            effectiveDarkMode(for: tab) ? "Disable Dark Web Page" : "Enable Dark Web Page",
+                            systemImage: effectiveDarkMode(for: tab) ? "moon.fill" : "moon"
+                        )
+                    }
+                    Divider()
+                }
                 if let url = tab.currentURL {
                     ShareLink(item: url) {
                         Label("Share Link", systemImage: "square.and.arrow.up")
@@ -4769,20 +4810,8 @@ struct ContentView: View {
                     }
                 }
                 Divider()
-                if isPhone {
-                    Button("Open in Split View Vertically") {
-                        openSplitView(with: tab, mode: .horizontal)
-                    }
-                    .disabled(!canSplit)
-                } else {
-                    Button("Open in Split View Vertically") {
-                        openSplitView(with: tab, mode: .vertical)
-                    }
-                    .disabled(!canSplit)
-                    Button("Open in Split View Horizontally") {
-                        openSplitView(with: tab, mode: .horizontal)
-                    }
-                    .disabled(!canSplit)
+                splitViewMenuItems(canSplit: canSplit) { mode in
+                    openSplitView(with: tab, mode: mode)
                 }
                 Divider()
                 Button(role: .destructive) {
@@ -4807,7 +4836,7 @@ struct ContentView: View {
                     performClose(tab)
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.caption2.weight(.bold))
                         .foregroundColor(sidebarPrimaryText)
                         .padding(6)
                         .background(
@@ -4817,58 +4846,19 @@ struct ContentView: View {
                 .buttonStyle(.plain)
                 .frame(width: controlHitSize, height: controlHitSize)
                 .contentShape(Rectangle())
+                .accessibilityLabel("Close \(title)")
                 .zIndex(2)
 
                 if canSplit && (!isCompactWidth || isPhone) && tab.webAIProvider == nil {
                     Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.caption2.weight(.bold))
                         .foregroundColor(sidebarSecondaryText)
-                        .padding(6)
-                        .background(
-                            Circle().fill(sidebarIconBackground)
-                        )
                         .frame(width: controlHitSize, height: controlHitSize)
                         .contentShape(Rectangle())
                         .simultaneousGesture(sidebarTabDragGesture(for: tab))
                         .accessibilityLabel("Drag tab to split view")
                         .accessibilityHint("Drag toward an edge of the page")
                         .zIndex(2)
-                }
-
-                // More options menu (only for tabs with content)
-                if !tab.isBlank && tab.url != nil {
-                    Menu {
-                        Button {
-                            toggleReaderMode(for: tab)
-                        } label: {
-                            Label(
-                                tab.isReaderMode ? "Disable Reader Mode" : "Enable Reader Mode",
-                                systemImage: tab.isReaderMode ? "text.book.closed.fill" : "text.book.closed"
-                            )
-                        }
-
-                        Button {
-                            toggleDarkMode(for: tab)
-                        } label: {
-                            Label(
-                                effectiveDarkMode(for: tab) ? "Disable Dark Mode" : "Enable Dark Mode",
-                                systemImage: effectiveDarkMode(for: tab) ? "moon.fill" : "moon"
-                            )
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 10, weight: .bold))
-                            .foregroundColor(sidebarPrimaryText)
-                            .padding(6)
-                            .background(
-                                Circle().fill(sidebarIconBackground)
-                            )
-                            .frame(width: controlHitSize, height: controlHitSize)
-                            .contentShape(Rectangle())
-                    }
-                    .menuStyle(.button)
-                    .buttonStyle(.plain)
-                    .zIndex(2)
                 }
             }
             .padding(.top, 6)
@@ -4894,20 +4884,8 @@ struct ContentView: View {
         let material: Material = .ultraThinMaterial
 
         return Menu {
-            if isPhone {
-                Button("Open in Split View Vertically") {
-                    openSplitView(with: favorite, mode: .horizontal)
-                }
-                .disabled(!canSplit)
-            } else {
-                Button("Open in Split View Vertically") {
-                    openSplitView(with: favorite, mode: .vertical)
-                }
-                .disabled(!canSplit)
-                Button("Open in Split View Horizontally") {
-                    openSplitView(with: favorite, mode: .horizontal)
-                }
-                .disabled(!canSplit)
+            splitViewMenuItems(canSplit: canSplit) { mode in
+                openSplitView(with: favorite, mode: mode)
             }
             Divider()
             Button(role: .destructive) {
@@ -4928,7 +4906,7 @@ struct ContentView: View {
                     } else {
                         Image(systemName: "star.fill")
                             .font(.system(size: sidebarIconFontSize, weight: .semibold))
-                            .foregroundColor(.yellow)
+                            .foregroundStyle(BrowserDesign.Tint.favorite)
                     }
                 }
                 VStack(alignment: .leading, spacing: 2) {
@@ -4987,6 +4965,7 @@ struct ContentView: View {
         }
         .popover(isPresented: settingsPopoverBinding) {
             settingsMenuView
+                .frame(width: 380, height: 640)
         }
     }
 
@@ -5023,8 +5002,11 @@ struct ContentView: View {
                 SafariView(url: url)
             }
         }
-        .sheet(isPresented: $showMLXModelManager) {
-            ManageMLXModelsView(selectedModelID: $mlxModelID)
+        .sheet(isPresented: compactSettingsSheetBinding) {
+            settingsMenuView
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .preferredColorScheme(isSidebarDark ? .dark : .light)
         }
         .onChange(of: showAIPanel) { _, isShowing in
             if isShowing {
@@ -5077,35 +5059,49 @@ struct ContentView: View {
                         HStack {
                             Spacer()
                             VStack(alignment: .leading, spacing: 12) {
-                                HStack {
-                                    Image(systemName: "key.fill")
-                                        .foregroundColor(.yellow)
+                                Label {
                                     Text("Save Password?")
                                         .font(.headline)
+                                } icon: {
+                                    Image(systemName: "key.fill")
+                                        .foregroundStyle(BrowserDesign.Tint.password)
                                 }
 
                                 Text("Save password for \(loginForm.username) on \(loginForm.website)?")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
 
                                 HStack(spacing: 12) {
+                                    Button("Not Now") {
+                                        passwordManager.dismissPasswordPrompt()
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .buttonBorderShape(.capsule)
+
                                     Button("Save") {
                                         Task {
                                             await passwordManager.saveCurrentCredentials()
                                         }
                                     }
                                     .buttonStyle(.borderedProminent)
-
-                                    Button("Not Now") {
-                                        passwordManager.dismissPasswordPrompt()
-                                    }
-                                    .buttonStyle(.bordered)
+                                    .buttonBorderShape(.capsule)
                                 }
+                                .frame(maxWidth: .infinity, alignment: .trailing)
                             }
-                            .padding()
-                            .background(Color(UIColor.systemBackground))
-                            .cornerRadius(10)
-                            .shadow(radius: 10)
+                            .padding(16)
+                            .frame(maxWidth: 360)
+                            .glassEffectCompat(
+                                in: RoundedRectangle(cornerRadius: BrowserDesign.Radius.card, style: .continuous),
+                                material: .regularMaterial,
+                                strokeOpacity: 0.25,
+                                isInteractive: false
+                            )
+                            .shadow(
+                                color: BrowserDesign.Shadow.color(isDark: isSidebarDark),
+                                radius: BrowserDesign.Shadow.cardRadius,
+                                y: 8
+                            )
                             .padding()
                         }
                         Spacer()
@@ -5124,45 +5120,29 @@ struct ContentView: View {
     }
 
     private func webProviderFullScreenView(for tab: BrowserTab) -> some View {
-        VStack(spacing: 0) {
-            // Top navigation bar
-            HStack {
-                Button {
-                    showWebProviderSheet = false
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
-                        Text("Done")
-                            .font(.system(size: 17))
-                    }
-                    .foregroundColor(.accentColor)
-                }
-                Spacer()
-                Text(tab.webAIProvider?.displayName ?? "Web AI")
-                    .font(.system(size: 17, weight: .semibold))
-                Spacer()
-                // Balance the layout
-                Button {
-                    if let provider = tab.webAIProvider {
-                        tab.activateWebView().load(URLRequest(url: provider.url))
-                    }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 16, weight: .medium))
-                        .foregroundColor(.accentColor)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background(Color(UIColor.systemBackground))
-
-            Divider()
-
-            // Web provider content
+        NavigationStack {
             splitPane(for: tab)
+                .ignoresSafeArea(.container, edges: .bottom)
+                .navigationTitle(tab.webAIProvider?.displayName ?? "Web AI")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            if let provider = tab.webAIProvider {
+                                tab.activateWebView().load(URLRequest(url: provider.url))
+                            }
+                        } label: {
+                            Label("Reload", systemImage: "arrow.clockwise")
+                        }
+                        .accessibilityLabel("Reload \(tab.webAIProvider?.displayName ?? "Web AI")")
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") {
+                            showWebProviderSheet = false
+                        }
+                    }
+                }
         }
-        .background(Color(UIColor.systemBackground))
     }
 
     private func activeTabView(_ tab: BrowserTab) -> some View {
@@ -5423,7 +5403,7 @@ struct ContentView: View {
                     clearSplitView()
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.caption2.weight(.bold))
                         .foregroundColor(.white.opacity(0.85))
                         .padding(7)
                         .background(
@@ -5511,24 +5491,11 @@ struct ContentView: View {
             Button {
                 collapseToolbar()
             } label: {
-                Image(systemName: "chevron.up")
+                Image(systemName: "chevron.down")
                     .foregroundColor(.secondary)
             }
             .browserToolbarControl()
             .accessibilityLabel("Close search")
-
-            if passwordManager.showPasswordPrompt {
-                Button(action: {
-                    Task {
-                        await passwordManager.saveCurrentCredentials()
-                    }
-                }) {
-                    Image(systemName: "key.fill")
-                        .foregroundColor(.yellow)
-                }
-                .browserToolbarControl()
-                .help("Save password?")
-            }
 
             if splitMode != nil {
                 exitSplitViewButton
@@ -5541,349 +5508,68 @@ struct ContentView: View {
         }
     }
 
-    private var edgeDragDetector: some View {
-        Group {
-            if isSidebarCollapsed {
-                Color.clear
-                    .frame(width: 10)
-                    .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle())
-            }
-        }
-    }
-
     // MARK: - Settings Menu View
     private var settingsMenuView: some View {
-        settingsMenuContent
-            .frame(width: 360)
-            .overlay {
-                if let pendingWebAILoginProvider {
-                    webAILoginWarningOverlay(for: pendingWebAILoginProvider)
-                        .transition(.opacity)
-                        .zIndex(300)
+        BrowserSettingsView(
+            vm: vm,
+            isChatGPTSignedIn: isChatGPTLoggedIn,
+            isGeminiSignedIn: isGeminiLoggedIn,
+            webAIStatusMessage: webAISettingsStatusMessage,
+            isLoadingMLXModel: $isLoadingMLXModel,
+            mlxDownloadProgress: $mlxDownloadProgress,
+            mlxLoadError: $mlxLoadError,
+            onOpenFilterLists: {
+                showSettingsMenu = false
+                showFilterListSettings = true
+            },
+            onSignIn: { provider in
+                requestWebAILogin(for: provider)
+            },
+            onSignOut: { provider in
+                resetWebAISession(for: provider)
+            },
+            onFontSizeChanged: {
+                if let tab = selectedTab {
+                    fontSizeService.applyFontSize(to: tab.activateWebView())
                 }
-            }
-        .fileImporter(
-            isPresented: $showDownloadLocationPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
+            },
+            onDownloadMLXModel: { url in
                 downloadModel(to: url)
-            case .failure(let error):
-                mlxLoadError = error.localizedDescription
-            }
-        }
-    }
-
-    private var settingsMenuContent: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Settings")
-                    .font(.headline)
-                    .padding(.bottom, 8)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("Default Search Engine", systemImage: "magnifyingglass")
-                    Picker("Default Search Engine", selection: $vm.defaultSearchEngine) {
-                        ForEach(BrowserSearchEngine.allCases) { engine in
-                            Text(engine.displayName).tag(engine)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                }
-
-                Text("Used for new tabs and searches typed in the address bar.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-
-                Divider()
-
-                UBlockLiteControls()
-
-                Toggle(isOn: $thirdPartyCookieBlocker.isEnabled) {
-                    HStack {
-                        Image(systemName: thirdPartyCookieBlocker.isEnabled ? "shield.lefthalf.filled" : "shield")
-                            .foregroundColor(thirdPartyCookieBlocker.isEnabled ? .orange : .primary)
-                        Text("Block Third-Party Cookies")
-                    }
-                }
-                .disabled(!thirdPartyCookieBlocker.isSupported)
-
-                if !thirdPartyCookieBlocker.isSupported {
-                    Text(thirdPartyCookieBlocker.unavailabilityReason)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Button(action: {
-                    showSettingsMenu = false
-                    showFilterListSettings = true
-                }) {
-                    HStack {
-                        Image(systemName: "list.bullet.rectangle")
-                            .foregroundColor(.blue)
-                        Text("Manage Filter Lists")
-                            .foregroundColor(.primary)
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .buttonStyle(.plain)
-
-                Divider()
-
-                Toggle(isOn: $darkModeService.isDarkMode) {
-                    HStack {
-                        Image(systemName: darkModeService.isDarkMode ? "moon.fill" : "moon")
-                            .foregroundColor(darkModeService.isDarkMode ? .yellow : .primary)
-                        Text("Dark Mode")
-                    }
-                }
-
-                Divider()
-
-                Toggle(isOn: $requestDesktopSite) {
-                    HStack {
-                        Image(systemName: "desktopcomputer")
-                        Text("Request Desktop Site")
-                    }
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Persistent Web AI Sessions")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    Text("Log in inside Browser so ChatGPT and Gemini sessions are reused by the in-app Web AI browser.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    HStack(spacing: 10) {
-                        Button(isChatGPTLoggedIn ? "Logged in" : "Log In to ChatGPT") {
-                            requestWebAILogin(for: .chatgpt)
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Reset ChatGPT") {
-                            resetWebAISession(for: .chatgpt)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    HStack(spacing: 10) {
-                        Button(isGeminiLoggedIn ? "Logged in" : "Log In to Gemini") {
-                            requestWebAILogin(for: .gemini)
-                        }
-                        .buttonStyle(.bordered)
-
-                        Button("Reset Gemini") {
-                            resetWebAISession(for: .gemini)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    if let webAISettingsStatusMessage, !webAISettingsStatusMessage.isEmpty {
-                        Text(webAISettingsStatusMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Image(systemName: "textformat.size")
-                        Text("Font Size")
-                        Spacer()
-                        Text("\(Int(fontSizeService.baseFontSize))pt")
-                            .foregroundColor(.secondary)
-                    }
-
-                    HStack {
-                        Text("A")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-
-                        Slider(value: $fontSizeService.baseFontSize, in: 10...24, step: 1) { _ in
-                            if let idx = vm.selectedIndex {
-                                let tab = vm.tabs[idx]
-                                fontSizeService.applyFontSize(to: tab.activateWebView())
-                            }
-                        }
-
-                        Text("A")
-                            .font(.system(size: 20))
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("MLX Settings (paste any MLX Hugging Face model ID)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-
-                    TextField("Hugging Face model id (e.g. \(MLXLocalSettings.defaultModelID))", text: $mlxModelID)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                        .textFieldStyle(.roundedBorder)
-
-                    Stepper(value: $mlxMaxOutputTokens, in: 64...512, step: 64) {
-                        Text("Max output tokens: \(mlxMaxOutputTokens)")
-                    }
-
-                    Stepper(value: $mlxMaxContextTokens, in: 0...8192, step: 512) {
-                        Text("Context tokens: \(mlxMaxContextTokens == 0 ? "Auto" : "\(mlxMaxContextTokens)")")
-                    }
-
-                    HStack(spacing: 10) {
-                        Button {
-                            showDownloadLocationPicker = true
-                        } label: {
-                            if isLoadingMLXModel {
-                                ProgressView()
-                                    .controlSize(.small)
-                            } else {
-                                Image(systemName: "arrow.down.circle")
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                        .disabled(isLoadingMLXModel || !mlxAvailable)
-
-                        Button {
-                            mlxLoadError = nil
-                            mlxDownloadProgress = nil
-
-                            Task {
-                                let modelID = mlxModelID.trimmingCharacters(in: .whitespacesAndNewlines)
-                                guard !modelID.isEmpty else { return }
-                                await MLXLocalService.shared.unloadModel(modelID: modelID)
-                            }
-                        } label: {
-                            Image(systemName: "eject")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(isLoadingMLXModel || !mlxAvailable)
-
-                        Button {
-                            showMLXModelManager = true
-                        } label: {
-                            Image(systemName: "folder")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(isLoadingMLXModel || !mlxAvailable)
-                    }
-
-                    if let progress = mlxDownloadProgress {
-                        ProgressView(progress)
-                    }
-
-                    if let mlxLoadError {
-                        Text(mlxLoadError)
-                            .font(.caption)
-                            .foregroundStyle(.red)
-                    }
-
-                    if !mlxAvailable {
-                        Text("Requires MLX packages + Apple Silicon.")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-
-                Divider()
-
-                Button(action: {
-                    let incognitoTab = BrowserTab(title: "Incognito", url: nil, isIncognito: true, useDesktopUserAgent: requestDesktopSite)
-                    vm.tabs.append(incognitoTab)
-                    vm.selectedTabID = incognitoTab.id
-                    incognitoMode.isActive = true
-                    showSettingsMenu = false
-                }) {
-                    HStack {
-                        Image(systemName: "eye.slash")
-                            .foregroundColor(.purple)
-                        Text("New Incognito Tab")
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(20)
-            .onAppear {
+            },
+            onAppear: {
                 refreshWebAILoginStates()
+            },
+            onDone: {
+                showSettingsMenu = false
+            }
+        )
+        .overlay {
+            if let pendingWebAILoginProvider {
+                webAILoginWarningOverlay(for: pendingWebAILoginProvider)
+                    .transition(.opacity)
+                    .zIndex(300)
             }
         }
     }
 
-    private var compactSettingsOverlay: some View {
-        GeometryReader { proxy in
-            let width = min(settingsMenuPreferredWidth, max(280, proxy.size.width - 32))
-            let height = min(settingsMenuPreferredHeight, max(320, proxy.size.height - 72))
-            let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
-
-            ZStack {
-                Color.clear
-                    .contentShape(Rectangle())
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        guard pendingWebAILoginProvider == nil else { return }
-                        showSettingsMenu = false
-                    }
-
-                settingsMenuContent
-                    .scrollBounceBehavior(.basedOnSize)
-                    .frame(width: width)
-                    .frame(maxHeight: height)
-                    .glassEffectCompat(
-                        in: shape,
-                        material: .ultraThinMaterial,
-                        strokeOpacity: 0.18,
-                        isInteractive: false
-                    )
-                    .clipShape(shape)
-                    .overlay(
-                        shape.strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
-                    .preferredColorScheme(isSidebarDark ? .dark : .light)
-
-                if let pendingWebAILoginProvider {
-                    webAILoginWarningOverlay(for: pendingWebAILoginProvider)
-                        .transition(.opacity)
-                        .zIndex(300)
+    private var compactSettingsSheetBinding: Binding<Bool> {
+        Binding(
+            get: { showSettingsMenu && isCompactWidth },
+            set: { newValue in
+                if !newValue {
+                    showSettingsMenu = false
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .transition(.opacity.combined(with: .scale(scale: 0.98)))
-        .fileImporter(
-            isPresented: $showDownloadLocationPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                downloadModel(to: url)
-            case .failure(let error):
-                mlxLoadError = error.localizedDescription
-            }
-        }
+        )
+    }
+
+    private func openIncognitoTab() {
+        let incognitoTab = BrowserTab(title: "Incognito", url: nil, isIncognito: true, useDesktopUserAgent: requestDesktopSite)
+        vm.tabs.append(incognitoTab)
+        vm.selectedTabID = incognitoTab.id
+        incognitoMode.isActive = true
+        showSettingsMenu = false
+        omniboxFocused = true
     }
 
     private var filterListOverlay: some View {
@@ -5926,7 +5612,7 @@ struct ContentView: View {
                         showFilterListSettings = false
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
+                            .font(.caption.weight(.bold))
                             .foregroundStyle(.secondary)
                             .padding(10)
                             .background(.ultraThinMaterial, in: Circle())
