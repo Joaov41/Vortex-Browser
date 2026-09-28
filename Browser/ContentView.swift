@@ -1975,12 +1975,12 @@ struct ContentView: View {
                 onOpenAdBlockSettings: { showFilterListSettings = true }
             )
 
-            ToolbarAddressButton(tab: tab, maxWidth: isPhone ? 120 : 220) {
+            ToolbarAddressButton(tab: tab, maxWidth: isPhone ? (splitMode == nil ? 120 : 72) : 220) {
                 expandToolbar(focusOmnibox: true)
             }
         }
         .font(.subheadline.weight(.semibold))
-        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+        .dynamicTypeSize(...DynamicTypeSize.large)
         .foregroundColor(darkModeService.isDarkMode ? .white : .primary)
         .padding(.horizontal, 12)
         .frame(height: toolbarPillHeight)
@@ -2831,7 +2831,7 @@ struct ContentView: View {
                         aiSidebarToggleButton
                     }
                     .glassEffectContainerCompat(spacing: 12)
-                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                    .dynamicTypeSize(...DynamicTypeSize.large)
                     .padding(.bottom, 24)
                     .opacity(isScrolling ? 0 : 1)
                 } else if (!isPhone || !phoneSecondaryPanelIsPresented) {
@@ -5415,7 +5415,7 @@ struct ContentView: View {
                 Button {
                     collapseToolbar()
                 } label: {
-                    Image(systemName: "chevron.up")
+                    Image(systemName: "chevron.down")
                         .foregroundColor(.secondary)
                 }
                 .browserToolbarControl()

@@ -200,11 +200,13 @@ struct AISidebar: View {
     var body: some View {
         VStack(spacing: 12) {
             headerRow
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
             if let contextStatus = trimmedContextStatusText {
                 contextStatusRow(contextStatus)
             }
             if effectiveControlsExpanded {
                 controlsSection
+                    .dynamicTypeSize(...DynamicTypeSize.xLarge)
             }
             if effectiveControlsExpanded {
                 Divider()

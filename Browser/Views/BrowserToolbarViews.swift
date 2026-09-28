@@ -30,7 +30,6 @@ struct ToolbarAddressButton: View {
                 }
             }
             .frame(minWidth: BrowserDesign.Size.hitTarget, maxWidth: maxWidth, minHeight: BrowserDesign.Size.hitTarget)
-            .fixedSize(horizontal: true, vertical: false)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
