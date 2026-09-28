@@ -2836,6 +2836,7 @@ struct ContentView: View {
                     .opacity(isScrolling ? 0 : 1)
                 } else if (!isPhone || !phoneSecondaryPanelIsPresented) {
                     toolbarView(for: vm.tabs[idx])
+                        .dynamicTypeSize(...DynamicTypeSize.large)
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal)
                         .padding(.bottom, 24)
@@ -4461,6 +4462,7 @@ struct ContentView: View {
                     onManageGroups: { showTabGroupManager = true },
                     onShowRecentlyClosed: { showRecentlyClosedTabs = true }
                 )
+                .dynamicTypeSize(...DynamicTypeSize.xLarge)
                 HStack {
                     sidebarSectionHeader("Tabs", systemImage: "rectangle.on.rectangle")
                     Spacer(minLength: 0)
