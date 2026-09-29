@@ -235,9 +235,7 @@ final class UBlockLiteService: ObservableObject {
         let isPrivate = !webView.configuration.websiteDataStore.isPersistent
         if engine == .ublockLite {
             do {
-                if isPrivate { try await loadPrivateRuntimeIfNeeded() }
                 try await runtime(isPrivate: isPrivate).preparePage(webView)
-                if !isPrivate { schedulePrivateRuntimeLoad() }
             } catch {
                 await failOver(error)
             }
@@ -283,34 +281,6 @@ final class UBlockLiteService: ObservableObject {
         errorMessage = "Lite filtering could not become ready: \(error.localizedDescription) Vortex protection is active."
     }
 
-    private func loadPrivateRuntimeIfNeeded() async throws {
-        deferredPrivateLoad?.cancel()
-        deferredPrivateLoad = nil
-        if privateRuntime.context?.isLoaded == true { return }
-        let load: Task<Void, Error>
-        if let privateLoad {
-            load = privateLoad
-        } else {
-            guard let extensionResource else { throw failure("Could not load the extension.") }
-            load = Task { @MainActor in try await self.privateRuntime.load(extensionResource) }
-            privateLoad = load
-        }
-        do { try await load.value } catch {
-            if privateLoad == load { privateLoad = nil }
-            throw error
-        }
-    }
-
-    private func schedulePrivateRuntimeLoad() {
-        guard engine == .ublockLite, deferredPrivateLoad == nil, privateLoad == nil, privateRuntime.context?.isLoaded != true else { return }
-        deferredPrivateLoad = Task { @MainActor in
-            // Let the first page render before WebKit compiles the private rule list.
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled, engine == .ublockLite else { return }
-            do { try await loadPrivateRuntimeIfNeeded() } catch { runtimeFailed(error) }
-        }
-    }
-
     private func cancelPrivateRuntimeLoad() async {
         deferredPrivateLoad?.cancel()
         deferredPrivateLoad = nil
@@ -331,7 +301,11 @@ final class UBlockLiteService: ObservableObject {
         configuration.webExtensionController = runtime(isPrivate: isPrivate).controller
     }
 
-    func runtime(isPrivate: Bool) -> UBlockLiteRuntime { isPrivate ? privateRuntime : regular }
+    /// Private tabs share the regular runtime. A separate private runtime is non-persistent, so WebKit
+    /// recompiled its rules (~20s) on every launch and stalled page loads meanwhile. Private tabs still
+    /// keep their own non-persistent website data; only uBlock's own state (e.g. per-site "no
+    /// filtering") is shared with regular tabs.
+    func runtime(isPrivate _: Bool) -> UBlockLiteRuntime { regular }
 
     func attach(_ model: BrowserViewModel) {
         regular.attach(model)
@@ -388,7 +362,17 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
     #endif
     private var refreshTask: Task<[String], Error>?
     private var bridgePage: UBlockLiteBridgePage?
-    private(set) var cachedNoFilteringHosts: Set<String> = []
+    /// Sites where Lite's filtering is off. The regular runtime remembers them across launches so the
+    /// first pages don't wait for the extension's startup rules refresh to learn them.
+    private(set) var cachedNoFilteringHosts: Set<String> = [] {
+        didSet {
+            guard !isPrivate, cachedNoFilteringHosts != oldValue else { return }
+            UserDefaults.standard.set(Array(cachedNoFilteringHosts).sorted(), forKey: Self.noFilteringHostsKey)
+        }
+    }
+    private static let noFilteringHostsKey = "ubol.noFilteringHosts.v1"
+    /// True once this load's rules refresh has finished; until then the host list is not re-read.
+    private var rulesRefreshFinished = false
     private var filteringModesStale = true
     private var generation = 0
     weak var owner: UBlockLiteService?
@@ -397,6 +381,9 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
 
     init(isPrivate: Bool) {
         self.isPrivate = isPrivate
+        if !isPrivate {
+            cachedNoFilteringHosts = Set(UserDefaults.standard.stringArray(forKey: Self.noFilteringHostsKey) ?? [])
+        }
         let configuration: WKWebExtensionController.Configuration = isPrivate ? .nonPersistent() : .init(identifier: UUID(uuidString: "3D291E32-96AA-4A30-AC13-6E565D596C24")!)
         if isPrivate {
             let store = WKWebsiteDataStore.nonPersistent()
@@ -416,7 +403,8 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
         context.uniqueIdentifier = isPrivate ? "vortex-ubol-private" : "vortex-ubol"
         context.baseURL = URL(string: "safari-web-extension://\(context.uniqueIdentifier)/")!
         context.isInspectable = true
-        context.hasAccessToPrivateData = isPrivate
+        // The regular runtime also serves private tabs, which WebKit only allows with this access.
+        context.hasAccessToPrivateData = true
         // This host only loads the pinned, bundled uBOL package, never arbitrary extensions.
         // Selecting Lite grants the permissions declared by that package for filtering.
         for permission in resource.requestedPermissions {
@@ -429,6 +417,7 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
         generation += 1
         readyViews.removeAllObjects()
         filteringModesStale = true
+        rulesRefreshFinished = false
         try controller.load(context)
         try await context.loadBackgroundContent()
         startRulesRefresh(context)
@@ -459,6 +448,12 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
                     owner?.markCompiledRulesCurrent()
                     owner?.recordEnabledRulesetCount(enabled.count)
                 }
+                rulesRefreshFinished = true
+                // Pages loaded before this used the remembered host list; confirm it now.
+                Task { @MainActor in
+                    _ = await self.noFilteringHosts()
+                    ExtraBlocklistService.shared.reapplyAll()
+                }
                 return enabled
             } catch {
                 if generation == currentGeneration, !(error is CancellationError) {
@@ -476,8 +471,8 @@ final class UBlockLiteRuntime: NSObject, WKWebExtensionControllerDelegate {
     /// Hostnames (or `all-urls`) where Lite's filtering mode is "no filtering". Read from the extension when
     /// marked stale; the last known set if the extension cannot answer.
     func noFilteringHosts() async -> Set<String> {
-        guard filteringModesStale, context?.isLoaded == true, let refreshTask else { return cachedNoFilteringHosts }
-        _ = try? await refreshTask.value
+        // Never make a page wait for the startup refresh: use the remembered list until it finishes.
+        guard filteringModesStale, rulesRefreshFinished, context?.isLoaded == true else { return cachedNoFilteringHosts }
         guard let bridgePage, let hosts = try? await bridgePage.noFilteringHosts() else { return cachedNoFilteringHosts }
         cachedNoFilteringHosts = Set(hosts)
         filteringModesStale = owner?.isPresentingPanel == true
@@ -630,7 +625,8 @@ final class UBlockLiteWindow: NSObject, WKWebExtensionWindow {
     }
 
     func reconcile(_ tabs: [BrowserTab]) {
-        let eligible = tabs.filter { $0.isIncognito == runtime.isPrivate }
+        // The regular runtime serves private tabs too (see `UBlockLiteService.runtime(isPrivate:)`).
+        let eligible = runtime.isPrivate ? tabs.filter(\.isIncognito) : tabs
         let ids = Set(eligible.map(\.id))
         for (id, bridge) in tabBridges where !ids.contains(id) {
             runtime.controller.didCloseTab(bridge)

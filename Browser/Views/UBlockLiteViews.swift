@@ -27,35 +27,80 @@ struct UBlockLiteRootView: View {
     }
 }
 
+/// Shown inside a List/Form, so each control is its own row. When several
+/// controls share one row, a tap anywhere in it fires the first one (the picker).
 struct UBlockLiteControls: View {
     @ObservedObject private var blocker = UBlockLiteService.shared
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Picker("Ad blocker", selection: Binding(get: { blocker.engine }, set: { blocker.select($0) })) {
+        Group {
+            Picker("Ad Blocker", selection: Binding(get: { blocker.engine }, set: { blocker.select($0) })) {
                 ForEach(UBlockLiteService.Engine.allCases) { engine in
                     Text(engine.title).tag(engine)
                 }
             }
             .disabled(blocker.isChanging)
-            if blocker.isChanging { ProgressView("Changing blocker…") }
+            if blocker.isChanging {
+                LabeledContent("Changing blocker…") { ProgressView() }
+            }
             if blocker.engine == .ublockLite {
-                Button("uBlock Origin Lite Settings", systemImage: "slider.horizontal.3") { blocker.showSettings() }
-                    .frame(minHeight: 44)
-                Text("Use the page’s shield button for uBlock’s site controls. Lite can read and modify webpages to filter ads. Private tabs use a separate temporary extension profile.")
-                    .font(.caption).foregroundStyle(.secondary)
+                NavigationLink("Filter Lists & Options") {
+                    UBlockLiteFilterListsView()
+                }
             }
             if let error = blocker.errorMessage {
-                Text(error).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
             }
-            if blocker.engine == .ublockLite, blocker.loadsFromPackageStore {
-                UBlockLiteRulesUpdateControls(blocker: blocker)
-            }
-            if blocker.engine == .ublockLite {
-                ExtraBlocklistControls()
-            }
-            Text("Vortex Browser · uBOL \(blocker.version)" + (blocker.rulesVersion == blocker.version ? "" : " · rules \(blocker.rulesVersion)"))
-                .font(.caption2).foregroundStyle(.secondary)
         }
+        // Buttons only respond to taps on themselves, not the whole row.
+        .buttonStyle(.borderless)
+    }
+}
+
+/// Every list that feeds the blocker in one place: uBlock's own lists and network
+/// rules, plus the HaGeZi Pro list Vortex applies alongside them.
+struct UBlockLiteFilterListsView: View {
+    @ObservedObject private var blocker = UBlockLiteService.shared
+
+    var body: some View {
+        Form {
+            Group {
+                Section {
+                    Button {
+                        blocker.showSettings()
+                    } label: {
+                        LabeledContent {
+                            Image(systemName: "arrow.up.forward.square")
+                                .foregroundStyle(.secondary)
+                        } label: {
+                            Text("Choose Filter Lists")
+                        }
+                    }
+                    .tint(.primary)
+                    if blocker.loadsFromPackageStore {
+                        UBlockLiteRulesUpdateControls(blocker: blocker)
+                    }
+                } header: {
+                    Text("uBlock Origin Lite")
+                } footer: {
+                    Text("Filter lists and other options open in uBlock Origin Lite \(blocker.version).")
+                }
+                Section {
+                    ExtraBlocklistControls()
+                } header: {
+                    Text("Extra Blocklist")
+                } footer: {
+                    Text("HaGeZi Pro adds ad, tracker and malware domains on top of uBlock's lists. It is off on sites where you turn uBlock off.")
+                }
+            }
+            .listRowBackground(Color.primary.opacity(0.06))
+        }
+        .scrollContentBackground(.hidden)
+        .buttonStyle(.borderless)
+        .navigationTitle("Filter Lists & Options")
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -72,38 +117,42 @@ struct UBlockLiteRulesUpdateControls: View {
     private var pendingVersion: String? { blocker.packageStore.loadState()?.pendingRulesVersion }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                Button("Check for network rule updates", systemImage: "arrow.triangle.2.circlepath") {
-                    Task { await updater.check() }
+        Group {
+            LabeledContent {
+                if updater.phase != .idle {
+                    ProgressView()
+                } else {
+                    Text(blocker.rulesVersion)
                 }
-                .disabled(updater.phase != .idle || blocker.isChanging)
-                if updater.phase != .idle { ProgressView().controlSize(.small) }
-            }
-            if let release = updater.availableRelease {
-                Button("Download network rules \(release.tag) (\(release.size / 1_048_576) MB)", systemImage: "arrow.down.circle") {
-                    Task { await updater.downloadAndStage() }
+            } label: {
+                Text("Network Rules")
+                if let lastCheck = updater.lastCheck {
+                    Text("Checked \(lastCheck.formatted(date: .abbreviated, time: .shortened))")
                 }
-                .disabled(updater.phase != .idle)
             }
             if let pendingVersion, updater.phase == .idle {
-                Button("Apply network rules \(pendingVersion) now (reloads open tabs)", systemImage: "checkmark.circle") {
+                Button("Install \(pendingVersion) and Reload Tabs") {
                     Task { await blocker.applyRulesUpdate() }
                 }
                 .disabled(blocker.isChanging)
+            } else if let release = updater.availableRelease {
+                Button("Download \(release.tag) (\(release.size / 1_048_576) MB)") {
+                    Task { await updater.downloadAndStage() }
+                }
+                .disabled(updater.phase != .idle)
+            } else {
+                Button("Check for Updates") {
+                    Task { await updater.check() }
+                }
+                .disabled(updater.phase != .idle || blocker.isChanging)
             }
             if let status = updater.statusMessage {
-                Text(status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-            }
-            if let lastCheck = updater.lastCheck {
-                Text("Last check: \(lastCheck.formatted(date: .abbreviated, time: .shortened)). Network rules only: cosmetic filters and page scripts stay at uBOL \(blocker.version) until the app is updated.")
-                    .font(.caption2).foregroundStyle(.secondary)
-            } else {
-                Text("Checks GitHub for new uBlock Origin Lite releases once a day. Downloads and applying happen only when you tap. Network rules only: cosmetic filters and page scripts stay at uBOL \(blocker.version) until the app is updated.")
-                    .font(.caption2).foregroundStyle(.secondary)
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
         }
-        .buttonStyle(.bordered)
     }
 }
 
@@ -112,31 +161,34 @@ struct ExtraBlocklistControls: View {
     @ObservedObject private var blocklist = ExtraBlocklistService.shared
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Toggle("Extra blocklist: HaGeZi Pro", isOn: $blocklist.isEnabled)
-            if let version = blocklist.version {
-                Text("\(blocklist.blockedDomains.formatted()) domains · version \(version)")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            HStack(spacing: 12) {
-                Button("Check for blocklist update", systemImage: "arrow.triangle.2.circlepath") {
-                    Task { await blocklist.check() }
+        Group {
+            Toggle(isOn: $blocklist.isEnabled) {
+                Text("HaGeZi Pro Blocklist")
+                if blocklist.version != nil {
+                    Text("\(blocklist.blockedDomains.formatted()) extra domains")
                 }
-                .disabled(blocklist.phase != .idle)
-                if blocklist.phase != .idle { ProgressView().controlSize(.small) }
             }
             if let available = blocklist.availableVersion, blocklist.phase == .idle {
-                Button("Download and apply HaGeZi Pro \(available)", systemImage: "arrow.down.circle") {
+                Button("Install HaGeZi Pro \(available)") {
                     Task { await blocklist.downloadAndApply() }
                 }
+            } else {
+                Button {
+                    Task { await blocklist.check() }
+                } label: {
+                    LabeledContent("Check for Blocklist Update") {
+                        if blocklist.phase != .idle { ProgressView() }
+                    }
+                }
+                .disabled(blocklist.phase != .idle)
             }
             if let status = blocklist.statusMessage {
-                Text(status).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
+                Text(status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
-            Text("Blocks ad, tracker and malware domains that uBlock Origin Lite's lists don't cover. Pages you open yourself are never blocked, only what they load. Turned off on sites where you turn off uBlock.")
-                .font(.caption2).foregroundStyle(.secondary)
         }
-        .buttonStyle(.bordered)
     }
 }
 

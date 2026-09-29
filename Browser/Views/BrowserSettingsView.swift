@@ -9,7 +9,6 @@ struct BrowserSettingsView: View {
     @Binding var isLoadingMLXModel: Bool
     @Binding var mlxDownloadProgress: Progress?
     @Binding var mlxLoadError: String?
-    let onOpenFilterLists: () -> Void
     let onSignIn: (WebAIProvider) -> Void
     let onSignOut: (WebAIProvider) -> Void
     let onFontSizeChanged: () -> Void
@@ -17,6 +16,7 @@ struct BrowserSettingsView: View {
     let onAppear: () -> Void
     let onDone: () -> Void
 
+    @ObservedObject private var blocker = UBlockLiteService.shared
     @ObservedObject private var cookieBlocker = ThirdPartyCookieBlocker.shared
     @ObservedObject private var darkModeService = DarkModeService.shared
     @ObservedObject private var fontSizeService = FontSizeService.shared
@@ -25,12 +25,18 @@ struct BrowserSettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                generalSection
-                privacySection
-                appearanceSection
-                aiSection
-                advancedSection
+                Group {
+                    generalSection
+                    privacySection
+                    appearanceSection
+                    aiSection
+                    advancedSection
+                }
+                // Translucent rows so the panel's glass shows through; the Form's
+                // default solid backgrounds hid it completely.
+                .listRowBackground(Color.primary.opacity(0.06))
             }
+            .scrollContentBackground(.hidden)
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -51,13 +57,32 @@ struct BrowserSettingsView: View {
             } label: {
                 Label("Search Engine", systemImage: "magnifyingglass")
             }
+            Picker(selection: $vm.newTabPage) {
+                ForEach(NewTabPage.allCases) { page in
+                    Text(page.displayName).tag(page)
+                }
+            } label: {
+                Label("New Tabs Open", systemImage: "plus.square.on.square")
+            }
+            if vm.newTabPage == .custom {
+                TextField("Page address, e.g. news.ycombinator.com", text: $vm.customNewTabAddress)
+                    .keyboardType(.URL)
+                    .textContentType(.URL)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .submitLabel(.done)
+            }
             Toggle(isOn: $requestDesktopSite) {
                 Label("Request Desktop Site", systemImage: "desktopcomputer")
             }
         } header: {
             Text("General")
         } footer: {
-            Text("The search engine is used for searches typed in the address bar.")
+            if vm.newTabPage == .custom && vm.customNewTabURL == nil {
+                Text("Enter a web address. Until then, new tabs open \(vm.defaultSearchEngine.displayName).")
+            } else {
+                Text("The search engine is used for searches typed in the address bar.")
+            }
         }
     }
 
@@ -68,14 +93,25 @@ struct BrowserSettingsView: View {
                 Label("Block Third-Party Cookies", systemImage: "shield.lefthalf.filled")
             }
             .disabled(!cookieBlocker.isSupported)
-            Button(action: onOpenFilterLists) {
-                Label("Filter Lists", systemImage: "list.bullet.rectangle")
+            // uBlock's own lists live behind "uBlock Origin Lite Settings" above;
+            // the built-in blocker's lists open here, inside Settings.
+            if blocker.engine == .vortex {
+                NavigationLink {
+                    FilterListSettingsView()
+                } label: {
+                    Label("Filter Lists", systemImage: "list.bullet.rectangle")
+                }
             }
         } header: {
             Text("Privacy & Blocking")
         } footer: {
-            if !cookieBlocker.isSupported {
-                Text(cookieBlocker.unavailabilityReason)
+            VStack(alignment: .leading, spacing: 4) {
+                if blocker.engine == .ublockLite {
+                    Text("Use the shield in the toolbar to turn blocking off for a site.")
+                }
+                if !cookieBlocker.isSupported {
+                    Text(cookieBlocker.unavailabilityReason)
+                }
             }
         }
     }

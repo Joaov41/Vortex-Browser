@@ -448,6 +448,26 @@ enum BrowserSearchEngine: String, CaseIterable, Identifiable {
     }
 }
 
+/// What a new tab shows.
+enum NewTabPage: String, CaseIterable, Identifiable {
+    case searchEngine
+    case blank
+    case custom
+
+    static let defaultsKey = "browser_new_tab_page_v1"
+    static let customAddressKey = "browser_new_tab_custom_address_v1"
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .searchEngine: return "Search Engine Home"
+        case .blank: return "Blank Page"
+        case .custom: return "Custom Page"
+        }
+    }
+}
+
 private struct BrowserSessionSnapshot: Codable {
     struct Tab: Codable {
         let id: UUID
@@ -515,6 +535,17 @@ final class BrowserViewModel: ObservableObject {
             defaults.set(defaultSearchEngine.rawValue, forKey: BrowserSearchEngine.defaultsKey)
         }
     }
+    @Published var newTabPage: NewTabPage {
+        didSet {
+            defaults.set(newTabPage.rawValue, forKey: NewTabPage.defaultsKey)
+        }
+    }
+    /// Address typed for `NewTabPage.custom`, kept as entered.
+    @Published var customNewTabAddress: String {
+        didSet {
+            defaults.set(customNewTabAddress, forKey: NewTabPage.customAddressKey)
+        }
+    }
 
     var isSplitViewActive = false
 
@@ -544,6 +575,10 @@ final class BrowserViewModel: ObservableObject {
         defaultSearchEngine = BrowserSearchEngine(
             rawValue: userDefaults.string(forKey: BrowserSearchEngine.defaultsKey) ?? ""
         ) ?? .google
+        newTabPage = NewTabPage(
+            rawValue: userDefaults.string(forKey: NewTabPage.defaultsKey) ?? ""
+        ) ?? .searchEngine
+        customNewTabAddress = userDefaults.string(forKey: NewTabPage.customAddressKey) ?? ""
         loadFavorites()
         loadGroups()
         loadRecentlyClosedTabs()
@@ -676,14 +711,38 @@ final class BrowserViewModel: ObservableObject {
         enforceWebViewBudget(aggressive: true)
     }
 
+    /// The page new tabs load; nil means a blank page. A custom address that isn't a
+    /// web address falls back to the search engine's home page.
+    var newTabURL: URL? {
+        switch newTabPage {
+        case .searchEngine:
+            return defaultSearchEngine.homeURL
+        case .blank:
+            return nil
+        case .custom:
+            return customNewTabURL ?? defaultSearchEngine.homeURL
+        }
+    }
+
+    /// The custom address as a web URL, or nil when it isn't one (searches don't count).
+    var customNewTabURL: URL? {
+        let trimmed = customNewTabAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains(" ") else { return nil }
+        if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased() {
+            return scheme == "http" || scheme == "https" ? url : nil
+        }
+        guard trimmed.contains(".") else { return nil }
+        return URL(string: "https://\(trimmed)")
+    }
+
     func addTabBlank() {
-        let homeURL = defaultSearchEngine.homeURL
+        let homeURL = newTabURL
         let tab = BrowserTab(
             title: "New Tab",
             url: homeURL,
             useDesktopUserAgent: useDesktopUserAgent
         )
-        tab.address = homeURL.absoluteString
+        tab.address = homeURL?.absoluteString ?? ""
         tabs.append(tab)
         selectedTabID = tab.id
         protectedTabIDs.insert(tab.id)

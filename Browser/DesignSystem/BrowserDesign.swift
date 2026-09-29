@@ -86,6 +86,19 @@ private struct GlassEffectCompatModifier<S: InsettableShape>: ViewModifier {
 }
 
 extension View {
+    /// Bottom-toolbar background: clear glass, with a frosted layer faded in while
+    /// page text sits behind it (busy text showing through competes with the
+    /// address). The frost fades rather than swapping views, so identity and focus
+    /// are kept.
+    func toolbarBackdrop<S: InsettableShape>(in shape: S, frosted: Bool) -> some View {
+        background {
+            shape.fill(.thickMaterial)
+                .opacity(frosted ? 1 : 0)
+                .animation(.easeOut(duration: 0.25), value: frosted)
+        }
+        .glassEffectCompat(in: shape, material: .ultraThinMaterial, strokeOpacity: 0.18)
+    }
+
     @ViewBuilder
     func glassEffectCompat<S: InsettableShape>(
         in shape: S,

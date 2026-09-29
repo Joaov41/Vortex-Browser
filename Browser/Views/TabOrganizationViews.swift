@@ -4,9 +4,8 @@ struct BrowserTabOrganizerHeader: View {
     @Binding var searchText: String
     @Binding var selectedScope: BrowserTabScope
     let groups: [BrowserTabGroup]
-    let recentlyClosedCount: Int
     let onManageGroups: () -> Void
-    let onShowRecentlyClosed: () -> Void
+    let onShowHistory: () -> Void
 
     var body: some View {
         VStack(spacing: 10) {
@@ -75,23 +74,13 @@ struct BrowserTabOrganizerHeader: View {
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .accessibilityLabel("Manage tab groups")
 
-                Button(action: onShowRecentlyClosed) {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: "clock.arrow.circlepath")
-                        if recentlyClosedCount > 0 {
-                            Text("\(min(recentlyClosedCount, 99))")
-                                .font(.system(size: 9, weight: .bold))
-                                .foregroundStyle(.white)
-                                .padding(3)
-                                .background(Color.accentColor, in: Capsule())
-                                .offset(x: 8, y: -7)
-                        }
-                    }
-                    .frame(width: 44, height: 44)
+                Button(action: onShowHistory) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
                 .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityLabel("Recently closed tabs, \(recentlyClosedCount)")
+                .accessibilityLabel("History")
             }
         }
     }
@@ -101,58 +90,6 @@ struct BrowserTabOrganizerHeader: View {
         case .all: return "All Tabs"
         case .ungrouped: return "Ungrouped"
         case .group(let id): return groups.first(where: { $0.id == id })?.title ?? "All Tabs"
-        }
-    }
-}
-
-struct RecentlyClosedTabsSheet: View {
-    @ObservedObject var viewModel: BrowserViewModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            Group {
-                if viewModel.recentlyClosedTabs.isEmpty {
-                    ContentUnavailableView(
-                        "No Recently Closed Tabs",
-                        systemImage: "clock.arrow.circlepath",
-                        description: Text("Tabs you close will appear here, except private tabs.")
-                    )
-                } else {
-                    List(viewModel.recentlyClosedTabs) { record in
-                        Button {
-                            viewModel.reopenRecentlyClosed(record)
-                            dismiss()
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(record.title).font(.headline).lineLimit(1)
-                                Text(record.url.absoluteString)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                Text(record.closedAt, style: .relative)
-                                    .font(.caption2)
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 4)
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityHint("Reopens this tab")
-                    }
-                }
-            }
-            .navigationTitle("Recently Closed")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done", action: dismiss.callAsFunction)
-                }
-                if !viewModel.recentlyClosedTabs.isEmpty {
-                    ToolbarItem(placement: .destructiveAction) {
-                        Button("Clear", role: .destructive, action: viewModel.clearRecentlyClosed)
-                    }
-                }
-            }
         }
     }
 }

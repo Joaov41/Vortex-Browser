@@ -132,7 +132,8 @@ struct GlassTextField: View {
     var showClearButton: Bool = true
     var trailingAccessory: AnyView? = nil
     var onClear: (() -> Void)? = nil
-    
+    var frosted: Bool = false
+
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
@@ -166,11 +167,7 @@ struct GlassTextField: View {
         .padding(.horizontal, 12)
         .frame(minHeight: 36)
         .dynamicTypeSize(...DynamicTypeSize.large)
-        .glassEffectCompat(
-            in: Capsule(),
-            material: .regularMaterial,
-            strokeOpacity: 0.35
-        )
+        .toolbarBackdrop(in: Capsule(), frosted: frosted)
         .shadow(radius: 8, y: 3)
     }
 }
@@ -1424,8 +1421,9 @@ struct ContentView: View {
     @ScaledMetric(relativeTo: .caption) private var scaledSidebarSubtitleFontSize: CGFloat = 13
     @ScaledMetric(relativeTo: .body) private var scaledSidebarIconFontSize: CGFloat = 15
     @State private var tabSearchText = ""
+    @State private var showAllFavorites = false
     @State private var selectedTabScope: BrowserTabScope = .all
-    @State private var showRecentlyClosedTabs = false
+    @State private var showHistory = false
     @State private var showTabGroupManager = false
     @State private var showAIPanel = false
     @State private var isAISidebarInputFocused = false
@@ -1479,6 +1477,8 @@ struct ContentView: View {
     private let splitDividerHitSize: CGFloat = 16
     @State private var isToolbarCollapsed: Bool = true
     @State private var isScrolling: Bool = false
+    /// True while page text sits behind the bottom toolbar; the toolbar frosts then.
+    @State private var toolbarOverText: Bool = false
     private let toolbarPillHeight: CGFloat = 44
     // New service states
     @StateObject private var adBlockService = AdBlockService.shared
@@ -1628,6 +1628,16 @@ struct ContentView: View {
         colorScheme == .dark || darkModeService.isDarkMode
     }
 
+    /// The device's own light/dark setting. Settings panels follow this rather than
+    /// "Dark Web Pages", which only darkens websites and made the panels dark on
+    /// light pages.
+    private var systemColorScheme: ColorScheme {
+        let style = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.traitCollection.userInterfaceStyle }
+            .first ?? .unspecified
+        return style == .dark ? .dark : .light
+    }
+
     private var isNativeTouchDevice: Bool {
 #if os(iOS)
         !isMacRuntimeForIPadBuild
@@ -1710,11 +1720,7 @@ struct ContentView: View {
                 .foregroundColor(sidebarToggleForeground)
                 .padding(.horizontal, 12)
                 .frame(height: toolbarPillHeight)
-                .glassEffectCompat(
-                    in: Capsule(),
-                    material: .ultraThinMaterial,
-                    strokeOpacity: isSidebarDark ? 0.2 : 0.15
-                )
+                .toolbarBackdrop(in: Capsule(), frosted: toolbarOverText)
                 .shadow(
                     color: Color.black.opacity(isSidebarDark ? 0.35 : 0.2),
                     radius: 8,
@@ -1749,11 +1755,7 @@ struct ContentView: View {
                 .foregroundColor(isSidebarDark ? .white.opacity(0.85) : .primary)
                 .padding(.horizontal, 12)
                 .frame(height: toolbarPillHeight)
-                .glassEffectCompat(
-                    in: Capsule(),
-                    material: .ultraThinMaterial,
-                    strokeOpacity: isSidebarDark ? 0.2 : 0.15
-                )
+                .toolbarBackdrop(in: Capsule(), frosted: toolbarOverText)
                 .shadow(
                     color: Color.black.opacity(isSidebarDark ? 0.35 : 0.2),
                     radius: 8,
@@ -1787,11 +1789,7 @@ struct ContentView: View {
             .foregroundColor(isSidebarDark ? .white.opacity(0.85) : .primary)
             .padding(.horizontal, 12)
             .frame(height: toolbarPillHeight)
-            .glassEffectCompat(
-                in: Capsule(),
-                material: .ultraThinMaterial,
-                strokeOpacity: isSidebarDark ? 0.2 : 0.15
-            )
+            .toolbarBackdrop(in: Capsule(), frosted: toolbarOverText)
             .shadow(
                 color: Color.black.opacity(isSidebarDark ? 0.35 : 0.2),
                 radius: 8,
@@ -1811,6 +1809,59 @@ struct ContentView: View {
         }
         if focusOmnibox {
             omniboxFocused = true
+        }
+    }
+
+    /// Frosts the bottom toolbar only while page text sits behind it. Samples
+    /// points across the toolbar's area and asks WebKit whether a glyph is there.
+    /// Runs when the toolbar reappears (scroll end), after loads and on tab switch;
+    /// the toolbar is hidden while scrolling, so it never needs to track frames.
+    private func refreshToolbarBackdrop() {
+        guard splitMode == nil,
+              let idx = vm.selectedIndex,
+              !vm.tabs[idx].isBlank,
+              let webView = vm.tabs[idx].liveWebView else {
+            toolbarOverText = false
+            return
+        }
+        let size = webView.bounds.size
+        guard size.width > 0, size.height > 0 else { return }
+        let bottomInset = webView.window?.safeAreaInsets.bottom ?? 0
+        let centerY = size.height - bottomInset - 24 - toolbarPillHeight / 2
+        let halfWidth = min(260, size.width / 2 - 16)
+        let xs = stride(from: -1.0, through: 1.0, by: 1.0 / 3).map { size.width / 2 + halfWidth * $0 }
+        let script = """
+        const k = window.innerWidth / width;
+        function textAt(x, y) {
+            const caret = document.caretRangeFromPoint(x, y);
+            const node = caret && caret.startContainer;
+            if (!node || node.nodeType !== Node.TEXT_NODE || !node.textContent.trim()) return false;
+            const offset = Math.min(caret.startOffset, node.length - 1);
+            if (offset < 0) return false;
+            const glyph = document.createRange();
+            glyph.setStart(node, offset);
+            glyph.setEnd(node, offset + 1);
+            const box = glyph.getBoundingClientRect();
+            return x >= box.left - 4 && x <= box.right + 4 && y >= box.top - 4 && y <= box.bottom + 4;
+        }
+        let hits = 0;
+        for (const x of xs) {
+            for (const dy of [-12, 0, 12]) {
+                if (textAt(x * k, (y + dy) * k)) hits++;
+            }
+        }
+        return hits;
+        """
+        let tabID = vm.tabs[idx].id
+        webView.callAsyncJavaScript(
+            script,
+            arguments: ["xs": xs, "y": centerY, "width": size.width],
+            in: nil,
+            in: .defaultClient
+        ) { result in
+            guard vm.selectedTabID == tabID else { return }
+            let hits = ((try? result.get()) as? NSNumber)?.intValue ?? 0
+            toolbarOverText = hits >= 2
         }
     }
 
@@ -1962,18 +2013,8 @@ struct ContentView: View {
     private func toolbarCollapsedPill(for tab: BrowserTab) -> some View {
         // Phone widths are tight: toggles + pill must fit a 402pt screen with margins.
         HStack(spacing: isPhone ? 4 : 8) {
-            Button { tab.navigateBack() } label: {
-                Image(systemName: "chevron.left")
-            }
-            .browserToolbarControl()
-            .disabled(!tab.canGoBack)
-            .accessibilityLabel("Back")
-
-            Button { tab.navigateForward() } label: {
-                Image(systemName: "chevron.right")
-            }
-            .browserToolbarControl()
-            .accessibilityLabel("Forward")
+            ToolbarHistoryNavigationButton(tab: tab, direction: .back)
+            ToolbarHistoryNavigationButton(tab: tab, direction: .forward, hidesWhenUnavailable: isPhone)
 
             SitePrivacyShieldButton(
                 url: tab.currentURL,
@@ -1981,24 +2022,24 @@ struct ContentView: View {
                 onOpenAdBlockSettings: { showFilterListSettings = true }
             )
 
-            ToolbarAddressButton(tab: tab, maxWidth: isPhone ? (splitMode == nil ? 112 : 64) : 220) {
+            ToolbarAddressButton(
+                tab: tab,
+                maxWidth: isPhone ? (splitMode == nil ? 112 : 64) : 220,
+                maxWidthWithoutForward: isPhone ? (splitMode == nil ? 160 : 112) : nil
+            ) {
                 expandToolbar(focusOmnibox: true)
             }
         }
         .font(.subheadline.weight(.semibold))
         .dynamicTypeSize(...DynamicTypeSize.large)
-        .foregroundColor(darkModeService.isDarkMode ? .white : .primary)
+        .foregroundColor(isSidebarDark ? .white : .primary)
         .padding(.horizontal, isPhone ? 10 : 12)
         .frame(height: toolbarPillHeight)
         .overlay(alignment: .bottom) {
             ToolbarLoadingProgressBar(tab: tab)
                 .padding(.horizontal, 18)
         }
-        .glassEffectCompat(
-            in: Capsule(),
-            material: .ultraThinMaterial,
-            strokeOpacity: 0.18
-        )
+        .toolbarBackdrop(in: Capsule(), frosted: toolbarOverText)
         .shadow(radius: BrowserDesign.Shadow.controlRadius, y: 4)
     }
 
@@ -2396,8 +2437,12 @@ struct ContentView: View {
 
     var body: some View {
         mainLayout
-            .sheet(isPresented: $showRecentlyClosedTabs) {
-                RecentlyClosedTabsSheet(viewModel: vm)
+            .sheet(isPresented: $showHistory) {
+                HistoryView(viewModel: vm) { url in
+                    if let tab = selectedTab {
+                        vm.navigate(to: url, in: tab)
+                    }
+                }
             }
             .sheet(item: $downloadManager.presentedExport) { export in
                 BrowserDocumentExportSheet(fileURL: export.fileURL) { exported in
@@ -2418,6 +2463,9 @@ struct ContentView: View {
             .onChange(of: vm.selectedTabID) { _, _ in
                 refreshHibernationProtection()
                 vm.activateSelectedTab()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    refreshToolbarBackdrop()
+                }
             }
             .onChange(of: splitPrimaryID) { _, _ in
                 refreshHibernationProtection()
@@ -2477,6 +2525,11 @@ struct ContentView: View {
                 }
             }
             .keyboardShortcut("t", modifiers: [.command, .shift])
+
+            Button("Show History") {
+                showHistory = true
+            }
+            .keyboardShortcut("y", modifiers: .command)
 
             Button("Focus Address Bar") {
                 expandToolbar(focusOmnibox: true)
@@ -2838,11 +2891,29 @@ struct ContentView: View {
                     }
                     .glassEffectContainerCompat(spacing: 12)
                     .dynamicTypeSize(...DynamicTypeSize.large)
+                    // Icons turn white with Dark Web Pages; the frost and glass must
+                    // follow the same appearance or it's white on white.
+                    .environment(\.colorScheme, isSidebarDark ? .dark : .light)
                     .padding(.bottom, 24)
                     .opacity(isScrolling ? 0 : 1)
                 } else if (!isPhone || !phoneSecondaryPanelIsPresented) {
-                    toolbarView(for: vm.tabs[idx])
+                    VStack(spacing: 8) {
+                        AddressSuggestionsView(
+                            tab: vm.tabs[idx],
+                            isEditing: omniboxFocused,
+                            favorites: vm.favorites
+                        ) { url in
+                            let tab = vm.tabs[idx]
+                            tab.address = url.absoluteString
+                            vm.navigate(to: url, in: tab)
+                            collapseToolbar()
+                        }
+                        .frame(maxWidth: 560)
+                        .padding(.horizontal, isPhone ? 8 : 0)
+                        toolbarView(for: vm.tabs[idx])
+                    }
                         .dynamicTypeSize(...DynamicTypeSize.large)
+                        .environment(\.colorScheme, isSidebarDark ? .dark : .light)
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal)
                         .padding(.bottom, 24)
@@ -4495,11 +4566,15 @@ struct ContentView: View {
                     searchText: $tabSearchText,
                     selectedScope: $selectedTabScope,
                     groups: vm.tabGroups,
-                    recentlyClosedCount: vm.recentlyClosedTabs.count,
                     onManageGroups: { showTabGroupManager = true },
-                    onShowRecentlyClosed: { showRecentlyClosedTabs = true }
+                    onShowHistory: { showHistory = true }
                 )
                 .dynamicTypeSize(...DynamicTypeSize.xLarge)
+                // Favorites sit above the tab list so they stay reachable however
+                // many tabs are open; hidden while searching tabs.
+                if !vm.favorites.isEmpty && tabSearchText.isEmpty {
+                    favoritesGrid
+                }
                 HStack {
                     sidebarSectionHeader("Tabs", systemImage: "rectangle.on.rectangle")
                     Spacer(minLength: 0)
@@ -4524,13 +4599,6 @@ struct ContentView: View {
                         .foregroundStyle(sidebarSecondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
-                }
-
-                if !vm.favorites.isEmpty {
-                    sidebarSectionHeader("Favorites", systemImage: "star.fill")
-                    ForEach(vm.favorites) { favorite in
-                        favoriteRow(favorite)
-                    }
                 }
             }
             .padding(.vertical, 4)
@@ -4879,14 +4947,41 @@ struct ContentView: View {
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func favoriteRow(_ favorite: Favorite) -> some View {
+    /// Two rows of favorites by default; the rest behind "Show All" so the grid
+    /// never pushes the tab list far down.
+    private var favoritesGrid: some View {
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
+        let collapsedLimit = 8
+        let visible = showAllFavorites ? vm.favorites : Array(vm.favorites.prefix(collapsedLimit))
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                sidebarSectionHeader("Favorites", systemImage: "star.fill")
+                Spacer(minLength: 0)
+                if vm.favorites.count > collapsedLimit {
+                    Button(showAllFavorites ? "Show Less" : "Show All") {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            showAllFavorites.toggle()
+                        }
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(sidebarSecondaryText)
+                    .buttonStyle(.plain)
+                    .frame(minHeight: 44)
+                    .padding(.top, 8)
+                }
+            }
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(visible) { favorite in
+                    favoriteTile(favorite)
+                }
+            }
+        }
+    }
+
+    private func favoriteTile(_ favorite: Favorite) -> some View {
         let canSplit = vm.selectedTabID != nil
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-        // Note: Favorites are never "selected" in the same persistent way as tabs in this model,
-        // but if we wanted to show selection we could check vm.selectedTabID match.
-        // For now, we use default styling.
-        let tint = sidebarRowBackground
-        let material: Material = .ultraThinMaterial
+        let name = favorite.title.isEmpty ? (favorite.url.host ?? favorite.url.absoluteString) : favorite.title
 
         return Menu {
             splitViewMenuItems(canSplit: canSplit) { mode in
@@ -4899,36 +4994,32 @@ struct ContentView: View {
                 Label("Remove Favorite", systemImage: "trash")
             }
         } label: {
-            HStack(spacing: 10) {
-                sidebarIconContainer {
+            VStack(spacing: 4) {
+                Group {
                     if let faviconData = favorite.favicon,
                        let favicon = UIImage(data: faviconData) {
                         Image(uiImage: favicon)
                             .resizable()
                             .scaledToFill()
-                            .frame(width: 18, height: 18)
-                            .clipped()
+                            .frame(width: 24, height: 24)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
                     } else {
-                        Image(systemName: "star.fill")
-                            .font(.system(size: sidebarIconFontSize, weight: .semibold))
-                            .foregroundStyle(BrowserDesign.Tint.favorite)
+                        Text(String(name.prefix(1)).uppercased())
+                            .font(.headline)
+                            .foregroundColor(sidebarPrimaryText)
+                            .frame(width: 24, height: 24)
                     }
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(favorite.title)
-                        .font(.system(size: sidebarTitleFontSize, weight: .semibold))
-                        .foregroundColor(sidebarPrimaryText)
-                        .lineLimit(1)
-                    Text(favorite.url.host ?? favorite.url.absoluteString)
-                        .font(.system(size: sidebarSubtitleFontSize))
-                        .foregroundColor(sidebarSecondaryText)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
+                Text(name)
+                    .font(.caption2.weight(.medium))
+                    .foregroundColor(sidebarSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+            .contentShape(shape)
         } primaryAction: {
             vm.openFavoriteInNewTab(favorite)
         }
@@ -4936,12 +5027,12 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .glassEffectCompat(
             in: shape,
-            material: material,
-            tint: tint,
+            material: .ultraThinMaterial,
+            tint: sidebarRowBackground,
             strokeOpacity: isSidebarDark ? 0.35 : 0.45
         )
-        .frame(maxWidth: .infinity, minHeight: 46, alignment: .leading)
-        .clipped()
+        .accessibilityLabel(name)
+        .accessibilityHint("Opens in a new tab. Touch and hold for more options.")
         .id("favorite-\(favorite.id)")
     }
 
@@ -4971,6 +5062,8 @@ struct ContentView: View {
         .popover(isPresented: settingsPopoverBinding) {
             settingsMenuView
                 .frame(width: 380, height: 640)
+                .presentationBackground(.regularMaterial)
+                .preferredColorScheme(systemColorScheme)
         }
     }
 
@@ -5011,7 +5104,8 @@ struct ContentView: View {
             settingsMenuView
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
-                .preferredColorScheme(isSidebarDark ? .dark : .light)
+                .presentationBackground(.regularMaterial)
+                .preferredColorScheme(systemColorScheme)
         }
         .onChange(of: showAIPanel) { _, isShowing in
             if isShowing {
@@ -5173,6 +5267,7 @@ struct ContentView: View {
                                 }
                             },
                             onScrollEnd: {
+                                refreshToolbarBackdrop()
                                 withAnimation(.easeOut(duration: 0.2)) {
                                     isScrolling = false
                                 }
@@ -5193,6 +5288,11 @@ struct ContentView: View {
                             },
                             onNavigate: { tab, url in
                                 handlePrimaryNavigation(tab, url: url)
+                                // Late layout (fonts, images) can move text under the toolbar.
+                                refreshToolbarBackdrop()
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                                    refreshToolbarBackdrop()
+                                }
                             }
                         )
                         .id(tab.id)
@@ -5448,7 +5548,8 @@ struct ContentView: View {
                         .accessibilityLabel(tab.isReaderMode ? "Exit reader mode" : "Enter reader mode")
                         .disabled(tab.currentURL == nil)
                     ),
-                    onClear: preserveIOS26PhoneOmniboxFocusAfterClear
+                    onClear: preserveIOS26PhoneOmniboxFocusAfterClear,
+                    frosted: toolbarOverText
                 )
                 .focused($omniboxFocused)
                 .frame(minWidth: 0, maxWidth: .infinity)
@@ -5489,7 +5590,8 @@ struct ContentView: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(tab.isReaderMode ? "Exit reader mode" : "Enter reader mode")
                     .disabled(tab.currentURL == nil)
-                )
+                ),
+                frosted: toolbarOverText
             )
             .focused($omniboxFocused)
 
@@ -5523,10 +5625,6 @@ struct ContentView: View {
             isLoadingMLXModel: $isLoadingMLXModel,
             mlxDownloadProgress: $mlxDownloadProgress,
             mlxLoadError: $mlxLoadError,
-            onOpenFilterLists: {
-                showSettingsMenu = false
-                showFilterListSettings = true
-            },
             onSignIn: { provider in
                 requestWebAILogin(for: provider)
             },
@@ -5595,21 +5693,17 @@ struct ContentView: View {
                         showFilterListSettings = false
                     }
 
+                // Regular material keeps the glass look but tints enough for text to
+                // stay readable over light pages when the panel uses the dark scheme.
                 NavigationStack {
                     FilterListSettingsView()
                 }
-                .preferredColorScheme(isSidebarDark ? .dark : .light)
-                .background(Color.clear)
+                .preferredColorScheme(systemColorScheme)
+                .background(.regularMaterial)
                 .frame(width: width, height: height)
-                .glassEffectCompat(
-                    in: shape,
-                    material: .ultraThinMaterial,
-                    strokeOpacity: 0.18,
-                    isInteractive: false
-                )
                 .clipShape(shape)
                 .overlay(
-                    shape.strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                    shape.strokeBorder(BrowserDesign.chromeBorder(isDark: isSidebarDark), lineWidth: 1)
                 )
                 .shadow(color: .black.opacity(0.18), radius: 18, y: 8)
                 .overlay(alignment: .topTrailing) {
@@ -6861,6 +6955,9 @@ struct ContentView: View {
                     if let u = webView.url {
                         self.tab.url = u
                         self.tab.address = u.absoluteString
+                        if !self.tab.isIncognito, self.tab.webAIProvider == nil {
+                            HistoryStore.shared.record(url: u, title: webView.title)
+                        }
                         WebViewHost.applySiteSpecificTopInset(to: webView, url: u)
 
                         SitePrivacyStore.shared.applyPolicies(to: webView, url: u, reloadIfChanged: true)
