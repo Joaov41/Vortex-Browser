@@ -619,6 +619,8 @@ enum AIModelBackend: String, CaseIterable {
     case mlxLocal
     case webChatGPT
     case webGemini
+    /// The user's own ChatGPT plan via Sign in with ChatGPT. Local builds only.
+    case chatGPTPlan
 
     var displayName: String {
         switch self {
@@ -632,7 +634,14 @@ enum AIModelBackend: String, CaseIterable {
             return "ChatGPT"
         case .webGemini:
             return "Gemini"
+        case .chatGPTPlan:
+            return "ChatGPT Plan"
         }
+    }
+
+    /// ChatGPT Plan is offered only in builds installed from Xcode.
+    var isSelectable: Bool {
+        self != .chatGPTPlan || ChatGPTPlanAvailability.isEnabled
     }
 
     var throughputLabel: String {
@@ -664,7 +673,8 @@ enum AIBackendPersistence {
         if rawValue == legacyPCCGatewayRawValue {
             return .cloudShortcuts
         }
-        return AIModelBackend(rawValue: rawValue)
+        guard let backend = AIModelBackend(rawValue: rawValue), backend.isSelectable else { return nil }
+        return backend
     }
 }
 
@@ -918,6 +928,7 @@ class SimpleAIService: ObservableObject {
     private var appleWarmupTask: Task<Void, Never>? = nil
     private var warmedUpAppleLocal = false
     private let requestTimeoutNanoseconds: UInt64 = 90_000_000_000
+    private let chatGPTPlanRequestTimeoutNanoseconds: UInt64 = 300_000_000_000
     // A full Reddit map/reduce pass can legitimately require many small local
     // generations. Keep the app cancellable while allowing that pass to finish
     // instead of firing the ordinary single-request watchdog after 90 seconds.
@@ -930,6 +941,9 @@ class SimpleAIService: ObservableObject {
     private let appleLocalPromptCharacterLimit = 12_000
     private let mlxInputCharacterLimit = 12_000
     private let mlxQueryContextCharacterLimit = 6_000
+    /// ChatGPT models take far more context than Cloud's 6K page excerpt; match
+    /// the Cloud Reddit budget instead.
+    private let chatGPTPlanQueryContextCharacterLimit = 60_000
     private let mlxPromptCharacterLimit = 12_000
     private let appleLocalMaxOutputTokens = 320
     private let appleLocalConciseMaxOutputTokens = 224
@@ -1201,6 +1215,9 @@ class SimpleAIService: ObservableObject {
             let timeoutNanoseconds: UInt64
             if isRedditRequest {
                 timeoutNanoseconds = self.redditProcessingTimeoutNanoseconds
+            } else if selectedBackend == .chatGPTPlan {
+                // Higher reasoning efforts can think for minutes before answering.
+                timeoutNanoseconds = max(self.requestTimeoutNanoseconds, self.chatGPTPlanRequestTimeoutNanoseconds)
             } else {
                 timeoutNanoseconds = self.requestTimeoutNanoseconds
             }
@@ -1644,6 +1661,20 @@ class SimpleAIService: ObservableObject {
                     self.completeRequest(with: metrics.text, requestID: requestID)
                 }
 
+            case .chatGPTPlan:
+                // Same prompt as Cloud, with ChatGPT's larger context window.
+                let condensed = Self.condense(sourceContext, maxChars: chatGPTPlanQueryContextCharacterLimit)
+                let composed = buildQueryTaskBody(
+                    question: query,
+                    pageContext: condensed,
+                    concise: shouldUseConciseAnswer(for: query),
+                    conversationContext: conversationContext
+                )
+                let responseText = try await runChatGPTPlanStreaming(prompt: composed, requestID: requestID)
+                await MainActor.run {
+                    self.completeRequest(with: responseText, requestID: requestID)
+                }
+
             case .webChatGPT, .webGemini:
                 await MainActor.run {
                     self.completeRequest(with: "Use the \(backend.displayName) pane to send prompts.", requestID: requestID)
@@ -2085,6 +2116,10 @@ class SimpleAIService: ObservableObject {
             }
             return try await runCloudShortcutResponse(prompt: prompt)
 
+        case .chatGPTPlan:
+            // Like Cloud, Reddit passes return whole text; the reducer assembles the answer.
+            return try await ChatGPTPlanService.shared.generate(prompt: prompt, onPartial: nil)
+
         case .webChatGPT, .webGemini:
             throw NSError(
                 domain: "SimpleAIService.Reddit",
@@ -2092,6 +2127,54 @@ class SimpleAIService: ObservableObject {
                 userInfo: [NSLocalizedDescriptionKey: "Web Reddit summaries are handled by the provider session."]
             )
         }
+    }
+
+    /// Streams a ChatGPT plan answer into the panel, batched like MLX output.
+    private func runChatGPTPlanStreaming(prompt: String, requestID: UUID) async throws -> String {
+        let counter = AIThroughputCounter()
+        let streamAccumulator = StreamChunkAccumulator(
+            minimumCharacters: 320,
+            minimumInterval: 0.12
+        ) { [weak self] flushed in
+            guard let self else { return }
+            await self.handleStreamChunk(
+                flushed,
+                requestID: requestID,
+                backend: .chatGPTPlan,
+                counter: counter
+            )
+        }
+        await MainActor.run {
+            self.beginThroughputSession(sessionID: requestID, backend: .chatGPTPlan)
+        }
+
+        // Deltas arrive on the main actor; the stream keeps them in order for the accumulator.
+        let (deltas, continuation) = AsyncStream<String>.makeStream()
+        let consumer = Task {
+            for await delta in deltas {
+                await streamAccumulator.append(delta)
+            }
+            await streamAccumulator.finish()
+        }
+        let responseText: String
+        do {
+            responseText = try await ChatGPTPlanService.shared.generate(prompt: prompt) { delta in
+                continuation.yield(delta)
+            }
+        } catch {
+            continuation.finish()
+            await consumer.value
+            throw error
+        }
+        continuation.finish()
+        await consumer.value
+        await finishThroughputSessionIfNeeded(
+            requestID: requestID,
+            backend: .chatGPTPlan,
+            counter: counter,
+            fallbackText: responseText
+        )
+        return responseText
     }
 
     private func runCloudShortcutResponse(prompt: String) async throws -> String {
@@ -2442,6 +2525,19 @@ class SimpleAIService: ObservableObject {
                 await MLXLocalService.shared.clearTransientCache()
                 await MainActor.run {
                     self.completeRequest(with: metrics.text, requestID: requestID)
+                }
+
+            case .chatGPTPlan:
+                // Same prompts as Cloud; ChatGPT streams its answer into the panel.
+                let prompt: String
+                if length == .short {
+                    prompt = "Provide a brief 2-paragraph summary of the following text. First paragraph: main topic. Second paragraph: key points. Be concise:\n\n" + content
+                } else {
+                    prompt = "Summarize the following text clearly, highlighting key themes and points. Provide a detailed analysis:\n\n" + content
+                }
+                let responseText = try await runChatGPTPlanStreaming(prompt: prompt, requestID: requestID)
+                await MainActor.run {
+                    self.completeRequest(with: responseText, requestID: requestID)
                 }
 
             case .webChatGPT, .webGemini:

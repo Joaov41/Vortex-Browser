@@ -53,7 +53,7 @@ struct AISidebar: View {
     }
 
     private var userSelectableBackends: [AIModelBackend] {
-        AIModelBackend.allCases
+        AIModelBackend.allCases.filter(\.isSelectable)
     }
 
     private func modelMenuTitle(for backend: AIModelBackend) -> String {
@@ -66,6 +66,8 @@ struct AISidebar: View {
             return "ChatGPT (free account)"
         case .webGemini:
             return "Gemini (free account)"
+        case .chatGPTPlan:
+            return "ChatGPT Plan"
         default:
             return backend.displayName
         }

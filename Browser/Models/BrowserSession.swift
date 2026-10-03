@@ -376,17 +376,64 @@ final class BrowserTab: ObservableObject, Identifiable {
 
 struct Favorite: Identifiable, Codable {
     let id: UUID
-    let title: String
+    var title: String
     let url: URL
     let dateAdded: Date
     var favicon: Data?
+    /// Folder holding this favorite; nil keeps it at the top level.
+    var folderID: UUID?
 
-    init(id: UUID = UUID(), title: String, url: URL, dateAdded: Date, favicon: Data? = nil) {
+    init(id: UUID = UUID(), title: String, url: URL, dateAdded: Date, favicon: Data? = nil, folderID: UUID? = nil) {
         self.id = id
         self.title = title
         self.url = url
         self.dateAdded = dateAdded
         self.favicon = favicon
+        self.folderID = folderID
+    }
+}
+
+struct FavoriteFolder: Identifiable, Codable, Equatable {
+    let id: UUID
+    var title: String
+    /// Parent folder; nil for a top-level folder.
+    var parentID: UUID?
+    let dateAdded: Date
+
+    init(id: UUID = UUID(), title: String, parentID: UUID? = nil, dateAdded: Date = Date()) {
+        self.id = id
+        self.title = title
+        self.parentID = parentID
+        self.dateAdded = dateAdded
+    }
+}
+
+struct FavoriteFolderPath: Identifiable {
+    let id: UUID
+    let path: String
+}
+
+struct BookmarkImportSummary: Equatable {
+    let added: Int
+    let skippedDuplicates: Int
+    let folders: Int
+    let folderTitle: String?
+
+    var message: String {
+        if added == 0 {
+            return skippedDuplicates == 1
+                ? "The one link in this file is already in Favorites."
+                : "All \(skippedDuplicates) links in this file are already in Favorites."
+        }
+        var parts = ["Added \(added) \(added == 1 ? "bookmark" : "bookmarks")"]
+        if folders > 0 { parts.append("in \(folders) \(folders == 1 ? "folder" : "folders")") }
+        var message = parts.joined(separator: " ")
+        if let folderTitle { message += " to Favorites › \(folderTitle)" }
+        message += "."
+        if skippedDuplicates > 0 {
+            message += " Skipped \(skippedDuplicates) already in Favorites."
+        }
+        return message
     }
 }
 
@@ -528,6 +575,7 @@ final class BrowserViewModel: ObservableObject {
     @Published var showSafari = false
     @Published var safariURL: URL?
     @Published var favorites: [Favorite] = []
+    @Published var favoriteFolders: [FavoriteFolder] = []
     @Published var tabGroups: [BrowserTabGroup] = []
     @Published var recentlyClosedTabs: [RecentlyClosedTab] = []
     @Published var defaultSearchEngine: BrowserSearchEngine {
@@ -551,6 +599,7 @@ final class BrowserViewModel: ObservableObject {
 
     private var useDesktopUserAgent = false
     private let favoritesKey = "browser_favorites"
+    private let favoriteFoldersKey = "browser_favorite_folders_v1"
     private let groupsKey = "browser_tab_groups_v1"
     private let recentlyClosedKey = "browser_recently_closed_v1"
     private let sessionKey = "browser_session_v1"
@@ -963,6 +1012,172 @@ final class BrowserViewModel: ObservableObject {
         return favorites.contains { $0.url == url }
     }
 
+    // MARK: Favorite folders
+
+    func favorites(inFolder folderID: UUID?) -> [Favorite] {
+        favorites.filter { $0.folderID == folderID }
+    }
+
+    func favoriteFolders(inFolder parentID: UUID?) -> [FavoriteFolder] {
+        favoriteFolders
+            .filter { $0.parentID == parentID }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
+    func favoriteFolder(id: UUID?) -> FavoriteFolder? {
+        guard let id else { return nil }
+        return favoriteFolders.first { $0.id == id }
+    }
+
+    /// The folder and all folders inside it.
+    func favoriteFolderTree(_ id: UUID) -> Set<UUID> {
+        var tree: Set<UUID> = [id]
+        var pending = [id]
+        while let next = pending.popLast() {
+            for child in favoriteFolders where child.parentID == next && !tree.contains(child.id) {
+                tree.insert(child.id)
+                pending.append(child.id)
+            }
+        }
+        return tree
+    }
+
+    func favoriteCount(inFolderTree id: UUID) -> Int {
+        let tree = favoriteFolderTree(id)
+        return favorites.reduce(0) { count, favorite in
+            count + (favorite.folderID.map(tree.contains) == true ? 1 : 0)
+        }
+    }
+
+    /// "Imported Bookmarks › Tech" style path, used to label move destinations.
+    func favoriteFolderPath(_ id: UUID) -> String {
+        var names: [String] = []
+        var current = favoriteFolder(id: id)
+        var visited = Set<UUID>()
+        while let folder = current, visited.insert(folder.id).inserted {
+            names.insert(folder.title, at: 0)
+            current = favoriteFolder(id: folder.parentID)
+        }
+        return names.joined(separator: " › ")
+    }
+
+    /// Every folder with its path, sorted by path, for "Move to" menus.
+    var favoriteFolderPaths: [FavoriteFolderPath] {
+        favoriteFolders
+            .map { FavoriteFolderPath(id: $0.id, path: favoriteFolderPath($0.id)) }
+            .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+    }
+
+    @discardableResult
+    func createFavoriteFolder(named title: String, in parentID: UUID?) -> FavoriteFolder {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let folder = FavoriteFolder(title: trimmed.isEmpty ? "New Folder" : trimmed, parentID: parentID)
+        favoriteFolders.append(folder)
+        saveFavorites()
+        return folder
+    }
+
+    func renameFavoriteFolder(_ id: UUID, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = favoriteFolders.firstIndex(where: { $0.id == id }) else { return }
+        favoriteFolders[index].title = trimmed
+        saveFavorites()
+    }
+
+    /// Deletes the folder, its subfolders, and the favorites inside them.
+    func deleteFavoriteFolder(_ id: UUID) {
+        let tree = favoriteFolderTree(id)
+        favoriteFolders.removeAll { tree.contains($0.id) }
+        favorites.removeAll { $0.folderID.map(tree.contains) == true }
+        saveFavorites()
+    }
+
+    func renameFavorite(_ favorite: Favorite, to title: String) {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let index = favorites.firstIndex(where: { $0.id == favorite.id }) else { return }
+        favorites[index].title = trimmed
+        saveFavorites()
+    }
+
+    func moveFavorite(_ favorite: Favorite, toFolder folderID: UUID?) {
+        guard let index = favorites.firstIndex(where: { $0.id == favorite.id }) else { return }
+        favorites[index].folderID = folderID
+        saveFavorites()
+    }
+
+    /// Moves a folder under another one; refuses moves into its own subtree.
+    func moveFavoriteFolder(_ id: UUID, toFolder parentID: UUID?) {
+        if let parentID, favoriteFolderTree(id).contains(parentID) { return }
+        guard let index = favoriteFolders.firstIndex(where: { $0.id == id }) else { return }
+        favoriteFolders[index].parentID = parentID
+        saveFavorites()
+    }
+
+    // MARK: Bookmark import
+
+    /// Reads an exported bookmarks file (Safari, Chrome, Edge, Firefox, Brave).
+    func importBookmarks(fromFileAt url: URL) throws -> BookmarkImportSummary {
+        let isScoped = url.startAccessingSecurityScopedResource()
+        defer { if isScoped { url.stopAccessingSecurityScopedResource() } }
+        let data = try Data(contentsOf: url)
+        return importBookmarks(try BookmarkFileParser.parse(data: data))
+    }
+
+    /// Adds the export under one new top-level folder, keeping its subfolders,
+    /// so deleting that folder undoes the import. Links already in Favorites
+    /// (anywhere) are skipped.
+    func importBookmarks(_ root: BookmarkImportFolder) -> BookmarkImportSummary {
+        var knownURLs = Set(favorites.map(\.url))
+        var added = 0
+        var skipped = 0
+        var createdFolders = 0
+        var newFolders: [FavoriteFolder] = []
+        var newFavorites: [Favorite] = []
+
+        let existingTitles = Set(favoriteFolders(inFolder: nil).map(\.title))
+        var rootTitle = "Imported Bookmarks"
+        var suffix = 2
+        while existingTitles.contains(rootTitle) {
+            rootTitle = "Imported Bookmarks \(suffix)"
+            suffix += 1
+        }
+
+        /// Returns how many links were added inside `folder`; empty folders are not kept.
+        func add(_ folder: BookmarkImportFolder, title: String, parentID: UUID?) -> Int {
+            let created = FavoriteFolder(title: title, parentID: parentID)
+            let folderStart = newFolders.count
+            newFolders.append(created)
+            let favoriteStart = newFavorites.count
+            var count = 0
+            for link in folder.links {
+                guard knownURLs.insert(link.url).inserted else {
+                    skipped += 1
+                    continue
+                }
+                newFavorites.append(Favorite(title: link.title, url: link.url, dateAdded: Date(), favicon: link.icon, folderID: created.id))
+                count += 1
+            }
+            for child in folder.folders {
+                count += add(child, title: child.title, parentID: created.id)
+            }
+            if count == 0 {
+                newFolders.removeSubrange(folderStart...)
+                newFavorites.removeSubrange(favoriteStart...)
+            }
+            return count
+        }
+
+        added = add(root, title: rootTitle, parentID: nil)
+        createdFolders = max(0, newFolders.count - 1)
+        guard added > 0 else {
+            return BookmarkImportSummary(added: 0, skippedDuplicates: skipped, folders: 0, folderTitle: nil)
+        }
+        favoriteFolders.append(contentsOf: newFolders)
+        favorites.append(contentsOf: newFavorites)
+        saveFavorites()
+        return BookmarkImportSummary(added: added, skippedDuplicates: skipped, folders: createdFolders, folderTitle: rootTitle)
+    }
+
     func saveSession() {
         tabs.forEach(persistThumbnail)
         let persistentTabs = tabs.compactMap { tab -> BrowserSessionSnapshot.Tab? in
@@ -1027,12 +1242,27 @@ final class BrowserViewModel: ObservableObject {
         if let data = try? JSONEncoder().encode(favorites) {
             defaults.set(data, forKey: favoritesKey)
         }
+        if let data = try? JSONEncoder().encode(favoriteFolders) {
+            defaults.set(data, forKey: favoriteFoldersKey)
+        }
     }
 
     private func loadFavorites() {
+        if let data = defaults.data(forKey: favoriteFoldersKey),
+           let decoded = try? JSONDecoder().decode([FavoriteFolder].self, from: data) {
+            favoriteFolders = decoded
+        }
         guard let data = defaults.data(forKey: favoritesKey),
               let decoded = try? JSONDecoder().decode([Favorite].self, from: data) else { return }
-        favorites = decoded
+        let folderIDs = Set(favoriteFolders.map(\.id))
+        // A favorite whose folder is gone shows at the top level instead of vanishing.
+        favorites = decoded.map { favorite in
+            var favorite = favorite
+            if let folderID = favorite.folderID, !folderIDs.contains(folderID) {
+                favorite.folderID = nil
+            }
+            return favorite
+        }
     }
 
     private func saveGroups() {

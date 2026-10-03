@@ -21,6 +21,8 @@ struct BrowserSettingsView: View {
     @ObservedObject private var darkModeService = DarkModeService.shared
     @ObservedObject private var fontSizeService = FontSizeService.shared
     @AppStorage("requestDesktopSite") private var requestDesktopSite = false
+    @State private var showBookmarkImporter = false
+    @State private var bookmarkImportMessage: String?
 
     var body: some View {
         NavigationStack {
@@ -74,6 +76,34 @@ struct BrowserSettingsView: View {
             }
             Toggle(isOn: $requestDesktopSite) {
                 Label("Request Desktop Site", systemImage: "desktopcomputer")
+            }
+            Button {
+                showBookmarkImporter = true
+            } label: {
+                Label("Import Bookmarks…", systemImage: "square.and.arrow.down")
+            }
+            .fileImporter(isPresented: $showBookmarkImporter, allowedContentTypes: [.html, .zip]) { result in
+                switch result {
+                case .success(let url):
+                    do {
+                        bookmarkImportMessage = try vm.importBookmarks(fromFileAt: url).message
+                    } catch {
+                        bookmarkImportMessage = error.localizedDescription
+                    }
+                case .failure(let error):
+                    bookmarkImportMessage = error.localizedDescription
+                }
+            }
+            .alert(
+                "Import Bookmarks",
+                isPresented: Binding(
+                    get: { bookmarkImportMessage != nil },
+                    set: { if !$0 { bookmarkImportMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(bookmarkImportMessage ?? "")
             }
         } header: {
             Text("General")
@@ -189,6 +219,13 @@ struct BrowserSettingsView: View {
 
     private var advancedSection: some View {
         Section("Advanced") {
+            if ChatGPTPlanAvailability.isEnabled {
+                NavigationLink {
+                    ChatGPTPlanSettingsView()
+                } label: {
+                    Label("ChatGPT Plan", systemImage: "person.badge.key")
+                }
+            }
             NavigationLink {
                 MLXAdvancedSettingsView(
                     isLoadingModel: $isLoadingMLXModel,

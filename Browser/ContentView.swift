@@ -1422,6 +1422,10 @@ struct ContentView: View {
     @ScaledMetric(relativeTo: .body) private var scaledSidebarIconFontSize: CGFloat = 15
     @State private var tabSearchText = ""
     @State private var showAllFavorites = false
+    @State private var favoritesSheet: FavoritesSheetRequest?
+    @State private var bookmarkImportMessage: String?
+    @State private var favoritePendingRename: Favorite?
+    @State private var favoriteRenameText = ""
     @State private var selectedTabScope: BrowserTabScope = .all
     @State private var showHistory = false
     @State private var showTabGroupManager = false
@@ -2451,6 +2455,43 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showTabGroupManager) {
                 TabGroupManagerSheet(viewModel: vm)
+            }
+            .sheet(item: $favoritesSheet) { request in
+                FavoritesView(viewModel: vm, startFolderID: request.folderID) { favorite in
+                    vm.openFavoriteInNewTab(favorite)
+                }
+            }
+            .alert(
+                "Import Bookmarks",
+                isPresented: Binding(
+                    get: { bookmarkImportMessage != nil },
+                    set: { if !$0 { bookmarkImportMessage = nil } }
+                )
+            ) {
+                Button("OK", role: .cancel) {}
+                if !vm.favoriteFolders.isEmpty {
+                    Button("Show Favorites") {
+                        favoritesSheet = FavoritesSheetRequest(folderID: nil)
+                    }
+                }
+            } message: {
+                Text(bookmarkImportMessage ?? "")
+            }
+            .alert(
+                "Rename Favorite",
+                isPresented: Binding(
+                    get: { favoritePendingRename != nil },
+                    set: { if !$0 { favoritePendingRename = nil } }
+                )
+            ) {
+                TextField("Name", text: $favoriteRenameText)
+                Button("Cancel", role: .cancel) {}
+                Button("Save") {
+                    if let favoritePendingRename {
+                        vm.renameFavorite(favoritePendingRename, to: favoriteRenameText)
+                    }
+                    favoritePendingRename = nil
+                }
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active {
@@ -3497,6 +3538,15 @@ struct ContentView: View {
     }
 
     private func handleIncomingURL(_ url: URL) {
+        if url.isFileURL {
+            importBookmarksFile(at: url)
+            return
+        }
+        // Web links arrive here once Vortex is the default browser.
+        if let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            openSharedContent(url.absoluteString)
+            return
+        }
         if aiService.handleCloudShortcutCallback(url) {
             return
         }
@@ -3510,6 +3560,19 @@ struct ContentView: View {
             openSharedContent(text)
         } else {
             checkForSharedURL()
+        }
+    }
+
+    /// An exported bookmarks file opened with "Open in Vortex" from Files, AirDrop or Mail.
+    private func importBookmarksFile(at url: URL) {
+        do {
+            bookmarkImportMessage = try vm.importBookmarks(fromFileAt: url).message
+        } catch {
+            bookmarkImportMessage = error.localizedDescription
+        }
+        // Files opened from other apps arrive as a copy in Documents/Inbox; drop it.
+        if url.pathComponents.contains("Inbox") {
+            try? FileManager.default.removeItem(at: url)
         }
     }
 
@@ -4572,7 +4635,7 @@ struct ContentView: View {
                 .dynamicTypeSize(...DynamicTypeSize.xLarge)
                 // Favorites sit above the tab list so they stay reachable however
                 // many tabs are open; hidden while searching tabs.
-                if !vm.favorites.isEmpty && tabSearchText.isEmpty {
+                if (!vm.favorites.isEmpty || !vm.favoriteFolders.isEmpty) && tabSearchText.isEmpty {
                     favoritesGrid
                 }
                 HStack {
@@ -4949,15 +5012,38 @@ struct ContentView: View {
 
     /// Two rows of favorites by default; the rest behind "Show All" so the grid
     /// never pushes the tab list far down.
+    private enum FavoriteGridItem: Identifiable {
+        case folder(FavoriteFolder)
+        case favorite(Favorite)
+
+        var id: UUID {
+            switch self {
+            case .folder(let folder): return folder.id
+            case .favorite(let favorite): return favorite.id
+            }
+        }
+    }
+
     private var favoritesGrid: some View {
         let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
         let collapsedLimit = 8
-        let visible = showAllFavorites ? vm.favorites : Array(vm.favorites.prefix(collapsedLimit))
+        // Top-level folders first, then top-level favorites; folder contents open in Favorites.
+        let items = vm.favoriteFolders(inFolder: nil).map(FavoriteGridItem.folder)
+            + vm.favorites(inFolder: nil).map(FavoriteGridItem.favorite)
+        let visible = showAllFavorites ? items : Array(items.prefix(collapsedLimit))
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
                 sidebarSectionHeader("Favorites", systemImage: "star.fill")
                 Spacer(minLength: 0)
-                if vm.favorites.count > collapsedLimit {
+                Button("Manage") {
+                    favoritesSheet = FavoritesSheetRequest(folderID: nil)
+                }
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(sidebarSecondaryText)
+                .buttonStyle(.plain)
+                .frame(minHeight: 44)
+                .padding(.top, 8)
+                if items.count > collapsedLimit {
                     Button(showAllFavorites ? "Show Less" : "Show All") {
                         withAnimation(.easeOut(duration: 0.2)) {
                             showAllFavorites.toggle()
@@ -4971,11 +5057,64 @@ struct ContentView: View {
                 }
             }
             LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(visible) { favorite in
-                    favoriteTile(favorite)
+                ForEach(visible) { item in
+                    switch item {
+                    case .folder(let folder):
+                        favoriteFolderTile(folder)
+                    case .favorite(let favorite):
+                        favoriteTile(favorite)
+                    }
                 }
             }
         }
+    }
+
+    private func favoriteFolderTile(_ folder: FavoriteFolder) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        let count = vm.favoriteCount(inFolderTree: folder.id)
+
+        return Menu {
+            Button {
+                favoritesSheet = FavoritesSheetRequest(folderID: folder.id)
+            } label: {
+                Label("Open Folder", systemImage: "folder")
+            }
+            Divider()
+            Button(role: .destructive) {
+                vm.deleteFavoriteFolder(folder.id)
+            } label: {
+                Label(count == 0 ? "Delete Folder" : "Delete Folder and \(count) \(count == 1 ? "Favorite" : "Favorites")", systemImage: "trash")
+            }
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(BrowserDesign.Tint.favorite)
+                    .frame(width: 24, height: 24)
+                Text(folder.title)
+                    .font(.caption2.weight(.medium))
+                    .foregroundColor(sidebarSecondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            .frame(maxWidth: .infinity, minHeight: 56)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 6)
+            .contentShape(shape)
+        } primaryAction: {
+            favoritesSheet = FavoritesSheetRequest(folderID: folder.id)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .glassEffectCompat(
+            in: shape,
+            material: .ultraThinMaterial,
+            tint: sidebarRowBackground,
+            strokeOpacity: isSidebarDark ? 0.35 : 0.45
+        )
+        .accessibilityLabel("\(folder.title), folder, \(count) \(count == 1 ? "favorite" : "favorites")")
+        .accessibilityHint("Opens the folder. Touch and hold for more options.")
+        .id("favorite-folder-\(folder.id)")
     }
 
     private func favoriteTile(_ favorite: Favorite) -> some View {
@@ -4988,6 +5127,23 @@ struct ContentView: View {
                 openSplitView(with: favorite, mode: mode)
             }
             Divider()
+            Button {
+                favoriteRenameText = favorite.title
+                favoritePendingRename = favorite
+            } label: {
+                Label("Rename", systemImage: "pencil")
+            }
+            if !vm.favoriteFolders.isEmpty {
+                Menu {
+                    ForEach(vm.favoriteFolderPaths) { item in
+                        Button(item.path) {
+                            vm.moveFavorite(favorite, toFolder: item.id)
+                        }
+                    }
+                } label: {
+                    Label("Move to Folder", systemImage: "folder")
+                }
+            }
             Button(role: .destructive) {
                 vm.removeFromFavorites(favorite)
             } label: {
