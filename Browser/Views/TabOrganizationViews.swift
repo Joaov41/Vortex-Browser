@@ -1,95 +1,62 @@
 import SwiftUI
 
-struct BrowserTabOrganizerHeader: View {
+/// Search field at the top of the tab sidebar. ⌘K focuses it on iPad.
+struct BrowserTabSearchField: View {
     @Binding var searchText: String
-    @Binding var selectedScope: BrowserTabScope
-    let groups: [BrowserTabGroup]
-    let onManageGroups: () -> Void
-    let onShowHistory: () -> Void
+    var isFocused: FocusState<Bool>.Binding
+    var showsShortcutHint = true
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("Search tabs", text: $searchText)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .accessibilityLabel("Search open tabs")
-                if !searchText.isEmpty {
-                    Button {
-                        searchText = ""
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                    }
-                    .buttonStyle(.plain)
-                    .frame(width: 44, height: 44)
-                    .accessibilityLabel("Clear tab search")
-                }
-            }
-            .padding(.leading, 12)
-            .padding(.trailing, searchText.isEmpty ? 12 : 0)
-            .frame(minHeight: 44)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-
-            HStack(spacing: 8) {
-                Menu {
-                    Button {
-                        selectedScope = .all
-                    } label: {
-                        Label("All Tabs", systemImage: selectedScope == .all ? "checkmark" : "rectangle.stack")
-                    }
-                    Button {
-                        selectedScope = .ungrouped
-                    } label: {
-                        Label("Ungrouped", systemImage: selectedScope == .ungrouped ? "checkmark" : "tray")
-                    }
-                    if !groups.isEmpty { Divider() }
-                    ForEach(groups) { group in
-                        Button {
-                            selectedScope = .group(group.id)
-                        } label: {
-                            Label(
-                                group.title,
-                                systemImage: selectedScope == .group(group.id) ? "checkmark" : "folder"
-                            )
-                        }
-                    }
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.secondary)
+            TextField("Search tabs…", text: $searchText)
+                .focused(isFocused)
+                .textInputAutocapitalization(.never)
+                .disableAutocorrection(true)
+                .submitLabel(.search)
+                .accessibilityLabel("Search open tabs")
+            if !searchText.isEmpty {
+                Button {
+                    searchText = ""
                 } label: {
-                    Label(scopeTitle, systemImage: "folder")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .padding(.horizontal, 12)
-                        .contentShape(Rectangle())
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityLabel("Tab group: \(scopeTitle)")
-
-                Button(action: onManageGroups) {
-                    Image(systemName: "folder.badge.gearshape")
-                        .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityLabel("Manage tab groups")
-
-                Button(action: onShowHistory) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .frame(width: 44, height: 44)
-                }
-                .buttonStyle(.plain)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .accessibilityLabel("History")
+                .frame(width: 32, height: 44)
+                .accessibilityLabel("Clear tab search")
+            } else if showsShortcutHint {
+                Text("⌘ K")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(Color.primary.opacity(0.08))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(Color.primary.opacity(0.14), lineWidth: 0.5)
+                    )
+                    .accessibilityHidden(true)
             }
         }
-    }
-
-    private var scopeTitle: String {
-        switch selectedScope {
-        case .all: return "All Tabs"
-        case .ungrouped: return "Ungrouped"
-        case .group(let id): return groups.first(where: { $0.id == id })?.title ?? "All Tabs"
+        .padding(.horizontal, 14)
+        .frame(minHeight: 48)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(Color.primary.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .onTapGesture {
+            isFocused.wrappedValue = true
         }
     }
 }

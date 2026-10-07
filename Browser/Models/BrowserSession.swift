@@ -27,6 +27,9 @@ final class BrowserTab: ObservableObject, Identifiable {
     @Published var thumbnail: UIImage?
     @Published var isIncognito: Bool
     @Published var isReaderMode = false
+    /// Name of the language the page was translated from; nil while showing the original.
+    @Published var translatedFrom: String?
+    @Published var isTranslating = false
     @Published var isDarkMode = false
     @Published var hasDarkModeOverride = false
     @Published var canGoBack = false
@@ -329,6 +332,8 @@ final class BrowserTab: ObservableObject, Identifiable {
         configuration.preferences.isElementFullscreenEnabled = true
         configuration.allowsInlineMediaPlayback = true
         configuration.allowsPictureInPictureMediaPlayback = true
+        // Like Safari, let people pinch-zoom pages that set user-scalable=no.
+        configuration.ignoresViewportScaleLimits = true
         configuration.defaultWebpagePreferences.preferredContentMode = useDesktopUserAgent ? .desktop : .mobile
         if isIncognito {
             configuration.websiteDataStore = .nonPersistent()
@@ -515,6 +520,27 @@ enum NewTabPage: String, CaseIterable, Identifiable {
     }
 }
 
+/// Two tabs kept together in split view. The pair stays in the tab list when another tab is
+/// selected, and selecting either tab shows both again.
+struct BrowserSplitPair: Codable, Equatable, Identifiable {
+    let primaryID: UUID
+    let secondaryID: UUID
+    /// Stacked top and bottom instead of side by side.
+    var isHorizontal: Bool
+
+    var id: UUID { primaryID }
+
+    func contains(_ tabID: UUID) -> Bool {
+        primaryID == tabID || secondaryID == tabID
+    }
+
+    func partner(of tabID: UUID) -> UUID? {
+        if primaryID == tabID { return secondaryID }
+        if secondaryID == tabID { return primaryID }
+        return nil
+    }
+}
+
 private struct BrowserSessionSnapshot: Codable {
     struct Tab: Codable {
         let id: UUID
@@ -525,6 +551,8 @@ private struct BrowserSessionSnapshot: Codable {
 
     let tabs: [Tab]
     let selectedTabID: UUID?
+    /// Missing in sessions saved before split pairs existed.
+    let splitPairs: [BrowserSplitPair]?
 }
 
 private struct BrowserTabThumbnailStore {
@@ -578,6 +606,7 @@ final class BrowserViewModel: ObservableObject {
     @Published var favoriteFolders: [FavoriteFolder] = []
     @Published var tabGroups: [BrowserTabGroup] = []
     @Published var recentlyClosedTabs: [RecentlyClosedTab] = []
+    @Published var splitPairs: [BrowserSplitPair] = []
     @Published var defaultSearchEngine: BrowserSearchEngine {
         didSet {
             defaults.set(defaultSearchEngine.rawValue, forKey: BrowserSearchEngine.defaultsKey)
@@ -837,6 +866,7 @@ final class BrowserViewModel: ObservableObject {
         }
 
         tabs.remove(at: index)
+        splitPairs.removeAll { $0.contains(tab.id) }
         protectedTabIDs.remove(tab.id)
         persistedThumbnailObjects.removeValue(forKey: tab.id)
         thumbnailStore.removeThumbnail(for: tab.id)
@@ -894,6 +924,29 @@ final class BrowserViewModel: ObservableObject {
         tabs.filter { $0.groupID == group.id }.forEach { $0.groupID = nil }
         saveGroups()
         saveSession()
+    }
+
+    // MARK: - Split pairs
+
+    func splitPair(containing tabID: UUID) -> BrowserSplitPair? {
+        splitPairs.first { $0.contains(tabID) }
+    }
+
+    /// Saves two tabs as a split pair. A tab belongs to one pair at a time.
+    func setSplitPair(primaryID: UUID, secondaryID: UUID, isHorizontal: Bool) {
+        guard primaryID != secondaryID else { return }
+        let pair = BrowserSplitPair(primaryID: primaryID, secondaryID: secondaryID, isHorizontal: isHorizontal)
+        if splitPairs.contains(pair) { return }
+        splitPairs.removeAll { $0.contains(primaryID) || $0.contains(secondaryID) }
+        splitPairs.append(pair)
+        saveSession()
+    }
+
+    /// Ends a pair; both tabs stay open as normal tabs.
+    func removeSplitPair(containing tabID: UUID) {
+        let before = splitPairs.count
+        splitPairs.removeAll { $0.contains(tabID) }
+        if splitPairs.count != before { saveSession() }
     }
 
     func move(_ tab: BrowserTab, to groupID: UUID?) {
@@ -1185,7 +1238,9 @@ final class BrowserViewModel: ObservableObject {
             return .init(id: tab.id, title: tab.title, url: url, groupID: tab.groupID)
         }
         let selectedID = persistentTabs.contains(where: { $0.id == selectedTabID }) ? selectedTabID : persistentTabs.first?.id
-        let snapshot = BrowserSessionSnapshot(tabs: persistentTabs, selectedTabID: selectedID)
+        let savedIDs = Set(persistentTabs.map(\.id))
+        let pairs = splitPairs.filter { savedIDs.contains($0.primaryID) && savedIDs.contains($0.secondaryID) }
+        let snapshot = BrowserSessionSnapshot(tabs: persistentTabs, selectedTabID: selectedID, splitPairs: pairs)
         if let data = try? JSONEncoder().encode(snapshot) {
             defaults.set(data, forKey: sessionKey)
         }
@@ -1225,6 +1280,10 @@ final class BrowserViewModel: ObservableObject {
         }
         selectedTabID = tabs.contains(where: { $0.id == snapshot.selectedTabID }) ? snapshot.selectedTabID : tabs.first?.id
         if let selectedTabID { protectedTabIDs.insert(selectedTabID) }
+        let restoredIDs = Set(tabs.map(\.id))
+        splitPairs = (snapshot.splitPairs ?? []).filter {
+            restoredIDs.contains($0.primaryID) && restoredIDs.contains($0.secondaryID)
+        }
         return true
     }
 

@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import Translation
 import WebKit
 import SafariServices
 import UIKit
@@ -21,23 +22,25 @@ nonisolated private func browserURLForLog(_ url: URL?) -> String {
     return "\(scheme)://\(host)"
 }
 
+/// Pages start a little below the status bar and the blurred band under it, so a site's
+/// top row can be tapped when it loads; scrolling still slides content up under the
+/// status bar. Began as a Reddit/X fix and applies to every web page.
 enum BrowserSiteViewportPolicy {
-    static let protectedSiteIPadTopContentInset: CGFloat = 12
-    static let protectedSiteIPhoneTopContentInset: CGFloat = 24
+    static let iPadTopContentInset: CGFloat = 12
+    static let iPhoneTopContentInset: CGFloat = 24
 
     static func topContentInset(for url: URL?, idiom: UIUserInterfaceIdiom) -> CGFloat {
-        guard let host = url?.host?.lowercased(),
-              host == "reddit.com" || host.hasSuffix(".reddit.com")
-                || host == "x.com" || host.hasSuffix(".x.com")
-                || host == "twitter.com" || host.hasSuffix(".twitter.com") else {
+        guard let scheme = url?.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              url?.host?.isEmpty == false else {
             return 0
         }
 
         switch idiom {
         case .pad:
-            return protectedSiteIPadTopContentInset
+            return iPadTopContentInset
         case .phone:
-            return protectedSiteIPhoneTopContentInset
+            return iPhoneTopContentInset
         default:
             return 0
         }
@@ -136,9 +139,10 @@ struct GlassTextField: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
+            Image(systemName: tab.isIncognito ? "eye.slash" : "magnifyingglass")
                 .font(.body)
                 .foregroundStyle(.secondary)
+                .accessibilityLabel(tab.isIncognito ? "Private tab" : "")
             
             TextField(placeholder, text: $tab.address)
                 .textInputAutocapitalization(.never)
@@ -232,6 +236,14 @@ final class AIWebView: WKWebView {
     }
 }
 
+/// What the page's scrolling and taps mean for the floating bottom toolbar.
+enum ToolbarScrollEvent {
+    case scrollBegan
+    case scrollEnded(atTop: Bool)
+    /// A tap on the page or a new page: show the toolbar and keep it showing.
+    case pin
+}
+
 /// WebKit temporarily reparents the web view for element fullscreen. SwiftUI must own a stable
 /// container instead of resizing that web view while it belongs to the fullscreen controller.
 final class BrowserWebViewContainer: UIView {
@@ -247,6 +259,73 @@ final class BrowserWebViewContainer: UIView {
     }
 
     required init?(coder: NSCoder) { nil }
+
+    /// Height of the floating browser controls above the bottom safe area while they're
+    /// showing. The web view treats it as obscured, so pages lay out fixed bottom bars
+    /// (cookie banners, cart buttons, chat inputs) above the controls, not underneath.
+    var bottomChromeHeight: CGFloat = 0 {
+        didSet {
+            guard abs(oldValue - bottomChromeHeight) > 0.5 else { return }
+            applyBottomChromeInset()
+        }
+    }
+
+    /// Scroll room kept below the page so its end can clear the controls. Unlike the
+    /// obscured height it stays put while the controls hide during scrolling, so the
+    /// page doesn't jump.
+    var bottomScrollInset: CGFloat = 0 {
+        didSet {
+            guard abs(oldValue - bottomScrollInset) > 0.5 else { return }
+            applyBottomChromeInset()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        applyBottomChromeInset()
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        applyBottomChromeInset()
+    }
+
+    private func applyBottomChromeInset() {
+        // Element fullscreen reparents the web view; leave its insets alone until it returns.
+        guard webView.superview === self, window != nil else { return }
+        let scrollView = webView.scrollView
+        let adjusted = scrollView.adjustedContentInset
+        let content = scrollView.contentInset
+        let bottomObscured: CGFloat
+        if bottomChromeHeight > 0 {
+            bottomObscured = safeAreaInsets.bottom + bottomChromeHeight
+        } else {
+            // Controls scrolled away: keep page bars clear of the home indicator only.
+            bottomObscured = bottomScrollInset > 0 ? safeAreaInsets.bottom : 0
+        }
+
+        // Setting obscured insets replaces WebKit's own safe-area handling, so pass the
+        // status bar / notch edges explicitly along with the bottom controls. Fixed and
+        // sticky page bars then sit below the status bar, where they can be tapped, and
+        // above the bottom controls.
+        let obscured = UIEdgeInsets(
+            top: max(safeAreaInsets.top, adjusted.top - content.top),
+            left: max(safeAreaInsets.left, adjusted.left - content.left),
+            bottom: bottomObscured,
+            right: max(safeAreaInsets.right, adjusted.right - content.right)
+        )
+        if webView.obscuredContentInsets != obscured {
+            webView.obscuredContentInsets = obscured
+        }
+
+        // Let the end of the page scroll clear of the controls.
+        let systemBottom = adjusted.bottom - content.bottom
+        let reserved = bottomScrollInset > 0 ? safeAreaInsets.bottom + bottomScrollInset : 0
+        let desired = max(0, reserved - systemBottom)
+        guard abs(content.bottom - desired) > 0.5 else { return }
+        scrollView.contentInset.bottom = desired
+        scrollView.verticalScrollIndicatorInsets.bottom = desired
+    }
 }
 
 private struct BrowserWebAIRequest: Identifiable, Equatable {
@@ -1416,12 +1495,19 @@ struct ContentView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @FocusState private var omniboxFocused: Bool
+    @FocusState private var tabSearchFocused: Bool
+    @AppStorage("sidebarFavoritesCollapsed") private var favoritesCollapsed = false
+    @State private var isHoldingNewTab = false
+    @State private var tabGroupNamePrompt: TabGroupNamePrompt?
+    @State private var tabGroupNameText = ""
+    @State private var newTabHoldProgress: CGFloat = 0
+    @State private var newTabHoldTimers: [DispatchWorkItem] = []
+    @State private var newTabHoldFired = false
     @ScaledMetric(relativeTo: .caption) private var scaledSidebarSectionFontSize: CGFloat = 13
     @ScaledMetric(relativeTo: .body) private var scaledSidebarTitleFontSize: CGFloat = 16
     @ScaledMetric(relativeTo: .caption) private var scaledSidebarSubtitleFontSize: CGFloat = 13
     @ScaledMetric(relativeTo: .body) private var scaledSidebarIconFontSize: CGFloat = 15
     @State private var tabSearchText = ""
-    @State private var showAllFavorites = false
     @State private var favoritesSheet: FavoritesSheetRequest?
     @State private var bookmarkImportMessage: String?
     @State private var favoritePendingRename: Favorite?
@@ -1480,7 +1566,36 @@ struct ContentView: View {
     private let splitDividerHandleThickness: CGFloat = 4
     private let splitDividerHitSize: CGFloat = 16
     @State private var isToolbarCollapsed: Bool = true
-    @State private var isScrolling: Bool = false
+    /// The bottom toolbar shows while the page scrolls and steps away when it stops;
+    /// a tap, a new page or the top of the page pins it back.
+    private enum ToolbarScrollState {
+        /// Showing and staying; page bars sit above it.
+        case pinned
+        /// Showing while the page moves; page bars stay put underneath.
+        case scrolling
+        case hidden
+    }
+
+    @State private var toolbarScrollState: ToolbarScrollState = .pinned
+
+    private var isToolbarScrolledAway: Bool {
+        toolbarScrollState == .hidden
+    }
+    /// Width of the browser's content area; on iPad it changes with Split View and
+    /// Stage Manager window sizes.
+    @State private var layoutWidth: CGFloat = 0
+    /// Full-screen browsing: the bottom controls and status bar step aside for the page.
+    @State private var isChromeHidden: Bool = false
+    /// Bumped when page-menu state changes outside SwiftUI (zoom, hidden items, translation).
+    @State private var pageMenuRevision: Int = 0
+    @State private var translationConfiguration: TranslationSession.Configuration?
+    @State private var pendingTranslation: PendingPageTranslation?
+    /// The tab whose per-site protection panel is open.
+    @State private var sitePrivacyTabID: UUID?
+    /// The tab whose page is in "tap items to hide" mode.
+    @State private var distractionPickerTabID: UUID?
+    @State private var pageStatusMessage: String?
+    @State private var pageStatusClearTask: Task<Void, Never>?
     /// True while page text sits behind the bottom toolbar; the toolbar frosts then.
     @State private var toolbarOverText: Bool = false
     private let toolbarPillHeight: CGFloat = 44
@@ -1626,6 +1741,33 @@ struct ContentView: View {
         } else {
             return max(0, min(leftSidebarBaseWidth, leftSidebarBaseWidth + sidebarDrag))
         }
+    }
+
+    /// How far in from each edge the open iPad side panels reach (the wider side wins,
+    /// so the bottom toolbar stays centered).
+    private var toolbarPanelInset: CGFloat {
+        guard !isPhone else { return 0 }
+        let panelInset: CGFloat = 24
+        let gap: CGFloat = 8
+        let leading = currentSidebarWidth > 1 ? panelInset + currentSidebarWidth + gap : 0
+        let trailing = showAIPanel ? panelInset + aiSidebarBaseWidth + gap : 0
+        return max(leading, trailing)
+    }
+
+    /// Wide iPad windows: the toolbar narrows into the gap between the side panels.
+    private var toolbarFitsBetweenPanels: Bool {
+        let minimumBarWidth: CGFloat = 340
+        return toolbarPanelInset > 0 && layoutWidth - toolbarPanelInset * 2 >= minimumBarWidth
+    }
+
+    private var toolbarSideInset: CGFloat {
+        toolbarFitsBetweenPanels ? toolbarPanelInset : 0
+    }
+
+    /// Narrower iPad windows (half-screen Split View): the gap is too small for the
+    /// toolbar, so it keeps its full size and the side panels end above it instead.
+    private var sidePanelsClearToolbar: Bool {
+        toolbarPanelInset > 0 && !toolbarFitsBetweenPanels
     }
 
     private var isSidebarDark: Bool {
@@ -1778,7 +1920,7 @@ struct ContentView: View {
     private var exitSplitViewButton: some View {
         Button {
             withAnimation(.easeOut(duration: 0.2)) {
-                clearSplitView()
+                endSplitPair()
             }
         } label: {
             ZStack(alignment: .topTrailing) {
@@ -1874,6 +2016,445 @@ struct ContentView: View {
             isToolbarCollapsed = true
             omniboxFocused = false
         }
+    }
+
+    /// Room the collapsed bottom controls take above the safe area, plus a small gap
+    /// so a page's own bottom bar doesn't sit flush against them.
+    /// Page bars move above the toolbar only while it's pinned, so they don't bounce
+    /// up and down with every scroll.
+    private var activeTabBottomChromeHeight: CGFloat {
+        isChromeHidden || toolbarScrollState != .pinned ? 0 : activeTabBottomScrollInset
+    }
+
+    private var activeTabBottomScrollInset: CGFloat {
+        isChromeHidden ? 0 : 24 + toolbarPillHeight + 6
+    }
+
+    private func handleToolbarScrollEvent(_ event: ToolbarScrollEvent) {
+        switch event {
+        case .scrollBegan:
+            setToolbarScrollState(.scrolling)
+        case .scrollEnded(let atTop):
+            setToolbarScrollState(atTop ? .pinned : .hidden)
+        case .pin:
+            setToolbarScrollState(.pinned)
+        }
+    }
+
+    private func setToolbarScrollState(_ state: ToolbarScrollState) {
+        guard toolbarScrollState != state else { return }
+        withAnimation(.easeOut(duration: 0.2)) {
+            toolbarScrollState = state
+        }
+        if state == .pinned {
+            refreshToolbarBackdrop()
+        }
+    }
+
+    private func setChromeHidden(_ hidden: Bool) {
+        if hidden {
+            omniboxFocused = false
+        }
+        withAnimation(.easeOut(duration: 0.2)) {
+            isChromeHidden = hidden
+            if hidden {
+                isToolbarCollapsed = true
+            }
+        }
+    }
+
+    private var showToolbarHandle: some View {
+        Button {
+            setChromeHidden(false)
+        } label: {
+            Image(systemName: "chevron.compact.up")
+                .font(.title3.weight(.semibold))
+                .foregroundColor(isSidebarDark ? .white.opacity(0.85) : .primary)
+                .frame(width: 64, height: 26)
+                .toolbarBackdrop(in: Capsule(), frosted: toolbarOverText)
+                .padding(10)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .environment(\.colorScheme, isSidebarDark ? .dark : .light)
+        .accessibilityLabel("Show toolbar")
+    }
+
+    @ViewBuilder
+    private func pageActionsMenuItems(for tab: BrowserTab) -> some View {
+        let _ = pageMenuRevision
+        Button {
+            presentShareSheet(for: tab)
+        } label: {
+            Label("Share…", systemImage: "square.and.arrow.up")
+        }
+        .disabled(tab.currentURL == nil)
+
+        if !tab.isBlank, tab.liveWebView != nil {
+            let zoom = PageZoomStore.zoom(for: tab.currentURL, isIncognito: tab.isIncognito)
+            ControlGroup {
+                Button {
+                    stepPageZoom(-1, for: tab)
+                } label: {
+                    Label("Zoom Out", systemImage: "minus.magnifyingglass")
+                }
+                .disabled(!PageZoomStore.canZoomOut(zoom))
+                Button {
+                    stepPageZoom(0, for: tab)
+                } label: {
+                    Label("\(Int((zoom * 100).rounded()))%", systemImage: "textformat.size")
+                }
+                .accessibilityLabel("Reset zoom")
+                Button {
+                    stepPageZoom(1, for: tab)
+                } label: {
+                    Label("Zoom In", systemImage: "plus.magnifyingglass")
+                }
+                .disabled(!PageZoomStore.canZoomIn(zoom))
+            }
+
+            if tab.translatedFrom != nil {
+                Button {
+                    showOriginalPage(for: tab)
+                } label: {
+                    Label("Show Original", systemImage: "translate")
+                }
+            } else {
+                Button {
+                    startPageTranslation(for: tab)
+                } label: {
+                    Label(
+                        tab.isTranslating
+                            ? "Translating…"
+                            : "Translate to \(PageTranslator.displayName(for: PageTranslator.targetLanguage))",
+                        systemImage: "translate"
+                    )
+                }
+                .disabled(tab.isTranslating)
+            }
+
+            Button {
+                startDistractionPicker(for: tab)
+            } label: {
+                Label("Hide Distracting Items", systemImage: "eye.slash")
+            }
+            if DistractionHider.hasHiddenItems(for: tab.currentURL, isIncognito: tab.isIncognito) {
+                Button {
+                    DistractionHider.showHiddenItems(in: tab.activateWebView(), isIncognito: tab.isIncognito)
+                    pageMenuRevision &+= 1
+                    showPageStatus("Hidden items are back")
+                } label: {
+                    Label("Show Hidden Items", systemImage: "eye")
+                }
+            }
+        }
+
+        if !tab.isBlank, tab.liveWebView != nil {
+            Button {
+                collapseToolbar()
+                sitePrivacyTabID = tab.id
+            } label: {
+                Label("Site Protection…", systemImage: "shield.lefthalf.filled")
+            }
+        }
+
+        Button {
+            setChromeHidden(true)
+        } label: {
+            Label("Hide Toolbar", systemImage: "arrow.up.left.and.arrow.down.right")
+        }
+    }
+
+    // MARK: - Page translation
+
+    private struct PendingPageTranslation {
+        let tabID: UUID
+        let plan: PageTranslator.Plan
+    }
+
+    private func browserTab(withID id: UUID) -> BrowserTab? {
+        vm.tabs.first { $0.id == id }
+    }
+
+    private func startPageTranslation(for tab: BrowserTab) {
+        guard !tab.isTranslating, let webView = tab.liveWebView else { return }
+        collapseToolbar()
+        tab.isTranslating = true
+        pageMenuRevision &+= 1
+        showPageStatus("Translating…", autoHide: false)
+        Task {
+            do {
+                let plan = try await PageTranslator.prepare(in: webView)
+                guard tab.isTranslating else { return }
+                pendingTranslation = PendingPageTranslation(tabID: tab.id, plan: plan)
+                var configuration = TranslationSession.Configuration(
+                    source: plan.source,
+                    target: plan.target
+                )
+                if #available(iOS 26.4, *), plan.lowLatencyInstalled {
+                    // Whole pages are hundreds of strings; the fast model keeps them
+                    // flowing in while people read.
+                    configuration = TranslationSession.Configuration(
+                        source: plan.source,
+                        target: plan.target,
+                        preferredStrategy: .lowLatency
+                    )
+                }
+                if var current = translationConfiguration, current == configuration {
+                    current.invalidate()
+                    translationConfiguration = current
+                } else {
+                    translationConfiguration = configuration
+                }
+            } catch {
+                tab.isTranslating = false
+                pageMenuRevision &+= 1
+                switch error {
+                case PageTranslator.PreparationError.alreadyInTargetLanguage(let name):
+                    showPageStatus("This page is already in \(name)")
+                case PageTranslator.PreparationError.unsupported(let from, let to):
+                    showPageStatus("Translating \(from) to \(to) isn't available")
+                default:
+                    showPageStatus("There's no text to translate")
+                }
+            }
+        }
+    }
+
+    /// Runs inside `.translationTask`, which owns the session and shows the system
+    /// prompt to download languages when needed.
+    private func runPageTranslation(with session: TranslationSession) async {
+        guard let pending = pendingTranslation,
+              let tab = browserTab(withID: pending.tabID),
+              let webView = tab.liveWebView else { return }
+        pendingTranslation = nil
+        do {
+            // Languages that aren't on the device yet: iOS asks before downloading.
+            if !(await session.isReady) {
+                showPageStatus("Waiting for \(pending.plan.sourceName) to download…", autoHide: false)
+                try await session.prepareTranslation()
+                guard tab.isTranslating else { return }
+                showPageStatus("Translating…", autoHide: false)
+            }
+            let finished = try await PageTranslator.translate(
+                pending.plan.segments,
+                with: session,
+                in: webView,
+                progress: { fraction in
+                    guard tab.isTranslating else { return }
+                    pageStatusMessage = "Translating… \(Int(fraction * 100))%"
+                },
+                onScreenTranslated: {
+                    // What the reader can see is done; the rest of the page keeps
+                    // translating quietly below.
+                    guard tab.isTranslating else { return }
+                    tab.isTranslating = false
+                    tab.translatedFrom = pending.plan.sourceName
+                    pageMenuRevision &+= 1
+                    showPageStatus("Translated from \(pending.plan.sourceName)")
+                },
+                shouldContinue: { tab.isTranslating || tab.translatedFrom != nil }
+            )
+            guard finished else { return }
+
+            // Keep up with text the page adds later, until the page changes or
+            // someone asks for the original.
+            while tab.translatedFrom != nil {
+                try await Task.sleep(for: .seconds(1.5))
+                guard tab.translatedFrom != nil else { break }
+                let fresh = await PageTranslator.collectNewSegments(in: webView)
+                if !fresh.isEmpty {
+                    _ = try await PageTranslator.translate(
+                        fresh,
+                        with: session,
+                        in: webView,
+                        shouldContinue: { tab.translatedFrom != nil }
+                    )
+                }
+            }
+        } catch is CancellationError {
+            if tab.isTranslating {
+                tab.isTranslating = false
+                pageMenuRevision &+= 1
+                dismissPageStatus()
+            }
+        } catch {
+            guard tab.isTranslating else { return }
+            tab.isTranslating = false
+            pageMenuRevision &+= 1
+            showPageStatus("Couldn't translate this page")
+        }
+    }
+
+    private func showOriginalPage(for tab: BrowserTab) {
+        collapseToolbar()
+        tab.translatedFrom = nil
+        tab.isTranslating = false
+        if let webView = tab.liveWebView {
+            PageTranslator.restoreOriginal(in: webView)
+        }
+        pageMenuRevision &+= 1
+    }
+
+    // MARK: - Hide distracting items
+
+    private func startDistractionPicker(for tab: BrowserTab) {
+        guard let webView = tab.liveWebView else { return }
+        collapseToolbar()
+        withAnimation(.easeOut(duration: 0.2)) {
+            distractionPickerTabID = tab.id
+        }
+        DistractionHider.startPicking(in: webView)
+    }
+
+    private func finishDistractionPicker(save: Bool = true) {
+        guard let tabID = distractionPickerTabID else { return }
+        withAnimation(.easeOut(duration: 0.2)) {
+            distractionPickerTabID = nil
+        }
+        guard let tab = browserTab(withID: tabID), let webView = tab.liveWebView else { return }
+        Task {
+            await DistractionHider.finishPicking(in: webView, isIncognito: tab.isIncognito, save: save)
+            pageMenuRevision &+= 1
+        }
+    }
+
+    private func distractionPickerBar(for tab: BrowserTab) -> some View {
+        HStack(spacing: 12) {
+            Text("Tap items to hide")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+                .padding(.leading, 6)
+            Button {
+                if let webView = tab.liveWebView {
+                    DistractionHider.undoLastPick(in: webView)
+                }
+            } label: {
+                Image(systemName: "arrow.uturn.backward")
+            }
+            .accessibilityLabel("Undo")
+            Button {
+                finishDistractionPicker()
+            } label: {
+                Text("Done")
+                    .font(.subheadline.weight(.bold))
+            }
+        }
+        .foregroundColor(isSidebarDark ? .white : .primary)
+        .padding(.horizontal, 16)
+        .frame(height: toolbarPillHeight)
+        // Solid material rather than glass: glass takes its tone from the page behind
+        // it, which left white labels on a light capsule over bright pages.
+        .background(.regularMaterial, in: Capsule())
+        .shadow(radius: BrowserDesign.Shadow.controlRadius, y: 4)
+        .environment(\.colorScheme, isSidebarDark ? .dark : .light)
+    }
+
+    // MARK: - Page status
+
+    private func showPageStatus(_ message: String, autoHide: Bool = true) {
+        pageStatusClearTask?.cancel()
+        withAnimation(.easeOut(duration: 0.2)) {
+            pageStatusMessage = message
+        }
+        guard autoHide else { return }
+        pageStatusClearTask = Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            dismissPageStatus()
+        }
+    }
+
+    private func dismissPageStatus() {
+        withAnimation(.easeOut(duration: 0.2)) {
+            pageStatusMessage = nil
+        }
+    }
+
+    private var pageStatusCapsule: some View {
+        HStack(spacing: 8) {
+            if pageStatusMessage?.hasPrefix("Translating") == true
+                || pageStatusMessage?.hasPrefix("Waiting for") == true {
+                ProgressView()
+                    .controlSize(.small)
+            }
+            if pageStatusMessage?.hasPrefix("Private tab") == true {
+                Image(systemName: "eye.slash")
+                    .font(.subheadline.weight(.semibold))
+            }
+            Text(pageStatusMessage ?? "")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+        }
+        .foregroundColor(isSidebarDark ? .white : .primary)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.regularMaterial, in: Capsule())
+        .shadow(radius: BrowserDesign.Shadow.controlRadius, y: 4)
+        .environment(\.colorScheme, isSidebarDark ? .dark : .light)
+        .allowsHitTesting(false)
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+
+    /// The page menu as the first control inside the collapsed address pill.
+    private func inlinePageMenuButton(for tab: BrowserTab) -> some View {
+        Menu {
+            pageActionsMenuItems(for: tab)
+        } label: {
+            Image(systemName: "ellipsis")
+                .frame(width: 32, height: toolbarPillHeight)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Page options")
+    }
+
+    private func pageActionsMenu(for tab: BrowserTab) -> some View {
+        Menu {
+            pageActionsMenuItems(for: tab)
+        } label: {
+            // The tap area lives on the label: a frame added outside a Menu doesn't widen
+            // what it responds to, so only the three dots were tappable.
+            Image(systemName: "ellipsis")
+                .foregroundColor(.primary)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Page options")
+    }
+
+    private func stepPageZoom(_ direction: Int, for tab: BrowserTab) {
+        PageZoomStore.step(direction, webView: tab.activateWebView(), isIncognito: tab.isIncognito)
+        pageMenuRevision &+= 1
+    }
+
+    private func presentShareSheet(for tab: BrowserTab) {
+        guard let url = tab.currentURL,
+              let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }),
+              var presenter = scene.windows.first(where: \.isKeyWindow)?.rootViewController else { return }
+        while let next = presenter.presentedViewController { presenter = next }
+
+        var items: [Any] = [url]
+        // With the com.apple.developer.web-browser entitlement, iOS adds
+        // "Add to Home Screen" when the share sheet is handed the web view itself.
+        if let webView = tab.liveWebView,
+           let scheme = webView.url?.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" {
+            items.append(webView)
+        }
+        let controller = UIActivityViewController(activityItems: items, applicationActivities: nil)
+        if let popover = controller.popoverPresentationController {
+            let bounds = presenter.view.bounds
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(x: bounds.midX, y: bounds.maxY - 90, width: 1, height: 1)
+            popover.permittedArrowDirections = .down
+        }
+        presenter.present(controller, animated: true)
     }
 
     private func preserveIOS26PhoneOmniboxFocusAfterClear() {
@@ -2017,19 +2598,17 @@ struct ContentView: View {
     private func toolbarCollapsedPill(for tab: BrowserTab) -> some View {
         // Phone widths are tight: toggles + pill must fit a 402pt screen with margins.
         HStack(spacing: isPhone ? 4 : 8) {
+            inlinePageMenuButton(for: tab)
+
             ToolbarHistoryNavigationButton(tab: tab, direction: .back)
             ToolbarHistoryNavigationButton(tab: tab, direction: .forward, hidesWhenUnavailable: isPhone)
 
-            SitePrivacyShieldButton(
-                url: tab.currentURL,
-                webView: tab.activateWebView(),
-                onOpenAdBlockSettings: { showFilterListSettings = true }
-            )
-
             ToolbarAddressButton(
                 tab: tab,
-                maxWidth: isPhone ? (splitMode == nil ? 112 : 64) : 220,
-                maxWidthWithoutForward: isPhone ? (splitMode == nil ? 160 : 112) : nil
+                // The address shares the room the site-protection shield used to have
+                // with the page menu, which now sits in the pill on every device.
+                maxWidth: isPhone ? (splitMode == nil ? 124 : 76) : 228,
+                maxWidthWithoutForward: isPhone ? (splitMode == nil ? 172 : 124) : nil
             ) {
                 expandToolbar(focusOmnibox: true)
             }
@@ -2129,8 +2708,12 @@ struct ContentView: View {
         horizontalSizeClass == .compact
     }
 
+    /// Phone layout: on iPhone, and on iPad whenever the window is compact width
+    /// (Slide Over, narrow Split View, small Stage Manager windows), where the
+    /// side-panel layout has no room.
     private var isPhone: Bool {
         UIDevice.current.userInterfaceIdiom == .phone
+            || (isNativeIPadDevice && horizontalSizeClass == .compact)
     }
 
     private enum SplitMode {
@@ -2511,6 +3094,12 @@ struct ContentView: View {
             .onChange(of: splitPrimaryID) { _, _ in
                 refreshHibernationProtection()
             }
+            .onChange(of: splitMode) { _, mode in
+                guard let mode, splitSecondaryExternalTab == nil,
+                      let primaryID = splitPrimaryID, let secondaryID = splitSecondaryID,
+                      vm.splitPair(containing: primaryID)?.partner(of: primaryID) == secondaryID else { return }
+                vm.setSplitPair(primaryID: primaryID, secondaryID: secondaryID, isHorizontal: mode == .horizontal)
+            }
             .onChange(of: splitSecondaryID) { _, _ in
                 refreshHibernationProtection()
             }
@@ -2576,6 +3165,11 @@ struct ContentView: View {
                 expandToolbar(focusOmnibox: true)
             }
             .keyboardShortcut("l", modifiers: .command)
+
+            Button("Search Tabs") {
+                focusTabSearch()
+            }
+            .keyboardShortcut("k", modifiers: .command)
 
             Button("Go Back") {
                 selectedTab?.navigateBack()
@@ -2746,7 +3340,18 @@ struct ContentView: View {
 
         return ZStack(alignment: .bottom) {
             if phoneSecondaryPanelIsVisible {
-                Color.black.opacity(isSidebarDark ? 0.12 : 0.06)
+                // Behind the tabs sheet the page turns to frosted glass; the AI panel keeps the light dim.
+                ZStack {
+                    if phoneSecondaryPanel == .tabs {
+                        // A see-through glass, not a heavy frost: the material is faded so the page shows.
+                        Rectangle()
+                            .fill(.ultraThinMaterial)
+                            .opacity(0.85)
+                        Color.black.opacity(isSidebarDark ? 0.06 : 0.02)
+                    } else {
+                        Color.black.opacity(isSidebarDark ? 0.12 : 0.06)
+                    }
+                }
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -2861,12 +3466,17 @@ struct ContentView: View {
                     if isPhone {
                         phoneSecondaryPanels(in: proxy)
                     } else {
+                        let panelBottomInset = sidePanelsClearToolbar
+                            ? max(verticalInset, 24 + toolbarPillHeight + 12)
+                            : verticalInset
+
                         // Left sidebar
                         HStack {
                             sidebarPanel
-                                .frame(height: proxy.size.height - verticalInset * 2, alignment: .top)
+                                .frame(height: proxy.size.height - verticalInset - panelBottomInset, alignment: .top)
                                 .padding(.leading, horizontalInset)
-                                .padding(.vertical, verticalInset)
+                                .padding(.top, verticalInset)
+                                .padding(.bottom, panelBottomInset)
                             Spacer()
                         }
 
@@ -2877,12 +3487,14 @@ struct ContentView: View {
                                 aiSidebarPanel
                                     .frame(
                                         height: proxy.size.height
-                                            - verticalInset * 2
+                                            - verticalInset
+                                            - panelBottomInset
                                             - aiSidebarKeyboardOverlap,
                                         alignment: .top
                                     )
                                     .padding(.trailing, horizontalInset)
-                                    .padding(.vertical, verticalInset)
+                                    .padding(.top, verticalInset)
+                                    .padding(.bottom, panelBottomInset)
                                     .padding(.bottom, aiSidebarKeyboardOverlap)
                                     .transition(.move(edge: .trailing).combined(with: .opacity))
                             }
@@ -2907,9 +3519,13 @@ struct ContentView: View {
                 .coordinateSpace(name: splitDragCoordinateSpace)
                 .onAppear {
                     splitDropContentRect = splitDropRect
+                    layoutWidth = proxy.size.width
                 }
                 .onChange(of: splitDropRect) { _, newRect in
                     splitDropContentRect = newRect
+                }
+                .onChange(of: proxy.size.width) { _, width in
+                    layoutWidth = width
                 }
             }
             .ignoresSafeArea(
@@ -2919,7 +3535,19 @@ struct ContentView: View {
 
             // Toolbar - outside GeometryReader for proper keyboard avoidance
             if let idx = vm.selectedIndex {
-                if (!isPhone || !phoneSecondaryPanelIsPresented) && isToolbarCollapsed {
+                if distractionPickerTabID == vm.tabs[idx].id {
+                    distractionPickerBar(for: vm.tabs[idx])
+                        .padding(.bottom, 24)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if isChromeHidden && isToolbarCollapsed {
+                    if !isPhone || !phoneSecondaryPanelIsPresented {
+                        showToolbarHandle
+                            .padding(.bottom, 6)
+                            .opacity(isToolbarScrolledAway ? 0 : 1)
+                            .allowsHitTesting(!isToolbarScrolledAway)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                } else if (!isPhone || !phoneSecondaryPanelIsPresented) && isToolbarCollapsed {
                     HStack(spacing: isPhone ? 8 : 12) {
                         if isPhone || isSidebarCollapsed {
                             sidebarToggleButton
@@ -2935,8 +3563,11 @@ struct ContentView: View {
                     // Icons turn white with Dark Web Pages; the frost and glass must
                     // follow the same appearance or it's white on white.
                     .environment(\.colorScheme, isSidebarDark ? .dark : .light)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, toolbarSideInset)
                     .padding(.bottom, 24)
-                    .opacity(isScrolling ? 0 : 1)
+                    .opacity(isToolbarScrolledAway ? 0 : 1)
+                    .allowsHitTesting(!isToolbarScrolledAway)
                 } else if (!isPhone || !phoneSecondaryPanelIsPresented) {
                     VStack(spacing: 8) {
                         AddressSuggestionsView(
@@ -2957,10 +3588,20 @@ struct ContentView: View {
                         .environment(\.colorScheme, isSidebarDark ? .dark : .light)
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal)
+                        .padding(.horizontal, toolbarSideInset)
                         .padding(.bottom, 24)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .opacity(isScrolling ? 0 : 1)
+                        .opacity(isToolbarScrolledAway ? 0 : 1)
+                        .allowsHitTesting(!isToolbarScrolledAway)
                 }
+            }
+
+            if pageStatusMessage != nil {
+                pageStatusCapsule
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 24 + toolbarPillHeight + 14)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .zIndex(160)
             }
 
             if let request = activeWebAIRequest {
@@ -2982,14 +3623,40 @@ struct ContentView: View {
                     .zIndex(150)
             }
         }
+        .statusBarHidden(isChromeHidden)
+        .sheet(isPresented: Binding(
+            get: { sitePrivacyTabID != nil },
+            set: { if !$0 { sitePrivacyTabID = nil } }
+        )) {
+            if let id = sitePrivacyTabID, let tab = browserTab(withID: id) {
+                SitePrivacyPanel(
+                    url: tab.currentURL,
+                    webView: tab.activateWebView(),
+                    onOpenAdBlockSettings: {
+                        sitePrivacyTabID = nil
+                        showFilterListSettings = true
+                    }
+                )
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+            }
+        }
+        .translationTask(translationConfiguration) { session in
+            await runPageTranslation(with: session)
+        }
         .onChange(of: vm.tabs.count) { _, _ in
             syncSplitState()
             syncAIContextSelection()
         }
         .onChange(of: vm.selectedTabID) { _, _ in
+            setToolbarScrollState(.pinned)
+            if distractionPickerTabID != nil {
+                finishDistractionPicker()
+            }
             let previousSelected = lastSelectedTabID
             lastSelectedTabID = vm.selectedTabID
             syncSplitState()
+            restoreSplitPairIfNeeded()
             syncAIContextSelection(previousSelectedTabID: previousSelected)
         }
         .onChange(of: aiContextTabID) { _, _ in
@@ -3014,6 +3681,9 @@ struct ContentView: View {
         }
         .onChange(of: omniboxFocused) { _, focused in
             if focused {
+                if isChromeHidden {
+                    setChromeHidden(false)
+                }
                 if isToolbarCollapsed {
                     expandToolbar(focusOmnibox: false)
                 }
@@ -3042,6 +3712,7 @@ struct ContentView: View {
             lastSelectedTabID = vm.selectedTabID
             refreshHibernationProtection()
             vm.activateSelectedTab()
+            restoreSplitPairIfNeeded()
             applyUserAgentPreference()
             setupSharedURLHandling()
             checkForSharedURL()
@@ -3739,6 +4410,7 @@ struct ContentView: View {
         splitSecondaryExternalTab = nil
         splitMode = mode
         vm.isSplitViewActive = true
+        vm.setSplitPair(primaryID: selectedID, secondaryID: secondaryTab.id, isHorizontal: mode == .horizontal)
         syncAIContextSelection()
     }
 
@@ -3759,6 +4431,9 @@ struct ContentView: View {
         splitSecondaryExternalTab = nil
         splitMode = mode
         vm.isSplitViewActive = true
+        if let primaryID = vm.selectedTabID {
+            vm.setSplitPair(primaryID: primaryID, secondaryID: newTab.id, isHorizontal: mode == .horizontal)
+        }
         if newTab.favicon == nil {
             vm.fetchFavicon(for: newTab)
         }
@@ -4152,6 +4827,7 @@ struct ContentView: View {
         splitSecondaryExternalTab = nil
         splitMode = mode
         vm.isSplitViewActive = true
+        vm.setSplitPair(primaryID: primary.id, secondaryID: secondary.id, isHorizontal: mode == .horizontal)
         if let selectedID = vm.selectedTabID,
            selectedID != primary.id,
            selectedID != secondary.id {
@@ -4277,6 +4953,34 @@ struct ContentView: View {
         pendingWebProviderTargetID = nil
         pendingWebProviderContextOverride = nil
         providerTab.activateWebView().load(URLRequest(url: provider.url))
+    }
+
+    /// Shows a saved split pair again when one of its tabs is selected.
+    private func restoreSplitPairIfNeeded() {
+        guard splitMode == nil,
+              splitSecondaryExternalTab == nil,
+              !showWebProviderSheet,
+              let selectedID = vm.selectedTabID,
+              let pair = vm.splitPair(containing: selectedID),
+              let primary = browserTab(withID: pair.primaryID),
+              let secondary = browserTab(withID: pair.secondaryID) else { return }
+        splitPrimaryID = primary.id
+        splitSecondaryID = secondary.id
+        splitSecondaryExternalTab = nil
+        splitMode = pair.isHorizontal ? .horizontal : .vertical
+        vm.isSplitViewActive = true
+        _ = primary.activateWebView()
+        _ = secondary.activateWebView()
+        refreshHibernationProtection()
+        syncAIContextSelection()
+    }
+
+    /// Ends the split for good: the pair is forgotten and both tabs become normal tabs.
+    private func endSplitPair() {
+        if let primaryID = splitPrimaryID {
+            vm.removeSplitPair(containing: primaryID)
+        }
+        clearSplitView()
     }
 
     private func clearSplitView() {
@@ -4625,34 +5329,33 @@ struct ContentView: View {
     private var sidebarContent: some View {
         ScrollView(showsIndicators: false) {
             LazyVStack(alignment: .leading, spacing: 10) {
-                BrowserTabOrganizerHeader(
+                BrowserTabSearchField(
                     searchText: $tabSearchText,
-                    selectedScope: $selectedTabScope,
-                    groups: vm.tabGroups,
-                    onManageGroups: { showTabGroupManager = true },
-                    onShowHistory: { showHistory = true }
+                    isFocused: $tabSearchFocused,
+                    showsShortcutHint: !isPhone
                 )
                 .dynamicTypeSize(...DynamicTypeSize.xLarge)
-                // Favorites sit above the tab list so they stay reachable however
-                // many tabs are open; hidden while searching tabs.
-                if (!vm.favorites.isEmpty || !vm.favoriteFolders.isEmpty) && tabSearchText.isEmpty {
-                    favoritesGrid
-                }
-                HStack {
-                    sidebarSectionHeader("Tabs", systemImage: "rectangle.on.rectangle")
-                    Spacer(minLength: 0)
-                    if !isPhone {
-                        sidebarPinButton(
-                            isPinned: $pinTabSidebar,
-                            label: "tab sidebar"
-                        )
-                    }
-                }
-                sidebarNewTabRow
 
-                ForEach(visibleSidebarTabs) { tab in
-                    TabRowView(tab: tab) { observedTab in
-                        tabRow(observedTab)
+                // Folders, then favorites, each one row that scrolls sideways; hidden while searching tabs.
+                if tabSearchText.isEmpty {
+                    favoritesSection
+                }
+
+                tabsSectionHeader
+                tabGroupChips
+
+                ForEach(sidebarTabEntries) { entry in
+                    switch entry {
+                    case .single(let tab):
+                        TabRowView(tab: tab) { observedTab in
+                            tabRow(observedTab)
+                        }
+                    case .pair(let primary, let secondary):
+                        TabRowView(tab: primary) { observedPrimary in
+                            TabRowView(tab: secondary) { observedSecondary in
+                                splitPairRow(primary: observedPrimary, secondary: observedSecondary)
+                            }
+                        }
                     }
                 }
 
@@ -4663,50 +5366,337 @@ struct ContentView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(12)
                 }
+
+                if tabSearchText.isEmpty && !vm.recentlyClosedTabs.isEmpty {
+                    recentlyClosedRow
+                }
             }
             .padding(.vertical, 4)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
-    private var sidebarNewTabRow: some View {
+    private func focusTabSearch() {
+        if isPhone {
+            if phoneSecondaryPanel != .tabs {
+                togglePhoneSecondaryPanel(.tabs)
+            }
+        } else if isSidebarCollapsed {
+            withAnimation(.easeOut(duration: 0.15)) {
+                isSidebarCollapsed = false
+                sidebarDrag = 0
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            tabSearchFocused = true
+        }
+    }
+
+    /// "Tabs" with the open count; the count opens the tab group menu.
+    private var tabsSectionHeader: some View {
         HStack(spacing: 8) {
-            sidebarRow(
-                title: "New Tab",
-                action: {
-                    vm.addTabBlank()
-                    omniboxFocused = true
+            sidebarSectionHeader("Tabs", systemImage: "rectangle.on.rectangle")
+            Spacer(minLength: 0)
+            HStack(spacing: 4) {
+                if isHoldingNewTab {
+                    Label("Hold for private tab", systemImage: "eye.slash")
+                        .transition(.opacity)
+                } else {
+                    Text(tabScopeSummary)
                 }
-            ) {
+            }
+            .animation(.easeOut(duration: 0.15), value: isHoldingNewTab)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(sidebarSecondaryText)
+            .frame(minHeight: 44)
+            .padding(.top, 8)
+
+            // Tap for a new tab; press and hold for a new private tab. While held, a ring fills
+            // around the button and the header says what will happen.
+            ZStack {
+                Circle()
+                    .fill(sidebarIconBackground)
+                Circle()
+                    .trim(from: 0, to: newTabHoldProgress)
+                    .stroke(sidebarPrimaryText, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
                 Image(systemName: "plus")
                     .font(.system(size: sidebarIconFontSize, weight: .semibold))
                     .foregroundColor(sidebarPrimaryText)
             }
-
-            Button {
-                if isPhone {
-                    dismissPhoneSecondaryPanel()
+            .frame(width: 36, height: 36)
+            .scaleEffect(isHoldingNewTab ? 1.15 : 1)
+            .animation(.easeOut(duration: 0.15), value: isHoldingNewTab)
+            .contentShape(Circle())
+            .gesture(
+                // Tap and hold are timed by hand: a quick tap must always open a normal tab,
+                // and the ring only appears once the finger has stayed down for a moment.
+                DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                    .onChanged { value in
+                        if newTabHoldTimers.isEmpty && !newTabHoldFired {
+                            startNewTabHold()
+                        } else if hypot(value.translation.width, value.translation.height) > 30 {
+                            // Finger slid away: cancel, and do nothing more until it lifts.
+                            cancelNewTabHold()
+                            newTabHoldFired = true
+                        }
+                    }
+                    .onEnded { value in
+                        let fired = newTabHoldFired
+                        let wasTracking = !newTabHoldTimers.isEmpty
+                        cancelNewTabHold()
+                        newTabHoldFired = false
+                        guard !fired, wasTracking,
+                              hypot(value.translation.width, value.translation.height) <= 30 else { return }
+                        vm.addTabBlank()
+                        omniboxFocused = true
+                    }
+            )
+            .onChange(of: isHoldingNewTab) { _, holding in
+                if holding {
+                    newTabHoldProgress = 0
+                    withAnimation(.linear(duration: 0.45)) { newTabHoldProgress = 1 }
+                } else {
+                    withAnimation(.easeOut(duration: 0.15)) { newTabHoldProgress = 0 }
                 }
-                openIncognitoTab()
-            } label: {
-                Image(systemName: "eye.slash")
-                    .font(.system(size: sidebarIconFontSize, weight: .semibold))
-                    .foregroundStyle(BrowserDesign.Tint.incognito)
-                    .padding(.horizontal, 10)
-                    .frame(maxHeight: .infinity)
-                    .frame(minWidth: BrowserDesign.Size.hitTarget + 2)
-                    .contentShape(Rectangle())
-                    .glassEffectCompat(
-                        in: RoundedRectangle(cornerRadius: BrowserDesign.Radius.row, style: .continuous),
-                        tint: sidebarRowBackground,
-                        strokeOpacity: isSidebarDark ? 0.35 : 0.45
-                    )
             }
-            .buttonStyle(.plain)
-            .fixedSize(horizontal: true, vertical: false)
-            .accessibilityLabel("New Incognito Tab")
+            .help("New Tab · hold for a private tab")
+                .padding(.top, 8)
+                .accessibilityLabel("New Tab")
+                .accessibilityHint("Touch and hold for a private tab")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction {
+                    vm.addTabBlank()
+                    omniboxFocused = true
+                }
+                .accessibilityAction(named: "New Private Tab") {
+                    openIncognitoTab()
+                }
+
+            if !isPhone {
+                sidebarPinButton(
+                    isPinned: $pinTabSidebar,
+                    label: "tab sidebar"
+                )
+            }
         }
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// Finger down on ＋: after 0.15 s show the ring, after 0.6 s open a private tab.
+    private func startNewTabHold() {
+        let showRing = DispatchWorkItem {
+            isHoldingNewTab = true
+        }
+        let openPrivate = DispatchWorkItem {
+            newTabHoldFired = true
+            isHoldingNewTab = false
+            newTabHoldTimers = []
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            if isPhone {
+                dismissPhoneSecondaryPanel()
+            }
+            openIncognitoTab()
+        }
+        newTabHoldTimers = [showRing, openPrivate]
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: showRing)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: openPrivate)
+    }
+
+    private func cancelNewTabHold() {
+        newTabHoldTimers.forEach { $0.cancel() }
+        newTabHoldTimers = []
+        isHoldingNewTab = false
+    }
+
+    private enum TabGroupNamePrompt: Identifiable {
+        case new
+        case rename(BrowserTabGroup)
+
+        var id: String {
+            switch self {
+            case .new: return "new"
+            case .rename(let group): return group.id.uuidString
+            }
+        }
+    }
+
+    /// All, each group, and "+ Group". Tap to switch; hold a group to rename or delete it.
+    /// Tabs move between groups from their long-press menu.
+    private var tabGroupChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                groupChip(
+                    title: "All",
+                    systemImage: nil,
+                    count: vm.tabs.count,
+                    isSelected: selectedTabScope == .all
+                ) {
+                    selectedTabScope = .all
+                }
+
+                ForEach(vm.tabGroups) { group in
+                    groupChip(
+                        title: group.title,
+                        systemImage: "folder",
+                        count: vm.tabs.filter { $0.groupID == group.id }.count,
+                        isSelected: selectedTabScope == .group(group.id)
+                    ) {
+                        selectedTabScope = .group(group.id)
+                    }
+                    .contextMenu {
+                        Button {
+                            tabGroupNameText = group.title
+                            tabGroupNamePrompt = .rename(group)
+                        } label: {
+                            Label("Rename…", systemImage: "pencil")
+                        }
+                        Button {
+                            showTabGroupManager = true
+                        } label: {
+                            Label("Manage Groups…", systemImage: "folder.badge.gearshape")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            vm.deleteTabGroup(group)
+                        } label: {
+                            Label("Delete Group", systemImage: "trash")
+                        }
+                    }
+                }
+
+                Button {
+                    tabGroupNameText = ""
+                    tabGroupNamePrompt = .new
+                } label: {
+                    Label("Group", systemImage: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(sidebarSecondaryText)
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 32)
+                        .overlay(
+                            Capsule().strokeBorder(
+                                sidebarSecondaryText.opacity(0.5),
+                                style: StrokeStyle(lineWidth: 1, dash: [4, 3])
+                            )
+                        )
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("New tab group")
+            }
+            .padding(.vertical, 2)
+        }
+        .alert(
+            tabGroupNamePromptTitle,
+            isPresented: Binding(
+                get: { tabGroupNamePrompt != nil },
+                set: { if !$0 { tabGroupNamePrompt = nil } }
+            )
+        ) {
+            TextField("Name", text: $tabGroupNameText)
+            Button("Cancel", role: .cancel) {
+                tabGroupNamePrompt = nil
+            }
+            Button("Save") {
+                saveTabGroupName()
+            }
+        }
+    }
+
+    private var tabGroupNamePromptTitle: String {
+        switch tabGroupNamePrompt {
+        case .rename: return "Rename Group"
+        default: return "New Tab Group"
+        }
+    }
+
+    private func saveTabGroupName() {
+        let name = tabGroupNameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch tabGroupNamePrompt {
+        case .new:
+            let group = vm.createTabGroup(title: name)
+            selectedTabScope = .group(group.id)
+        case .rename(let group):
+            if !name.isEmpty {
+                vm.renameTabGroup(group, title: name)
+            }
+        case nil:
+            break
+        }
+        tabGroupNamePrompt = nil
+    }
+
+    private func groupChip(
+        title: String,
+        systemImage: String?,
+        count: Int,
+        isSelected: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        return Button(action: action) {
+            HStack(spacing: 4) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.system(size: 11, weight: .semibold))
+                }
+                Text(title)
+                    .lineLimit(1)
+                Text("\(count)")
+                    .foregroundStyle(isSelected ? Color.accentColor.opacity(0.75) : sidebarSecondaryText)
+            }
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundColor(isSelected ? .accentColor : sidebarPrimaryText)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .background(
+                Capsule().fill(isSelected ? Color.accentColor.opacity(0.2) : sidebarIconBackground)
+            )
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title), \(count) tabs")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    private var tabScopeSummary: String {
+        "\(visibleSidebarTabs.count) open"
+    }
+
+    private var recentlyClosedRow: some View {
+        Button {
+            showHistory = true
+        } label: {
+            HStack(spacing: 10) {
+                sidebarIconContainer {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: sidebarIconFontSize, weight: .semibold))
+                        .foregroundColor(sidebarPrimaryText)
+                }
+                Text("Recently Closed")
+                    .font(.system(size: sidebarTitleFontSize, weight: .semibold))
+                    .foregroundColor(sidebarPrimaryText)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Text("\(vm.recentlyClosedTabs.count)")
+                    .font(.system(size: sidebarSubtitleFontSize))
+                    .foregroundColor(sidebarSecondaryText)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(sidebarSecondaryText)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .glassEffectCompat(
+                in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+                material: .ultraThinMaterial,
+                tint: sidebarRowBackground,
+                strokeOpacity: isSidebarDark ? 0.35 : 0.45
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
+        .accessibilityHint("Opens history")
     }
 
     private func sidebarPinButton(isPinned: Binding<Bool>, label: String) -> some View {
@@ -4818,6 +5808,221 @@ struct ContentView: View {
         }
     }
 
+    /// A tab on its own, or two tabs saved together in split view.
+    private enum SidebarTabEntry: Identifiable {
+        case single(BrowserTab)
+        case pair(BrowserTab, BrowserTab)
+
+        var id: UUID {
+            switch self {
+            case .single(let tab): return tab.id
+            case .pair(let primary, _): return primary.id
+            }
+        }
+    }
+
+    /// The visible tabs in order, with each split pair shown once, where its first tab sits.
+    private var sidebarTabEntries: [SidebarTabEntry] {
+        let visible = visibleSidebarTabs
+        let visibleIDs = Set(visible.map(\.id))
+        var shown = Set<UUID>()
+        var entries: [SidebarTabEntry] = []
+        for tab in visible where !shown.contains(tab.id) {
+            if let pair = vm.splitPair(containing: tab.id),
+               let partnerID = pair.partner(of: tab.id),
+               visibleIDs.contains(partnerID),
+               let primary = vm.tabs.first(where: { $0.id == pair.primaryID }),
+               let secondary = vm.tabs.first(where: { $0.id == pair.secondaryID }) {
+                entries.append(.pair(primary, secondary))
+                shown.formUnion([primary.id, secondary.id])
+            } else {
+                entries.append(.single(tab))
+                shown.insert(tab.id)
+            }
+        }
+        return entries
+    }
+
+    /// One card for a split pair: both pages side by side. Tap a half to show the pair;
+    /// the ✕ separates them and both stay open as normal tabs.
+    private func splitPairRow(primary: BrowserTab, secondary: BrowserTab) -> some View {
+        let isActive = vm.selectedTabID == primary.id || vm.selectedTabID == secondary.id
+        let isHorizontal = vm.splitPair(containing: primary.id)?.isHorizontal ?? false
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: isHorizontal ? "rectangle.split.1x2" : "rectangle.split.2x1")
+                    .font(.system(size: sidebarIconFontSize, weight: .semibold))
+                    .foregroundColor(sidebarSecondaryText)
+                Text("Split View")
+                    .font(.system(size: sidebarSubtitleFontSize, weight: .semibold))
+                    .foregroundColor(sidebarSecondaryText)
+                Spacer(minLength: 0)
+                Button {
+                    separateSplitPair(containing: primary.id)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.bold))
+                        .foregroundColor(sidebarPrimaryText)
+                        .padding(6)
+                        .background(Circle().fill(sidebarIconBackground))
+                }
+                .buttonStyle(.plain)
+                .frame(width: 40, height: 32)
+                .contentShape(Rectangle())
+                .accessibilityLabel("Separate split view")
+                .accessibilityHint("Both tabs stay open")
+            }
+
+            HStack(alignment: .top, spacing: 8) {
+                splitPairHalf(primary)
+                splitPairHalf(secondary)
+            }
+        }
+        .padding(10)
+        .glassEffectCompat(
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous),
+            material: isActive ? .regularMaterial : .ultraThinMaterial,
+            tint: isActive ? sidebarRowSelectedBackground : sidebarRowBackground,
+            strokeOpacity: isSidebarDark ? 0.35 : 0.45
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func splitPairHalf(_ tab: BrowserTab) -> some View {
+        let title = tab.title.isEmpty ? "New Tab" : tab.title
+        let subtitle = tab.url?.host ?? (tab.isBlank ? "Blank Tab" : tab.address)
+        return Menu {
+            tabMenuItems(for: tab)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Group {
+                        if let favicon = tab.favicon {
+                            Image(uiImage: favicon)
+                                .resizable()
+                                .scaledToFill()
+                        } else {
+                            Image(systemName: tab.isIncognito ? "eye.slash" : "globe")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(sidebarPrimaryText)
+                        }
+                    }
+                    .frame(width: 16, height: 16)
+                    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(title)
+                            .font(.system(size: sidebarSubtitleFontSize, weight: .semibold))
+                            .foregroundColor(sidebarPrimaryText)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(.system(size: max(10, sidebarSubtitleFontSize - 2)))
+                            .foregroundColor(sidebarSecondaryText)
+                            .lineLimit(1)
+                    }
+                }
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(sidebarIconBackground)
+                    if let thumbnail = tab.thumbnail {
+                        Image(uiImage: thumbnail)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .clipped()
+                    }
+                }
+                .frame(height: 90)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        } primaryAction: {
+            vm.selectedTabID = tab.id
+            if tab.isBlank { omniboxFocused = true }
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title), split view")
+    }
+
+    private func separateSplitPair(containing tabID: UUID) {
+        let isShowing = splitPrimaryID == tabID || splitSecondaryID == tabID
+        vm.removeSplitPair(containing: tabID)
+        if isShowing {
+            withAnimation(.easeOut(duration: 0.2)) {
+                clearSplitView()
+            }
+        }
+    }
+
+    /// Long-press menu for a tab, shared by normal tab cards and split pair cards.
+    @ViewBuilder
+    private func tabMenuItems(for tab: BrowserTab) -> some View {
+        let canSplit = vm.selectedTabID != nil && vm.tabs.count > 1
+        if !tab.isBlank && tab.url != nil {
+            Button {
+                toggleReaderMode(for: tab)
+            } label: {
+                Label(
+                    tab.isReaderMode ? "Disable Reader Mode" : "Enable Reader Mode",
+                    systemImage: tab.isReaderMode ? "text.book.closed.fill" : "text.book.closed"
+                )
+            }
+            Button {
+                toggleDarkMode(for: tab)
+            } label: {
+                Label(
+                    effectiveDarkMode(for: tab) ? "Disable Dark Web Page" : "Enable Dark Web Page",
+                    systemImage: effectiveDarkMode(for: tab) ? "moon.fill" : "moon"
+                )
+            }
+            Divider()
+        }
+        if tab.currentURL != nil {
+            Button {
+                presentShareSheet(for: tab)
+            } label: {
+                Label("Share…", systemImage: "square.and.arrow.up")
+            }
+        }
+        if vm.isFavorite(tab.url) {
+            Button("Remove from Favorites") {
+                if let favorite = vm.favorites.first(where: { $0.url == tab.url }) {
+                    vm.removeFromFavorites(favorite)
+                }
+            }
+        } else {
+            Button("Add to Favorites") {
+                vm.addToFavorites(tab)
+            }
+            .disabled(tab.url == nil)
+        }
+        Menu("Move to Tab Group", systemImage: "folder") {
+            Button {
+                vm.move(tab, to: nil)
+            } label: {
+                Label("Ungrouped", systemImage: tab.groupID == nil ? "checkmark" : "tray")
+            }
+            ForEach(vm.tabGroups) { group in
+                Button {
+                    vm.move(tab, to: group.id)
+                } label: {
+                    Label(group.title, systemImage: tab.groupID == group.id ? "checkmark" : "folder")
+                }
+            }
+        }
+        Divider()
+        splitViewMenuItems(canSplit: canSplit) { mode in
+            openSplitView(with: tab, mode: mode)
+        }
+        Divider()
+        Button(role: .destructive) {
+            performClose(tab)
+        } label: {
+            Label("Close Tab", systemImage: "xmark")
+        }
+    }
+
     private func tabRow(_ tab: BrowserTab) -> some View {
         let title = tab.title.isEmpty ? "New Tab" : tab.title
         let subtitle = tab.url?.host ?? (tab.isBlank ? "Blank Tab" : tab.address)
@@ -4895,66 +6100,7 @@ struct ContentView: View {
 
         return ZStack(alignment: .topTrailing) {
             Menu {
-                if !tab.isBlank && tab.url != nil {
-                    Button {
-                        toggleReaderMode(for: tab)
-                    } label: {
-                        Label(
-                            tab.isReaderMode ? "Disable Reader Mode" : "Enable Reader Mode",
-                            systemImage: tab.isReaderMode ? "text.book.closed.fill" : "text.book.closed"
-                        )
-                    }
-                    Button {
-                        toggleDarkMode(for: tab)
-                    } label: {
-                        Label(
-                            effectiveDarkMode(for: tab) ? "Disable Dark Web Page" : "Enable Dark Web Page",
-                            systemImage: effectiveDarkMode(for: tab) ? "moon.fill" : "moon"
-                        )
-                    }
-                    Divider()
-                }
-                if let url = tab.currentURL {
-                    ShareLink(item: url) {
-                        Label("Share Link", systemImage: "square.and.arrow.up")
-                    }
-                }
-                if vm.isFavorite(tab.url) {
-                    Button("Remove from Favorites") {
-                        if let favorite = vm.favorites.first(where: { $0.url == tab.url }) {
-                            vm.removeFromFavorites(favorite)
-                        }
-                    }
-                } else {
-                    Button("Add to Favorites") {
-                        vm.addToFavorites(tab)
-                    }
-                    .disabled(tab.url == nil)
-                }
-                Menu("Move to Tab Group", systemImage: "folder") {
-                    Button {
-                        vm.move(tab, to: nil)
-                    } label: {
-                        Label("Ungrouped", systemImage: tab.groupID == nil ? "checkmark" : "tray")
-                    }
-                    ForEach(vm.tabGroups) { group in
-                        Button {
-                            vm.move(tab, to: group.id)
-                        } label: {
-                            Label(group.title, systemImage: tab.groupID == group.id ? "checkmark" : "folder")
-                        }
-                    }
-                }
-                Divider()
-                splitViewMenuItems(canSplit: canSplit) { mode in
-                    openSplitView(with: tab, mode: mode)
-                }
-                Divider()
-                Button(role: .destructive) {
-                    performClose(tab)
-                } label: {
-                    Label("Close Tab", systemImage: "xmark")
-                }
+                tabMenuItems(for: tab)
             } label: {
                 rowContent
                     .padding(.trailing, controlHitSize + controlInset)
@@ -5010,62 +6156,139 @@ struct ContentView: View {
         .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    /// Two rows of favorites by default; the rest behind "Show All" so the grid
-    /// never pushes the tab list far down.
-    private enum FavoriteGridItem: Identifiable {
-        case folder(FavoriteFolder)
-        case favorite(Favorite)
+    /// Favorites: folders get the first row, favorites the second; each row scrolls sideways.
+    private var favoritesSection: some View {
+        let folders = vm.favoriteFolders(inFolder: nil)
+        let favorites = vm.favorites(inFolder: nil)
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                // Tap the header to fold the folder and favorite rows away, and again to show them.
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        favoritesCollapsed.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        sidebarSectionHeader("Favorites", systemImage: "star.fill")
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(sidebarSecondaryText)
+                            .rotationEffect(.degrees(favoritesCollapsed ? -90 : 0))
+                            .padding(.top, 8)
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(favoritesCollapsed ? "Show favorites" : "Hide favorites")
+                Spacer(minLength: 0)
+            }
 
-        var id: UUID {
-            switch self {
-            case .folder(let folder): return folder.id
-            case .favorite(let favorite): return favorite.id
+            if !favoritesCollapsed {
+                if !folders.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        LazyHStack(spacing: 8) {
+                            ForEach(folders) { folder in
+                                favoriteFolderTile(folder)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: 8) {
+                        ForEach(favorites) { favorite in
+                            favoriteTile(favorite)
+                        }
+                        if let tab = selectedTab, tab.currentURL != nil, !vm.isFavorite(tab.url) {
+                            addFavoriteTile(for: tab)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+
+                HStack {
+                    Button {
+                        favoritesSheet = FavoritesSheetRequest(folderID: nil)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("Manage")
+                            Image(systemName: "chevron.right")
+                                .font(.caption2.weight(.semibold))
+                        }
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(sidebarSecondaryText)
+                        .frame(minHeight: 32)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Manage favorites")
+                    Spacer(minLength: 0)
+                }
             }
         }
     }
 
-    private var favoritesGrid: some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
-        let collapsedLimit = 8
-        // Top-level folders first, then top-level favorites; folder contents open in Favorites.
-        let items = vm.favoriteFolders(inFolder: nil).map(FavoriteGridItem.folder)
-            + vm.favorites(inFolder: nil).map(FavoriteGridItem.favorite)
-        let visible = showAllFavorites ? items : Array(items.prefix(collapsedLimit))
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                sidebarSectionHeader("Favorites", systemImage: "star.fill")
-                Spacer(minLength: 0)
-                Button("Manage") {
-                    favoritesSheet = FavoritesSheetRequest(folderID: nil)
-                }
-                .font(.footnote.weight(.semibold))
-                .foregroundStyle(sidebarSecondaryText)
-                .buttonStyle(.plain)
-                .frame(minHeight: 44)
-                .padding(.top, 8)
-                if items.count > collapsedLimit {
-                    Button(showAllFavorites ? "Show Less" : "Show All") {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            showAllFavorites.toggle()
-                        }
-                    }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(sidebarSecondaryText)
-                    .buttonStyle(.plain)
-                    .frame(minHeight: 44)
-                    .padding(.top, 8)
-                }
-            }
-            LazyVGrid(columns: columns, spacing: 8) {
-                ForEach(visible) { item in
-                    switch item {
-                    case .folder(let folder):
-                        favoriteFolderTile(folder)
-                    case .favorite(let favorite):
-                        favoriteTile(favorite)
-                    }
-                }
-            }
+    private let favoriteTileWidth: CGFloat = 84
+    private let favoriteTileHeight: CGFloat = 76
+
+    /// Icon on top, then name and a detail line, with a "…" menu in the corner.
+    private func favoriteTileContent<Icon: View>(
+        title: String,
+        detail: String,
+        @ViewBuilder icon: () -> Icon
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            icon()
+                .frame(width: 22, height: 22)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.bottom, 2)
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(sidebarPrimaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Text(detail)
+                .font(.system(size: 10.5))
+                .foregroundColor(sidebarSecondaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 9)
+        .padding(.bottom, 8)
+        // Every tile is exactly the same size; the text sizes are fixed so it always fits.
+        .frame(width: favoriteTileWidth, height: favoriteTileHeight, alignment: .topLeading)
+    }
+
+    private func favoriteTileMoreButton<Items: View>(@ViewBuilder items: () -> Items) -> some View {
+        Menu {
+            items()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.caption2.weight(.bold))
+                .foregroundColor(sidebarSecondaryText)
+                .frame(width: 28, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("More options")
+    }
+
+    @ViewBuilder
+    private func favoriteFolderMenuItems(_ folder: FavoriteFolder) -> some View {
+        let count = vm.favoriteCount(inFolderTree: folder.id)
+        Button {
+            favoritesSheet = FavoritesSheetRequest(folderID: folder.id)
+        } label: {
+            Label("Open Folder", systemImage: "folder")
+        }
+        Divider()
+        Button(role: .destructive) {
+            vm.deleteFavoriteFolder(folder.id)
+        } label: {
+            Label(count == 0 ? "Delete Folder" : "Delete Folder and \(count) \(count == 1 ? "Favorite" : "Favorites")", systemImage: "trash")
         }
     }
 
@@ -5074,38 +6297,28 @@ struct ContentView: View {
         let count = vm.favoriteCount(inFolderTree: folder.id)
 
         return Menu {
-            Button {
-                favoritesSheet = FavoritesSheetRequest(folderID: folder.id)
-            } label: {
-                Label("Open Folder", systemImage: "folder")
-            }
-            Divider()
-            Button(role: .destructive) {
-                vm.deleteFavoriteFolder(folder.id)
-            } label: {
-                Label(count == 0 ? "Delete Folder" : "Delete Folder and \(count) \(count == 1 ? "Favorite" : "Favorites")", systemImage: "trash")
-            }
+            favoriteFolderMenuItems(folder)
         } label: {
-            VStack(spacing: 4) {
+            favoriteTileContent(
+                title: folder.title,
+                detail: "\(count) \(count == 1 ? "favorite" : "favorites")"
+            ) {
                 Image(systemName: "folder.fill")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(BrowserDesign.Tint.favorite)
-                    .frame(width: 24, height: 24)
-                Text(folder.title)
-                    .font(.caption2.weight(.medium))
-                    .foregroundColor(sidebarSecondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
             }
-            .frame(maxWidth: .infinity, minHeight: 56)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 6)
             .contentShape(shape)
         } primaryAction: {
             favoritesSheet = FavoritesSheetRequest(folderID: folder.id)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
+        .frame(width: favoriteTileWidth, height: favoriteTileHeight)
+        .overlay(alignment: .topTrailing) {
+            favoriteTileMoreButton {
+                favoriteFolderMenuItems(folder)
+            }
+        }
         .glassEffectCompat(
             in: shape,
             material: .ultraThinMaterial,
@@ -5117,79 +6330,107 @@ struct ContentView: View {
         .id("favorite-folder-\(folder.id)")
     }
 
-    private func favoriteTile(_ favorite: Favorite) -> some View {
+    @ViewBuilder
+    private func favoriteMenuItems(_ favorite: Favorite) -> some View {
         let canSplit = vm.selectedTabID != nil
+        splitViewMenuItems(canSplit: canSplit) { mode in
+            openSplitView(with: favorite, mode: mode)
+        }
+        Divider()
+        Button {
+            favoriteRenameText = favorite.title
+            favoritePendingRename = favorite
+        } label: {
+            Label("Rename", systemImage: "pencil")
+        }
+        if !vm.favoriteFolders.isEmpty {
+            Menu {
+                ForEach(vm.favoriteFolderPaths) { item in
+                    Button(item.path) {
+                        vm.moveFavorite(favorite, toFolder: item.id)
+                    }
+                }
+            } label: {
+                Label("Move to Folder", systemImage: "folder")
+            }
+        }
+        Button(role: .destructive) {
+            vm.removeFromFavorites(favorite)
+        } label: {
+            Label("Remove Favorite", systemImage: "trash")
+        }
+    }
+
+    private func favoriteTile(_ favorite: Favorite) -> some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         let name = favorite.title.isEmpty ? (favorite.url.host ?? favorite.url.absoluteString) : favorite.title
+        let host = (favorite.url.host ?? favorite.url.absoluteString)
+            .replacingOccurrences(of: "^www\\.", with: "", options: .regularExpression)
 
         return Menu {
-            splitViewMenuItems(canSplit: canSplit) { mode in
-                openSplitView(with: favorite, mode: mode)
-            }
-            Divider()
-            Button {
-                favoriteRenameText = favorite.title
-                favoritePendingRename = favorite
-            } label: {
-                Label("Rename", systemImage: "pencil")
-            }
-            if !vm.favoriteFolders.isEmpty {
-                Menu {
-                    ForEach(vm.favoriteFolderPaths) { item in
-                        Button(item.path) {
-                            vm.moveFavorite(favorite, toFolder: item.id)
-                        }
-                    }
-                } label: {
-                    Label("Move to Folder", systemImage: "folder")
-                }
-            }
-            Button(role: .destructive) {
-                vm.removeFromFavorites(favorite)
-            } label: {
-                Label("Remove Favorite", systemImage: "trash")
-            }
+            favoriteMenuItems(favorite)
         } label: {
-            VStack(spacing: 4) {
-                Group {
-                    if let faviconData = favorite.favicon,
-                       let favicon = UIImage(data: faviconData) {
-                        Image(uiImage: favicon)
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: 24, height: 24)
-                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                    } else {
-                        Text(String(name.prefix(1)).uppercased())
-                            .font(.headline)
-                            .foregroundColor(sidebarPrimaryText)
-                            .frame(width: 24, height: 24)
-                    }
+            favoriteTileContent(title: name, detail: host) {
+                if let faviconData = favorite.favicon,
+                   let favicon = UIImage(data: faviconData) {
+                    Image(uiImage: favicon)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: 22, height: 22)
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                } else {
+                    Text(String(name.prefix(1)).uppercased())
+                        .font(.headline)
+                        .foregroundColor(sidebarPrimaryText)
                 }
-                Text(name)
-                    .font(.caption2.weight(.medium))
-                    .foregroundColor(sidebarSecondaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
             }
-            .frame(maxWidth: .infinity, minHeight: 56)
-            .padding(.horizontal, 4)
-            .padding(.vertical, 6)
             .contentShape(shape)
         } primaryAction: {
             vm.openFavoriteInNewTab(favorite)
         }
         .menuStyle(.button)
         .buttonStyle(.plain)
+        .frame(width: favoriteTileWidth, height: favoriteTileHeight)
+        .overlay(alignment: .topTrailing) {
+            favoriteTileMoreButton {
+                favoriteMenuItems(favorite)
+            }
+        }
         .glassEffectCompat(
             in: shape,
             material: .ultraThinMaterial,
             tint: sidebarRowBackground,
-            strokeOpacity: isSidebarDark ? 0.35 : 0.45
+            strokeOpacity: isSidebarDark ? 0.35 : 0.45,
+            // No glass light-up and grow when the tile is pressed.
+            isInteractive: false
         )
         .accessibilityLabel(name)
         .accessibilityHint("Opens in a new tab. Touch and hold for more options.")
         .id("favorite-\(favorite.id)")
+    }
+
+    /// Dashed tile at the end of the favorites row that saves the current page.
+    private func addFavoriteTile(for tab: BrowserTab) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        return Button {
+            vm.addToFavorites(tab)
+        } label: {
+            VStack(spacing: 4) {
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .medium))
+                Text("Add Favorite")
+                    .font(.caption.weight(.medium))
+                    .lineLimit(1)
+            }
+            .foregroundColor(sidebarSecondaryText)
+            .frame(width: favoriteTileWidth, height: favoriteTileHeight)
+            .overlay(
+                shape.strokeBorder(sidebarSecondaryText.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            )
+            .contentShape(shape)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add current page to Favorites")
     }
 
     private var settingsButton: some View {
@@ -5418,15 +6659,9 @@ struct ContentView: View {
                                 if !isToolbarCollapsed {
                                     collapseToolbar()
                                 }
-                                withAnimation(.easeOut(duration: 0.15)) {
-                                    isScrolling = true
-                                }
                             },
                             onScrollEnd: {
                                 refreshToolbarBackdrop()
-                                withAnimation(.easeOut(duration: 0.2)) {
-                                    isScrolling = false
-                                }
                             },
                             onUserInteraction: {
                                 if omniboxFocused {
@@ -5449,7 +6684,10 @@ struct ContentView: View {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                                     refreshToolbarBackdrop()
                                 }
-                            }
+                            },
+                            bottomChromeHeight: activeTabBottomChromeHeight,
+                            bottomScrollInset: activeTabBottomScrollInset,
+                            onToolbarScrollEvent: handleToolbarScrollEvent
                         )
                         .id(tab.id)
                         .edgesIgnoringSafeArea(.all)
@@ -5466,6 +6704,9 @@ struct ContentView: View {
             splitContentStack(primary: primary, secondary: secondary, mode: mode)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        // Like a single page, split pages run under the status bar and home indicator
+        // instead of leaving black bands there.
+        .ignoresSafeArea(.container, edges: .vertical)
     }
 
     @ViewBuilder
@@ -5483,11 +6724,11 @@ struct ContentView: View {
 
                 ZStack {
                     HStack(spacing: 0) {
-                        splitPane(for: primary)
+                        splitPane(for: primary, touchesBottom: true)
                             .frame(width: primaryWidth, height: totalHeight)
                         splitDivider(axis: .vertical)
                             .frame(width: spacing, height: totalHeight)
-                        splitPane(for: secondary)
+                        splitPane(for: secondary, touchesBottom: true)
                             .frame(width: secondaryWidth, height: totalHeight)
                     }
 
@@ -5513,7 +6754,7 @@ struct ContentView: View {
                             .frame(width: totalWidth, height: primaryHeight)
                         splitDivider(axis: .horizontal)
                             .frame(width: totalWidth, height: spacing)
-                        splitPane(for: secondary)
+                        splitPane(for: secondary, touchesBottom: true)
                             .frame(width: totalWidth, height: secondaryHeight)
                     }
 
@@ -5595,7 +6836,8 @@ struct ContentView: View {
     }
 
     @ViewBuilder
-    private func splitPane(for tab: BrowserTab) -> some View {
+    /// `touchesBottom`: the pane reaches the bottom edge, where the toolbar floats over it.
+    private func splitPane(for tab: BrowserTab, touchesBottom: Bool = false) -> some View {
         Group {
             if tab.isBlank {
                 Color(UIColor.systemBackground)
@@ -5612,16 +6854,9 @@ struct ContentView: View {
                             if !isToolbarCollapsed {
                                 collapseToolbar()
                             }
-                            withAnimation(.easeOut(duration: 0.15)) {
-                                isScrolling = true
-                            }
                             handleSplitPaneInteraction(tab)
                         },
-                        onScrollEnd: {
-                            withAnimation(.easeOut(duration: 0.2)) {
-                                isScrolling = false
-                            }
-                        },
+                        onScrollEnd: nil,
                         onUserInteraction: {
                             if omniboxFocused {
                                 omniboxFocused = false
@@ -5639,7 +6874,10 @@ struct ContentView: View {
                         },
                         onNavigate: { tab, url in
                             handlePrimaryNavigation(tab, url: url)
-                        }
+                        },
+                        bottomChromeHeight: touchesBottom ? activeTabBottomChromeHeight : 0,
+                        bottomScrollInset: touchesBottom ? activeTabBottomScrollInset : 0,
+                        onToolbarScrollEvent: handleToolbarScrollEvent
                     )
                     .id(tab.id)
                     .allowsHitTesting(true)
@@ -5687,7 +6925,7 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 GlassTextField(
                     tab: tab,
-                    placeholder: "Search or enter address",
+                    placeholder: tab.isIncognito ? "Search privately" : "Search or enter address",
                     onSubmit: {
                         vm.submitAddress(tab.address, for: tab)
                         collapseToolbar()
@@ -5721,6 +6959,9 @@ struct ContentView: View {
                 .ios26PhoneButtonHitTargetCompat()
                 .accessibilityLabel("Close search")
 
+                pageActionsMenu(for: tab)
+                    .ios26PhoneButtonHitTargetCompat()
+
                 if splitMode != nil {
                     exitSplitViewButton
                 }
@@ -5731,7 +6972,7 @@ struct ContentView: View {
         HStack(spacing: 8) {
             GlassTextField(
                 tab: tab,
-                placeholder: "Search or enter address",
+                placeholder: tab.isIncognito ? "Search privately" : "Search or enter address",
                 onSubmit: {
                     vm.submitAddress(tab.address, for: tab)
                     collapseToolbar()
@@ -5759,6 +7000,8 @@ struct ContentView: View {
             }
             .browserToolbarControl()
             .accessibilityLabel("Close search")
+
+            pageActionsMenu(for: tab)
 
             if splitMode != nil {
                 exitSplitViewButton
@@ -5829,6 +7072,7 @@ struct ContentView: View {
         incognitoMode.isActive = true
         showSettingsMenu = false
         omniboxFocused = true
+        showPageStatus("Private tab · not saved in history")
     }
 
     private var filterListOverlay: some View {
@@ -6342,6 +7586,10 @@ struct ContentView: View {
         var onWebProviderPrompt: ((WKWebView, WebAIProvider, String) -> Void)?
         var onWebProviderReady: ((BrowserTab) -> Void)?
         var onNavigate: ((BrowserTab, URL) -> Void)?
+        /// Space the floating bottom controls cover, above the bottom safe area.
+        var bottomChromeHeight: CGFloat = 0
+        var bottomScrollInset: CGFloat = 0
+        var onToolbarScrollEvent: ((ToolbarScrollEvent) -> Void)?
 
         func makeCoordinator() -> Coordinator {
             Coordinator(
@@ -6353,7 +7601,8 @@ struct ContentView: View {
                 onUserInteraction: onUserInteraction,
                 onWebProviderPrompt: onWebProviderPrompt,
                 onWebProviderReady: onWebProviderReady,
-                onNavigate: onNavigate
+                onNavigate: onNavigate,
+                onToolbarScrollEvent: onToolbarScrollEvent
             )
         }
 
@@ -6373,10 +7622,15 @@ struct ContentView: View {
                 // Wait for ad block rules before loading (prevents race condition)
                 loadWhenReady(webView: webView, url: url)
             }
-            return BrowserWebViewContainer(webView: webView)
+            let container = BrowserWebViewContainer(webView: webView)
+            container.bottomScrollInset = bottomScrollInset
+            container.bottomChromeHeight = bottomChromeHeight
+            return container
         }
 
         func updateUIView(_ uiView: BrowserWebViewContainer, context: Context) {
+            uiView.bottomScrollInset = bottomScrollInset
+            uiView.bottomChromeHeight = bottomChromeHeight
             let webView = tab.liveWebView ?? tab.activateWebView()
             webView.navigationDelegate = context.coordinator
             webView.uiDelegate = context.coordinator
@@ -6431,11 +7685,10 @@ struct ContentView: View {
             }
         }
 
-        /// Protected-site headers sit directly beneath the platform's
-        /// scroll-edge glass when the browser extends under the top safe area.
-        /// A small device-specific content inset makes their top controls
-        /// reliably tappable at rest while leaving the WebView itself
-        /// underlapping the glass during scrolling.
+        /// Site headers sit directly beneath the platform's scroll-edge glass when
+        /// the browser extends under the top safe area. A small device-specific
+        /// content inset makes their top controls reliably tappable at rest while
+        /// leaving the WebView itself underlapping the glass during scrolling.
         private static func applySiteSpecificTopInset(to webView: WKWebView, url: URL?) {
             let scrollView = webView.scrollView
             let desiredTop = BrowserSiteViewportPolicy.topContentInset(
@@ -6501,16 +7754,14 @@ struct ContentView: View {
             private let onWebProviderPrompt: ((WKWebView, WebAIProvider, String) -> Void)?
             private let onWebProviderReady: ((BrowserTab) -> Void)?
             private let onNavigate: ((BrowserTab, URL) -> Void)?
+            private let onToolbarScrollEvent: ((ToolbarScrollEvent) -> Void)?
             let refreshControl = UIRefreshControl()
             private var didNotifyScrollStart = false
-            private var leftEdgeGesture: UIScreenEdgePanGestureRecognizer?
-            private var rightEdgeGesture: UIScreenEdgePanGestureRecognizer?
-            private var iPadNavigationPanGesture: UIPanGestureRecognizer?
+            /// A sideways swipe anywhere on the page goes back or forward, on iPhone and iPad.
+            private var navigationPanGesture: UIPanGestureRecognizer?
             private var interactionTapGesture: UITapGestureRecognizer?
             private var navigationFeedbackGenerator: UIImpactFeedbackGenerator?
-            private var leftEdgeNavigationTriggered = false
-            private var rightEdgeNavigationTriggered = false
-            private var iPadNavigationTriggered = false
+            private var navigationSwipeTriggered = false
 
             init(
                 tab: BrowserTab,
@@ -6521,7 +7772,8 @@ struct ContentView: View {
                 onUserInteraction: (() -> Void)?,
                 onWebProviderPrompt: ((WKWebView, WebAIProvider, String) -> Void)?,
                 onWebProviderReady: ((BrowserTab) -> Void)?,
-                onNavigate: ((BrowserTab, URL) -> Void)?
+                onNavigate: ((BrowserTab, URL) -> Void)?,
+                onToolbarScrollEvent: ((ToolbarScrollEvent) -> Void)?
             ) {
                 self.tab = tab
                 self.viewModel = viewModel
@@ -6532,6 +7784,7 @@ struct ContentView: View {
                 self.onWebProviderPrompt = onWebProviderPrompt
                 self.onWebProviderReady = onWebProviderReady
                 self.onNavigate = onNavigate
+                self.onToolbarScrollEvent = onToolbarScrollEvent
                 super.init()
                 if UIDevice.current.userInterfaceIdiom == .phone {
                     navigationFeedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
@@ -7104,6 +8357,17 @@ struct ContentView: View {
                 )
             }
             
+            func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+                onToolbarScrollEvent?(.pin)
+                Task { @MainActor in
+                    // A new document starts untranslated.
+                    self.tab.translatedFrom = nil
+                    self.tab.isTranslating = false
+                    PageZoomStore.apply(to: webView, isIncognito: self.tab.isIncognito)
+                    DistractionHider.apply(to: webView, isIncognito: self.tab.isIncognito)
+                }
+            }
+
             func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
                 Task { @MainActor in
                     self.tab.restoreScrollPositionIfNeeded(on: webView)
@@ -7246,137 +8510,62 @@ struct ContentView: View {
 
             func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
                 if !decelerate {
-                    notifyScrollEndIfNeeded()
+                    notifyScrollEndIfNeeded(scrollView)
                 }
             }
 
             func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-                notifyScrollEndIfNeeded()
+                notifyScrollEndIfNeeded(scrollView)
             }
 
             private func notifyScrollStartIfNeeded() {
                 guard !didNotifyScrollStart else { return }
                 didNotifyScrollStart = true
                 onScroll?()
+                onToolbarScrollEvent?(.scrollBegan)
             }
 
-            private func notifyScrollEndIfNeeded() {
+            private func notifyScrollEndIfNeeded(_ scrollView: UIScrollView) {
                 guard didNotifyScrollStart else { return }
                 didNotifyScrollStart = false
                 onScrollEnd?()
+                let atTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 8
+                onToolbarScrollEvent?(.scrollEnded(atTop: atTop))
             }
 
             // MARK: - Gesture handling
             func installGestures(on webView: WKWebView) {
-                if leftEdgeGesture?.view === webView { return }
-                [leftEdgeGesture, rightEdgeGesture, iPadNavigationPanGesture, interactionTapGesture]
+                if navigationPanGesture?.view === webView { return }
+                [navigationPanGesture, interactionTapGesture]
                     .compactMap { $0 }
                     .forEach { $0.view?.removeGestureRecognizer($0) }
-                leftEdgeGesture = nil
-                rightEdgeGesture = nil
-                iPadNavigationPanGesture = nil
+                navigationPanGesture = nil
                 interactionTapGesture = nil
-                let leftEdge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleLeftEdge(_:)))
-                leftEdge.edges = .left
-                leftEdge.cancelsTouchesInView = false
-                leftEdge.delegate = self
-                leftEdge.isEnabled = UIDevice.current.userInterfaceIdiom == .phone
-                webView.addGestureRecognizer(leftEdge)
 
-                let rightEdge = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleRightEdge(_:)))
-                rightEdge.edges = .right
-                rightEdge.cancelsTouchesInView = false
-                rightEdge.delegate = self
-                rightEdge.isEnabled = UIDevice.current.userInterfaceIdiom == .phone
-                webView.addGestureRecognizer(rightEdge)
-
-                if UIDevice.current.userInterfaceIdiom != .phone {
-                    let navigationPan = UIPanGestureRecognizer(target: self, action: #selector(handleIPadNavigationPan(_:)))
-                    navigationPan.maximumNumberOfTouches = 1
-                    navigationPan.allowedScrollTypesMask = .continuous
-                    navigationPan.cancelsTouchesInView = false
-                    navigationPan.delegate = self
-                    webView.addGestureRecognizer(navigationPan)
-                    iPadNavigationPanGesture = navigationPan
-                }
+                let navigationPan = UIPanGestureRecognizer(target: self, action: #selector(handleNavigationPan(_:)))
+                navigationPan.maximumNumberOfTouches = 1
+                navigationPan.allowedScrollTypesMask = .continuous
+                navigationPan.cancelsTouchesInView = false
+                navigationPan.delegate = self
+                webView.addGestureRecognizer(navigationPan)
+                navigationPanGesture = navigationPan
 
                 let interactionTap = UITapGestureRecognizer(target: self, action: #selector(handleInteractionTap(_:)))
                 interactionTap.cancelsTouchesInView = false
                 interactionTap.delegate = self
                 webView.addGestureRecognizer(interactionTap)
-
-                leftEdgeGesture = leftEdge
-                rightEdgeGesture = rightEdge
                 interactionTapGesture = interactionTap
-
-                if UIDevice.current.userInterfaceIdiom == .phone {
-                    let pan = webView.scrollView.panGestureRecognizer
-                    pan.require(toFail: leftEdge)
-                    pan.require(toFail: rightEdge)
-                }
             }
 
             func setEdgeGesturesEnabled(_ enabled: Bool) {
-                let isPhone = UIDevice.current.userInterfaceIdiom == .phone
-                leftEdgeGesture?.isEnabled = enabled && isPhone
-                rightEdgeGesture?.isEnabled = enabled && isPhone
-                iPadNavigationPanGesture?.isEnabled = enabled && !isPhone
+                navigationPanGesture?.isEnabled = enabled
             }
 
-            @objc private func handleLeftEdge(_ g: UIScreenEdgePanGestureRecognizer) {
-                if g.state == .began {
-                    leftEdgeNavigationTriggered = false
-                    navigationFeedbackGenerator?.prepare()
-                } else if g.state == .ended {
-                    if !leftEdgeNavigationTriggered,
-                       navigationGestureCrossedThreshold(g, expectedHorizontalSign: 1) {
-                        let webView = tab.activateWebView()
-                        if webView.canGoBack {
-                            tab.navigateBack()
-                            navigationFeedbackGenerator?.impactOccurred(intensity: 1.0)
-                        }
-                    }
-                    leftEdgeNavigationTriggered = false
-                } else if g.state == .cancelled || g.state == .failed {
-                    leftEdgeNavigationTriggered = false
-                }
-            }
-
-            @objc private func handleRightEdge(_ g: UIScreenEdgePanGestureRecognizer) {
-                if g.state == .began {
-                    rightEdgeNavigationTriggered = false
-                    navigationFeedbackGenerator?.prepare()
-                } else if g.state == .ended {
-                    if !rightEdgeNavigationTriggered,
-                       navigationGestureCrossedThreshold(g, expectedHorizontalSign: -1) {
-                        let webView = tab.activateWebView()
-                        if webView.canGoForward {
-                            tab.navigateForward()
-                            navigationFeedbackGenerator?.impactOccurred(intensity: 1.0)
-                        }
-                    }
-                    rightEdgeNavigationTriggered = false
-                } else if g.state == .cancelled || g.state == .failed {
-                    rightEdgeNavigationTriggered = false
-                }
-            }
-
-            private func navigationGestureCrossedThreshold(
-                _ gesture: UIScreenEdgePanGestureRecognizer,
-                expectedHorizontalSign: CGFloat
-            ) -> Bool {
-                guard let view = gesture.view else { return false }
-                let translation = gesture.translation(in: view)
-                let horizontalTravel = translation.x * expectedHorizontalSign
-                let requiredTravel = min(max(view.bounds.width * 0.12, 52), 84)
-                return horizontalTravel >= requiredTravel
-                    && horizontalTravel > abs(translation.y) * 1.2
-            }
-
-            @objc private func handleIPadNavigationPan(_ gesture: UIPanGestureRecognizer) {
+            @objc private func handleNavigationPan(_ gesture: UIPanGestureRecognizer) {
                 if gesture.state == .began {
-                    iPadNavigationTriggered = false
-                } else if gesture.state == .changed, !iPadNavigationTriggered {
+                    navigationSwipeTriggered = false
+                    navigationFeedbackGenerator?.prepare()
+                } else if gesture.state == .changed, !navigationSwipeTriggered {
                     guard let view = gesture.view else { return }
                     let translation = gesture.translation(in: view)
                     let horizontalTravel = abs(translation.x)
@@ -7384,22 +8573,41 @@ struct ContentView: View {
                     guard horizontalTravel >= requiredTravel,
                           horizontalTravel > abs(translation.y) * 1.25 else { return }
 
+                    // A zoomed-in page pans sideways first; navigation waits for its edge.
                     let webView = tab.activateWebView()
-                    let isIndirectScroll = gesture.numberOfTouches == 0
                     if translation.x > 0, webView.canGoBack,
-                       !isIndirectScroll || Self.isScrolledToLeadingEdge(webView.scrollView) {
-                        iPadNavigationTriggered = true
+                       Self.isScrolledToLeadingEdge(webView.scrollView) {
+                        navigationSwipeTriggered = true
                         tab.navigateBack()
+                        navigationFeedbackGenerator?.impactOccurred(intensity: 1.0)
                     } else if translation.x < 0, webView.canGoForward,
-                              !isIndirectScroll || Self.isScrolledToTrailingEdge(webView.scrollView) {
-                        iPadNavigationTriggered = true
+                              Self.isScrolledToTrailingEdge(webView.scrollView) {
+                        navigationSwipeTriggered = true
                         tab.navigateForward()
+                        navigationFeedbackGenerator?.impactOccurred(intensity: 1.0)
                     }
                 } else if gesture.state == .ended
                             || gesture.state == .cancelled
                             || gesture.state == .failed {
-                    iPadNavigationTriggered = false
+                    navigationSwipeTriggered = false
                 }
+            }
+
+            /// Whether the swipe began inside a part of the page that scrolls sideways on
+            /// its own (WebKit backs CSS overflow scrolling with native scroll views).
+            private static func startsInHorizontalScroller(_ pan: UIPanGestureRecognizer) -> Bool {
+                guard let webView = pan.view as? WKWebView else { return false }
+                let point = pan.location(in: webView)
+                var view = webView.hitTest(point, with: nil)
+                while let current = view, current !== webView.scrollView, current !== webView {
+                    if let scroller = current as? UIScrollView,
+                       scroller.isScrollEnabled,
+                       scroller.contentSize.width > scroller.bounds.width + 1 {
+                        return true
+                    }
+                    view = current.superview
+                }
+                return false
             }
 
             private static func isScrolledToLeadingEdge(_ scrollView: UIScrollView) -> Bool {
@@ -7414,26 +8622,25 @@ struct ContentView: View {
             @objc private func handleInteractionTap(_ g: UITapGestureRecognizer) {
                 if g.state == .ended {
                     onUserInteraction?()
+                    // A tap on the page brings the controls back to stay; the tap
+                    // still reaches the page.
+                    onToolbarScrollEvent?(.pin)
                 }
             }
 
             func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-                if let edge = gestureRecognizer as? UIScreenEdgePanGestureRecognizer {
-                    let velocity = edge.velocity(in: edge.view)
-                    return abs(velocity.x) > abs(velocity.y)
-                }
-                if gestureRecognizer == iPadNavigationPanGesture,
+                if gestureRecognizer == navigationPanGesture,
                    let pan = gestureRecognizer as? UIPanGestureRecognizer {
                     let velocity = pan.velocity(in: pan.view)
-                    return abs(velocity.x) > abs(velocity.y) * 1.15
+                    guard abs(velocity.x) > abs(velocity.y) * 1.15 else { return false }
+                    // Sideways swipes on galleries and carousels scroll them instead.
+                    return !Self.startsInHorizontalScroller(pan)
                 }
                 return true
             }
 
             func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
-                if gestureRecognizer == leftEdgeGesture
-                    || gestureRecognizer == rightEdgeGesture
-                    || gestureRecognizer == iPadNavigationPanGesture
+                if gestureRecognizer == navigationPanGesture
                     || gestureRecognizer == interactionTapGesture {
                     return true
                 }

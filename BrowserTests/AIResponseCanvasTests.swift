@@ -229,70 +229,27 @@ final class AIResponseCanvasTests: XCTestCase {
         XCTAssertEqual(components.queryItems?.first(where: { $0.name == "q" })?.value, "browser news")
     }
 
-    func testProtectedSiteTopContentInsetsAreDeviceAndHostScoped() {
+    func testTopContentInsetAppliesToWebPagesPerDevice() {
+        let reddit = URL(string: "https://www.reddit.com/r/AppleWatch/comments/example")
+        let site = URL(string: "https://example.com/news")
+        XCTAssertEqual(BrowserSiteViewportPolicy.topContentInset(for: reddit, idiom: .pad), 12)
+        XCTAssertEqual(BrowserSiteViewportPolicy.topContentInset(for: reddit, idiom: .phone), 24)
+        XCTAssertEqual(BrowserSiteViewportPolicy.topContentInset(for: site, idiom: .pad), 12)
+        XCTAssertEqual(BrowserSiteViewportPolicy.topContentInset(for: site, idiom: .phone), 24)
         XCTAssertEqual(
-            BrowserSiteViewportPolicy.topContentInset(
-                for: URL(string: "https://www.reddit.com/r/AppleWatch/comments/example"),
-                idiom: .pad
-            ),
-            12
-        )
-        XCTAssertEqual(
-            BrowserSiteViewportPolicy.topContentInset(
-                for: URL(string: "https://old.reddit.com/r/AppleWatch"),
-                idiom: .pad
-            ),
-            12
-        )
-        XCTAssertEqual(
-            BrowserSiteViewportPolicy.topContentInset(
-                for: URL(string: "https://www.reddit.com/r/AppleWatch"),
-                idiom: .phone
-            ),
+            BrowserSiteViewportPolicy.topContentInset(for: URL(string: "http://127.0.0.1:8765/"), idiom: .phone),
             24
         )
+        XCTAssertEqual(BrowserSiteViewportPolicy.topContentInset(for: nil, idiom: .phone), 0)
         XCTAssertEqual(
-            BrowserSiteViewportPolicy.topContentInset(
-                for: URL(string: "https://x.com/home"),
-                idiom: .pad
-            ),
-            12
-        )
-        XCTAssertEqual(
-            BrowserSiteViewportPolicy.topContentInset(
-                for: URL(string: "https://x.com/home"),
-                idiom: .phone
-            ),
-            24
-        )
-        XCTAssertEqual(
-            BrowserSiteViewportPolicy.topContentInset(
-                for: URL(string: "https://mobile.twitter.com/home"),
-                idiom: .phone
-            ),
-            24
-        )
-        XCTAssertEqual(
-            BrowserSiteViewportPolicy.topContentInset(
-                for: URL(string: "https://example.com"),
-                idiom: .pad
-            ),
+            BrowserSiteViewportPolicy.topContentInset(for: URL(string: "about:blank"), idiom: .phone),
             0
         )
         XCTAssertEqual(
-            BrowserSiteViewportPolicy.topContentInset(
-                for: URL(string: "https://notreddit.com/r/AppleWatch"),
-                idiom: .phone
-            ),
+            BrowserSiteViewportPolicy.topContentInset(for: URL(string: "file:///tmp/page.html"), idiom: .phone),
             0
         )
-        XCTAssertEqual(
-            BrowserSiteViewportPolicy.topContentInset(
-                for: URL(string: "https://x.com.evil.example/home"),
-                idiom: .phone
-            ),
-            0
-        )
+        XCTAssertEqual(BrowserSiteViewportPolicy.topContentInset(for: site, idiom: .mac), 0)
     }
 
     func testRedditRetryPolicyRetriesOnlyTransientFailures() {

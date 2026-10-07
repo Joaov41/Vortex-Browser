@@ -176,6 +176,12 @@ struct ToolbarAddressButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
+                // Private tabs always show the private icon in the address pill.
+                if tab.isIncognito {
+                    Image(systemName: "eye.slash")
+                        .font(.caption.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
                 if let host {
                     Image(systemName: isSecure ? "lock.fill" : "exclamationmark.triangle.fill")
                         .font(.caption2.weight(.semibold))
@@ -196,8 +202,9 @@ struct ToolbarAddressButton: View {
     }
 
     private var accessibilityLabel: String {
-        guard let host else { return "Search or enter address" }
-        return isSecure ? "\(host), secure connection" : "\(host), not secure"
+        let prefix = tab.isIncognito ? "Private tab, " : ""
+        guard let host else { return prefix + "Search or enter address" }
+        return prefix + (isSecure ? "\(host), secure connection" : "\(host), not secure")
     }
 }
 

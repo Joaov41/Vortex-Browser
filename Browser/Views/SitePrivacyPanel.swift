@@ -1,7 +1,9 @@
 import SwiftUI
 import WebKit
 
-struct SitePrivacyShieldButton: View {
+/// Per-site ad blocking and cookie controls for the current page, opened from the
+/// page menu's "Site Protection…".
+struct SitePrivacyPanel: View {
     let url: URL?
     let webView: WKWebView
     let onOpenAdBlockSettings: () -> Void
@@ -10,30 +12,12 @@ struct SitePrivacyShieldButton: View {
     @ObservedObject private var adBlockService = AdBlockService.shared
     @ObservedObject private var cookieBlocker = ThirdPartyCookieBlocker.shared
     @ObservedObject private var lite = UBlockLiteService.shared
-    @State private var showingPanel = false
 
     private var isAdBlockingPaused: Bool {
         privacyStore.isAdBlockingPaused(for: url)
     }
 
     var body: some View {
-        Button {
-            showingPanel.toggle()
-        } label: {
-            Image(systemName: shieldSymbol)
-                .foregroundStyle(shieldColor)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(accessibilityLabel)
-        .popover(isPresented: $showingPanel, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
-            panel
-                .presentationCompactAdaptation(.popover)
-        }
-    }
-
-    private var panel: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
                 Image(systemName: shieldSymbol)
@@ -85,7 +69,6 @@ struct SitePrivacyShieldButton: View {
             }
 
             Button {
-                showingPanel = false
                 onOpenAdBlockSettings()
             } label: {
                 Label("Ad Blocker Settings", systemImage: "slider.horizontal.3")
@@ -94,7 +77,7 @@ struct SitePrivacyShieldButton: View {
             .buttonStyle(.bordered)
         }
         .padding(20)
-        .frame(width: 340)
+        .frame(maxWidth: 420)
     }
 
     private var adBlockingBinding: Binding<Bool> {
@@ -125,11 +108,5 @@ struct SitePrivacyShieldButton: View {
 
     private var shieldColor: Color {
         lite.engine == .ublockLite ? .blue : (!adBlockService.isEnabled || isAdBlockingPaused ? .orange : .green)
-    }
-
-    private var accessibilityLabel: String {
-        if lite.engine == .ublockLite { return "Privacy controls and uBlock Origin Lite for this page" }
-        let host = privacyStore.host(for: url) ?? "this page"
-        return isAdBlockingPaused ? "Privacy shield paused for \(host)" : "Privacy shield active for \(host)"
     }
 }
