@@ -158,6 +158,9 @@ struct ToolbarAddressButton: View {
     let maxWidth: CGFloat
     /// Wider limit used while the forward button is hidden (nothing to go forward to).
     var maxWidthWithoutForward: CGFloat? = nil
+    /// iPad: size to the site name instead of always taking the full width, so the bar
+    /// has no empty space around a short address.
+    var hugsContent = false
     let action: () -> Void
 
     private var effectiveMaxWidth: CGFloat {
@@ -186,19 +189,34 @@ struct ToolbarAddressButton: View {
                     Image(systemName: isSecure ? "lock.fill" : "exclamationmark.triangle.fill")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(isSecure ? AnyShapeStyle(.secondary) : AnyShapeStyle(BrowserDesign.Tint.warning))
-                    Text(host)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    if hugsContent {
+                        Text(Self.shortened(host, maxCharacters: 30))
+                            .lineLimit(1)
+                            .fixedSize()
+                    } else {
+                        Text(host)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
                 } else {
                     Image(systemName: "magnifyingglass")
                 }
             }
-            .frame(minWidth: BrowserDesign.Size.hitTarget, maxWidth: effectiveMaxWidth, minHeight: BrowserDesign.Size.hitTarget)
+            .frame(minWidth: BrowserDesign.Size.hitTarget, maxWidth: hugsContent ? nil : effectiveMaxWidth, minHeight: BrowserDesign.Size.hitTarget)
+            .padding(.horizontal, hugsContent ? 6 : 0)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityHint("Edit the address or search")
+    }
+
+    /// Keeps the start and end of a long host, e.g. "very-long-subdo…example.com".
+    private static func shortened(_ host: String, maxCharacters: Int) -> String {
+        guard host.count > maxCharacters else { return host }
+        let tail = maxCharacters / 2
+        let head = maxCharacters - tail - 1
+        return String(host.prefix(head)) + "…" + String(host.suffix(tail))
     }
 
     private var accessibilityLabel: String {

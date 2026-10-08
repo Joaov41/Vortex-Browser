@@ -12,7 +12,9 @@ struct BrowserSettingsView: View {
     let onSignIn: (WebAIProvider) -> Void
     let onSignOut: (WebAIProvider) -> Void
     let onFontSizeChanged: () -> Void
-    let onDownloadMLXModel: (URL) -> Void
+    /// Model id plus destination folder; a nil folder downloads into app storage.
+    let onDownloadMLXModel: (String, URL?) -> Void
+    let onCancelMLXDownload: () -> Void
     let onAppear: () -> Void
     let onDone: () -> Void
 
@@ -231,7 +233,8 @@ struct BrowserSettingsView: View {
                     isLoadingModel: $isLoadingMLXModel,
                     downloadProgress: $mlxDownloadProgress,
                     loadError: $mlxLoadError,
-                    onDownload: onDownloadMLXModel
+                    onDownload: onDownloadMLXModel,
+                    onCancelDownload: onCancelMLXDownload
                 )
             } label: {
                 Label("On-Device Models (MLX)", systemImage: "cpu")
@@ -244,30 +247,139 @@ private struct MLXAdvancedSettingsView: View {
     @Binding var isLoadingModel: Bool
     @Binding var downloadProgress: Progress?
     @Binding var loadError: String?
-    let onDownload: (URL) -> Void
+    let onDownload: (String, URL?) -> Void
+    let onCancelDownload: () -> Void
 
+    /// The active model: a Hugging Face id or an `external:<path>` folder.
     @AppStorage("mlxModelID") private var modelID: String = MLXLocalSettings.defaultModelID
+    /// What the user is typing in "Add a Model"; kept apart from the active model so
+    /// typing never switches (or downloads) a model and a download never overwrites it.
+    @AppStorage("mlxDraftModelID") private var draftModelID: String = ""
     @AppStorage("mlxMaxOutputTokens") private var maxOutputTokens: Int = MLXLocalSettings.defaultMaxOutputTokens
     @AppStorage("mlxMaxContextTokens") private var maxContextTokens: Int = MLXLocalSettings.defaultMaxContextTokens
     @State private var showDownloadLocationPicker = false
     @State private var showModelManager = false
+    @State private var isActiveModelDownloaded = false
 
     private var isAvailable: Bool { MLXLocalService.isAvailable() }
 
-    private var trimmedModelID: String {
-        modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var activeModelID: String {
+        let trimmed = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? MLXLocalSettings.defaultModelID : trimmed
+    }
+
+    private var isActiveModelExternal: Bool {
+        MLXModelStorage.isExternal(activeModelID)
+    }
+
+    private var activeModelName: String {
+        guard isActiveModelExternal else { return activeModelID }
+        let path = String(activeModelID.dropFirst("external:".count))
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+
+    private var activeModelStatus: String {
+        if isActiveModelExternal { return "Saved folder" }
+        return isActiveModelDownloaded
+            ? "Downloaded to Vortex"
+            : "Not downloaded yet. It downloads the first time you use it."
+    }
+
+    private var trimmedDraftID: String {
+        draftModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var canDownloadDraft: Bool {
+        isAvailable && !isLoadingModel && !trimmedDraftID.isEmpty && !MLXModelStorage.isExternal(trimmedDraftID)
     }
 
     var body: some View {
         Form {
             Section {
-                TextField("Model ID", text: $modelID, prompt: Text(MLXLocalSettings.defaultModelID))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(activeModelName)
+                        .font(.body)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                    Text(activeModelStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if !isActiveModelExternal && !isActiveModelDownloaded {
+                    Button {
+                        onDownload(activeModelID, nil)
+                    } label: {
+                        Label("Download Now", systemImage: "arrow.down.circle")
+                    }
+                    .disabled(isLoadingModel || !isAvailable)
+                }
+
+                Button {
+                    showModelManager = true
+                } label: {
+                    Label("Manage Models", systemImage: "folder")
+                }
+                .disabled(isLoadingModel || !isAvailable)
+
+                Button {
+                    loadError = nil
+                    let id = activeModelID
+                    Task {
+                        await MLXLocalService.shared.unloadModel(modelID: id)
+                    }
+                } label: {
+                    Label("Unload from Memory", systemImage: "memorychip")
+                }
+                .disabled(isLoadingModel || !isAvailable)
+            } header: {
+                Text("Active Model")
+            } footer: {
+                if !isAvailable {
+                    Text("Requires the MLX packages and an Apple silicon device.")
+                }
+            }
+
+            Section {
+                TextField("Model ID", text: $draftModelID, prompt: Text(MLXLocalSettings.defaultModelID))
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
+                    .disabled(isLoadingModel)
+
+                if isLoadingModel {
+                    HStack(spacing: 12) {
+                        if let downloadProgress {
+                            ProgressView(downloadProgress)
+                        } else {
+                            ProgressView()
+                            Text("Preparing download…")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        Button("Cancel", role: .cancel) {
+                            onCancelDownload()
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                } else {
+                    Button {
+                        onDownload(trimmedDraftID, nil)
+                    } label: {
+                        Label("Download", systemImage: "arrow.down.circle")
+                    }
+                    .disabled(!canDownloadDraft)
+
+                    Button {
+                        showDownloadLocationPicker = true
+                    } label: {
+                        Label("Download to Folder…", systemImage: "folder.badge.plus")
+                    }
+                    .disabled(!canDownloadDraft)
+                }
             } header: {
-                Text("Hugging Face Model")
+                Text("Add a Model")
             } footer: {
-                Text("Paste any MLX model ID from Hugging Face.")
+                Text("Paste an MLX model ID from Hugging Face. Download saves it in Vortex so it works offline. Download to Folder saves it somewhere you choose, like iCloud Drive. The new model becomes the active model.")
             }
 
             Section("Generation") {
@@ -276,51 +388,6 @@ private struct MLXAdvancedSettingsView: View {
                 }
                 Stepper(value: $maxContextTokens, in: 0...8192, step: 512) {
                     LabeledContent("Context Tokens", value: maxContextTokens == 0 ? "Auto" : "\(maxContextTokens)")
-                }
-            }
-
-            Section {
-                Button {
-                    showDownloadLocationPicker = true
-                } label: {
-                    HStack {
-                        Label("Download Model", systemImage: "arrow.down.circle")
-                        if isLoadingModel {
-                            Spacer()
-                            ProgressView()
-                        }
-                    }
-                }
-                .disabled(isLoadingModel || !isAvailable || trimmedModelID.isEmpty)
-
-                if let downloadProgress {
-                    ProgressView(downloadProgress)
-                }
-
-                Button {
-                    loadError = nil
-                    downloadProgress = nil
-                    let id = trimmedModelID
-                    guard !id.isEmpty else { return }
-                    Task {
-                        await MLXLocalService.shared.unloadModel(modelID: id)
-                    }
-                } label: {
-                    Label("Unload from Memory", systemImage: "memorychip")
-                }
-                .disabled(isLoadingModel || !isAvailable)
-
-                Button {
-                    showModelManager = true
-                } label: {
-                    Label("Manage Downloaded Models", systemImage: "folder")
-                }
-                .disabled(isLoadingModel || !isAvailable)
-            } header: {
-                Text("Model")
-            } footer: {
-                if !isAvailable {
-                    Text("Requires the MLX packages and an Apple silicon device.")
                 }
             }
 
@@ -333,6 +400,19 @@ private struct MLXAdvancedSettingsView: View {
         }
         .navigationTitle("On-Device Models")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear(perform: refreshDownloadState)
+        .onChange(of: modelID) { _, newValue in
+            refreshDownloadState()
+            // A finished download switches the active model; clear the field so
+            // the next model starts from an empty entry.
+            let draft = trimmedDraftID
+            if !draft.isEmpty, newValue == draft || newValue.hasSuffix("/models/\(draft)") {
+                draftModelID = ""
+            }
+        }
+        .onChange(of: isLoadingModel) { _, _ in
+            refreshDownloadState()
+        }
         .sheet(isPresented: $showModelManager) {
             ManageMLXModelsView(selectedModelID: $modelID)
         }
@@ -344,11 +424,15 @@ private struct MLXAdvancedSettingsView: View {
             switch result {
             case .success(let urls):
                 if let url = urls.first {
-                    onDownload(url)
+                    onDownload(trimmedDraftID, url)
                 }
             case .failure(let error):
                 loadError = error.localizedDescription
             }
         }
+    }
+
+    private func refreshDownloadState() {
+        isActiveModelDownloaded = MLXModelStorage.isDownloaded(modelID: activeModelID)
     }
 }

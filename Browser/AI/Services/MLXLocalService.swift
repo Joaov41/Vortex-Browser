@@ -103,8 +103,6 @@ actor MLXLocalService {
     // prevents that from overlapping with a new inference pass (beach ball).
     private var lastGenerationCompletedAt: Date? = nil
     private let generationRecoveryGapSeconds: TimeInterval = 0.8
-    private let modelBookmarkKey = "MLXExternalModelBookmark"
-    private let modelPathKey = "MLXExternalModelPath"
     private static let eosMarkers = [
         "<end_of_turn>",
         "</s>",
@@ -122,15 +120,7 @@ actor MLXLocalService {
     /// HubApi configured to use the appropriate cache location per platform.
     /// - macOS: Uses ~/.cache/huggingface/hub (shared with Python, mlx-lm, etc.)
     /// - iOS: Uses app's Caches directory (sandboxed, no sharing possible)
-    #if os(macOS)
-    private let sharedHub = HubApi(
-        downloadBase: URL.homeDirectory.appending(path: ".cache/huggingface/hub")
-    )
-    #else
-    private let sharedHub = HubApi(
-        downloadBase: URL.cachesDirectory.appending(path: "huggingface")
-    )
-    #endif
+    private let sharedHub = HubApi(downloadBase: MLXModelStorage.appDownloadBase)
 
     private func configureMemoryIfNeeded() {
         guard !hasConfiguredMemory else { return }
@@ -161,8 +151,8 @@ actor MLXLocalService {
             )
         }
         if trimmedID.lowercased().hasPrefix("external:") {
-            let modelURL = try resolveExternalModelURL(for: trimmedID)
-            _ = try await loadModelFromDirectory(modelURL)
+            let resolved = try resolveExternalModelURL(for: trimmedID)
+            _ = try await loadModelFromDirectory(resolved.model, scope: resolved.scope)
         } else {
             _ = try await loadModel(modelID: trimmedID, progressHandler: progressHandler)
         }
@@ -187,8 +177,8 @@ actor MLXLocalService {
 
         let container: ModelContainer
         if trimmedID.lowercased().hasPrefix("external:") {
-            let modelURL = try resolveExternalModelURL(for: trimmedID)
-            container = try await loadModelFromDirectory(modelURL)
+            let resolved = try resolveExternalModelURL(for: trimmedID)
+            container = try await loadModelFromDirectory(resolved.model, scope: resolved.scope)
         } else {
             container = try await loadModel(modelID: trimmedID, progressHandler: progressHandler)
         }
@@ -224,6 +214,11 @@ actor MLXLocalService {
 
     func unloadModel(modelID: String) {
         let id = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        if id.lowercased().hasPrefix("external:") {
+            // External models are cached under their resolved folder URL, not the id.
+            unloadAllModels()
+            return
+        }
         if let task = inFlightLoads[id] {
             task.cancel()
             inFlightLoads[id] = nil
@@ -275,8 +270,8 @@ actor MLXLocalService {
         let trimmedID = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
         let container: ModelContainer
         if trimmedID.lowercased().hasPrefix("external:") {
-            let modelURL = try resolveExternalModelURL(for: trimmedID)
-            container = try await loadModelFromDirectory(modelURL)
+            let resolved = try resolveExternalModelURL(for: trimmedID)
+            container = try await loadModelFromDirectory(resolved.model, scope: resolved.scope)
         } else {
             container = try await loadModel(modelID: trimmedID, progressHandler: progressHandler)
         }
@@ -490,7 +485,7 @@ actor MLXLocalService {
 
     /// Load a model from a local directory (e.g., user-selected via Files app).
     /// Handles security-scoped resource access for iOS sandboxing.
-    private func loadModelFromDirectory(_ directory: URL) async throws -> ModelContainer {
+    private func loadModelFromDirectory(_ directory: URL, scope: URL? = nil) async throws -> ModelContainer {
         configureMemoryIfNeeded()
 
         let cacheKey = directory.absoluteString
@@ -505,11 +500,14 @@ actor MLXLocalService {
         }
 
         let task = Task<ModelContainer, Error> {
-            // Handle security-scoped resources (required for iOS file picker URLs)
-            let didStartAccessing = directory.startAccessingSecurityScopedResource()
+            // Handle security-scoped resources (required for iOS file picker URLs).
+            // For models downloaded into a picked folder, the scope belongs to that
+            // folder rather than to the model subfolder inside it.
+            let scopeURL = scope ?? directory
+            let didStartAccessing = scopeURL.startAccessingSecurityScopedResource()
             defer {
                 if didStartAccessing {
-                    directory.stopAccessingSecurityScopedResource()
+                    scopeURL.stopAccessingSecurityScopedResource()
                 }
             }
 
@@ -519,7 +517,9 @@ actor MLXLocalService {
                 throw NSError(
                     domain: "MLXLocalService",
                     code: 2,
-                    userInfo: [NSLocalizedDescriptionKey: "Invalid model directory: missing config.json"]
+                    userInfo: [NSLocalizedDescriptionKey: didStartAccessing || scope == nil
+                        ? "Invalid model directory: missing config.json"
+                        : "Vortex no longer has access to this model folder. Re-add it in Manage Models."]
                 )
             }
 
@@ -557,25 +557,76 @@ actor MLXLocalService {
         Memory.clearCache()
     }
 
+    /// Download a Hugging Face model into app storage without loading it, so it is
+    /// ready offline and the first chat does not wait on the download.
+    @discardableResult
+    func downloadModel(
+        modelID: String,
+        progressHandler: @Sendable @escaping (Progress) -> Void = { _ in }
+    ) async throws -> URL {
+        try await downloadSnapshot(modelID: modelID, hub: sharedHub, progressHandler: progressHandler)
+    }
+
     /// Download a model to a custom location (e.g., iCloud Drive for sharing).
+    /// Returns the model folder (`<location>/models/<org>/<name>`).
+    @discardableResult
     func downloadModelToLocation(
         modelID: String,
         location: URL,
         progressHandler: @Sendable @escaping (Progress) -> Void = { _ in }
-    ) async throws {
+    ) async throws -> URL {
+        try await downloadSnapshot(
+            modelID: modelID,
+            hub: HubApi(downloadBase: location),
+            progressHandler: progressHandler
+        )
+    }
+
+    private func downloadSnapshot(
+        modelID: String,
+        hub: HubApi,
+        progressHandler: @Sendable @escaping (Progress) -> Void
+    ) async throws -> URL {
         let id = modelID.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !id.isEmpty else {
+        guard !id.isEmpty, !MLXModelStorage.isExternal(id) else {
             throw NSError(
                 domain: "MLXLocalService",
                 code: 1,
-                userInfo: [NSLocalizedDescriptionKey: "Missing Hugging Face model id."]
+                userInfo: [NSLocalizedDescriptionKey: "Enter a Hugging Face model ID, like \(MLXLocalSettings.defaultModelID)."]
             )
         }
 
-        // Create a HubApi with the custom download location
-        let customHub = HubApi(downloadBase: location)
         // Download files only (no model instantiation) to avoid OOM during large model transfers.
-        _ = try await customHub.snapshot(from: id, matching: "*", progressHandler: progressHandler)
+        let directory: URL
+        do {
+            directory = try await hub.snapshot(
+                from: id,
+                matching: MLXModelStorage.modelFileGlobs,
+                progressHandler: progressHandler
+            )
+        } catch Hub.HubClientError.authorizationRequired {
+            throw NSError(
+                domain: "MLXLocalService",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "\"\(id)\" was not found on Hugging Face, or it requires signing in."]
+            )
+        } catch Hub.HubClientError.fileNotFound {
+            throw NSError(
+                domain: "MLXLocalService",
+                code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "\"\(id)\" was not found on Hugging Face."]
+            )
+        }
+        try Task.checkCancellation()
+
+        guard MLXModelStorage.isCompleteModelDirectory(directory) else {
+            throw NSError(
+                domain: "MLXLocalService",
+                code: 5,
+                userInfo: [NSLocalizedDescriptionKey: "\"\(id)\" has no MLX weights (.safetensors). Look for an MLX version, such as one from mlx-community."]
+            )
+        }
+        return directory
     }
 
     private func ensureNoThinkDirective(in prompt: String) -> String {
@@ -653,45 +704,21 @@ actor MLXLocalService {
         return error.localizedDescription.localizedCaseInsensitiveContains("unsupported model type")
     }
 
-    private func resolveExternalModelURL(for modelID: String) throws -> URL {
-        if let bookmarkData = UserDefaults.standard.data(forKey: modelBookmarkKey) {
-            var isStale = false
-            #if os(iOS)
-            let url = try URL(
-                resolvingBookmarkData: bookmarkData,
-                options: [],
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-            #else
-            let url = try URL(
-                resolvingBookmarkData: bookmarkData,
-                options: .withSecurityScope,
-                relativeTo: nil,
-                bookmarkDataIsStale: &isStale
-            )
-            #endif
-
-            if isStale {
-                throw NSError(
-                    domain: "MLXLocalService",
-                    code: 3,
-                    userInfo: [NSLocalizedDescriptionKey: "Model bookmark is stale. Please re-select the model folder in Manage Models."]
-                )
-            }
-            return url
-        }
-
+    /// Resolves an `external:` model id to the folder to load plus the security-scoped
+    /// URL to hold while loading. Uses the bookmark saved for that exact path, so
+    /// switching between saved models never loads the wrong folder.
+    private func resolveExternalModelURL(for modelID: String) throws -> (model: URL, scope: URL?) {
         let prefix = "external:"
+        var path = ""
         if modelID.lowercased().hasPrefix(prefix) {
-            let rawPath = String(modelID.dropFirst(prefix.count))
-            if !rawPath.isEmpty {
-                return URL(fileURLWithPath: rawPath)
-            }
+            path = String(modelID.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        if path.isEmpty {
+            path = MLXExternalModelStore.selectedPath() ?? ""
         }
 
-        if let modelPath = UserDefaults.standard.string(forKey: modelPathKey), !modelPath.isEmpty {
-            return URL(fileURLWithPath: modelPath)
+        if !path.isEmpty {
+            return MLXExternalModelStore.resolve(path: path)
         }
 
         throw NSError(
@@ -829,11 +856,24 @@ actor MLXLocalService {
         // no-op
     }
 
+    @discardableResult
+    func downloadModel(
+        modelID: String,
+        progressHandler: @Sendable @escaping (Progress) -> Void = { _ in }
+    ) async throws -> URL {
+        throw NSError(
+            domain: "MLXLocalService",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "MLX Local is unavailable in this build (missing MLX packages)."]
+        )
+    }
+
+    @discardableResult
     func downloadModelToLocation(
         modelID: String,
         location: URL,
         progressHandler: @Sendable @escaping (Progress) -> Void = { _ in }
-    ) async throws {
+    ) async throws -> URL {
         throw NSError(
             domain: "MLXLocalService",
             code: 1,

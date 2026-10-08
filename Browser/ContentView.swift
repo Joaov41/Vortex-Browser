@@ -1483,6 +1483,8 @@ struct ContentView: View {
 
     private struct TabRowView<RowContent: View>: View {
         @ObservedObject var tab: BrowserTab
+        /// Part of the view's inputs so cards redraw when previews are shown or hidden.
+        var showsPreview = true
         let content: (BrowserTab) -> RowContent
 
         var body: some View {
@@ -1497,6 +1499,8 @@ struct ContentView: View {
     @FocusState private var omniboxFocused: Bool
     @FocusState private var tabSearchFocused: Bool
     @AppStorage("sidebarFavoritesCollapsed") private var favoritesCollapsed = false
+    /// Tab cards show their page preview unless the user collapses them to title rows.
+    @AppStorage("sidebarTabPreviewsCollapsed") private var tabPreviewsCollapsed = false
     @State private var isHoldingNewTab = false
     @State private var tabGroupNamePrompt: TabGroupNamePrompt?
     @State private var tabGroupNameText = ""
@@ -1646,6 +1650,7 @@ struct ContentView: View {
     @State private var mlxDownloadProgress: Progress? = nil
     @State private var mlxLoadError: String? = nil
     @State private var mlxWarmupTask: Task<Void, Never>? = nil
+    @State private var mlxDownloadTask: Task<Void, Never>? = nil
     private let webProviderContextMaxChars = 80000
     private var redditWebProviderContextMaxChars: Int {
         min(
@@ -2048,6 +2053,12 @@ struct ContentView: View {
         }
         if state == .pinned {
             refreshToolbarBackdrop()
+            // Showing the bar changes the page's bottom spacing, which can move what sits
+            // under it; check again once that has settled so the frost matches the page.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                guard toolbarScrollState == .pinned else { return }
+                refreshToolbarBackdrop()
+            }
         }
     }
 
@@ -2059,6 +2070,11 @@ struct ContentView: View {
             isChromeHidden = hidden
             if hidden {
                 isToolbarCollapsed = true
+            }
+        }
+        if !hidden {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                refreshToolbarBackdrop()
             }
         }
     }
@@ -2608,7 +2624,8 @@ struct ContentView: View {
                 // The address shares the room the site-protection shield used to have
                 // with the page menu, which now sits in the pill on every device.
                 maxWidth: isPhone ? (splitMode == nil ? 124 : 76) : 228,
-                maxWidthWithoutForward: isPhone ? (splitMode == nil ? 172 : 124) : nil
+                maxWidthWithoutForward: isPhone ? (splitMode == nil ? 172 : 124) : nil,
+                hugsContent: !isPhone
             ) {
                 expandToolbar(focusOmnibox: true)
             }
@@ -5347,12 +5364,12 @@ struct ContentView: View {
                 ForEach(sidebarTabEntries) { entry in
                     switch entry {
                     case .single(let tab):
-                        TabRowView(tab: tab) { observedTab in
+                        TabRowView(tab: tab, showsPreview: !tabPreviewsCollapsed) { observedTab in
                             tabRow(observedTab)
                         }
                     case .pair(let primary, let secondary):
-                        TabRowView(tab: primary) { observedPrimary in
-                            TabRowView(tab: secondary) { observedSecondary in
+                        TabRowView(tab: primary, showsPreview: !tabPreviewsCollapsed) { observedPrimary in
+                            TabRowView(tab: secondary, showsPreview: !tabPreviewsCollapsed) { observedSecondary in
                                 splitPairRow(primary: observedPrimary, secondary: observedSecondary)
                             }
                         }
@@ -5410,6 +5427,21 @@ struct ContentView: View {
             .foregroundStyle(sidebarSecondaryText)
             .frame(minHeight: 44)
             .padding(.top, 8)
+
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    tabPreviewsCollapsed.toggle()
+                }
+            } label: {
+                Image(systemName: tabPreviewsCollapsed ? "rectangle.expand.vertical" : "rectangle.compress.vertical")
+                    .font(.system(size: sidebarIconFontSize, weight: .semibold))
+                    .foregroundColor(sidebarSecondaryText)
+                    .frame(width: 32, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+            .accessibilityLabel(tabPreviewsCollapsed ? "Show tab previews" : "Hide tab previews")
 
             // Tap for a new tab; press and hold for a new private tab. While held, a ring fills
             // around the button and the header says what will happen.
@@ -5920,6 +5952,7 @@ struct ContentView: View {
                             .lineLimit(1)
                     }
                 }
+                if !tabPreviewsCollapsed {
                 ZStack {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
                         .fill(sidebarIconBackground)
@@ -5933,6 +5966,7 @@ struct ContentView: View {
                 }
                 .frame(height: 90)
                 .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -6083,10 +6117,10 @@ struct ContentView: View {
             }
             .padding(.horizontal, 10)
             .padding(.top, 10)
-            .padding(.bottom, tab.thumbnail != nil ? 8 : 10)
+            .padding(.bottom, tab.thumbnail != nil && !tabPreviewsCollapsed ? 8 : 10)
 
             // Thumbnail preview
-            if let thumbnail = tab.thumbnail {
+            if !tabPreviewsCollapsed, let thumbnail = tab.thumbnail {
                 Image(uiImage: thumbnail)
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -6098,12 +6132,41 @@ struct ContentView: View {
             }
         }
 
+        let showsSplitHandle = canSplit && (!isCompactWidth || isPhone) && tab.webAIProvider == nil
+        let closeButton = Button {
+            performClose(tab)
+        } label: {
+            Image(systemName: "xmark")
+                .font(.caption2.weight(.bold))
+                .foregroundColor(sidebarPrimaryText)
+                .padding(6)
+                .background(
+                    Circle().fill(sidebarIconBackground)
+                )
+        }
+        .buttonStyle(.plain)
+        .frame(width: controlHitSize, height: controlHitSize)
+        .contentShape(Rectangle())
+        .accessibilityLabel("Close \(title)")
+        .zIndex(2)
+        let splitHandle = Image(systemName: "line.3.horizontal")
+            .font(.caption2.weight(.bold))
+            .foregroundColor(sidebarSecondaryText)
+            .frame(width: controlHitSize, height: controlHitSize)
+            .contentShape(Rectangle())
+            .simultaneousGesture(sidebarTabDragGesture(for: tab))
+            .accessibilityLabel("Drag tab to split view")
+            .accessibilityHint("Drag toward an edge of the page")
+            .zIndex(2)
+        // Collapsed cards put ≡ and ✕ side by side on the title line; with previews they stack.
+        let controlsWidth = tabPreviewsCollapsed && showsSplitHandle ? controlHitSize * 2 : controlHitSize
+
         return ZStack(alignment: .topTrailing) {
             Menu {
                 tabMenuItems(for: tab)
             } label: {
                 rowContent
-                    .padding(.trailing, controlHitSize + controlInset)
+                    .padding(.trailing, controlsWidth + controlInset)
             } primaryAction: {
                 vm.selectedTabID = tab.id
                 if tab.isBlank { omniboxFocused = true }
@@ -6112,35 +6175,17 @@ struct ContentView: View {
             .buttonStyle(.plain)
             .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
 
-            VStack(spacing: 4) {
-                // Close button
-                Button {
-                    performClose(tab)
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption2.weight(.bold))
-                        .foregroundColor(sidebarPrimaryText)
-                        .padding(6)
-                        .background(
-                            Circle().fill(sidebarIconBackground)
-                        )
-                }
-                .buttonStyle(.plain)
-                .frame(width: controlHitSize, height: controlHitSize)
-                .contentShape(Rectangle())
-                .accessibilityLabel("Close \(title)")
-                .zIndex(2)
-
-                if canSplit && (!isCompactWidth || isPhone) && tab.webAIProvider == nil {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.caption2.weight(.bold))
-                        .foregroundColor(sidebarSecondaryText)
-                        .frame(width: controlHitSize, height: controlHitSize)
-                        .contentShape(Rectangle())
-                        .simultaneousGesture(sidebarTabDragGesture(for: tab))
-                        .accessibilityLabel("Drag tab to split view")
-                        .accessibilityHint("Drag toward an edge of the page")
-                        .zIndex(2)
+            Group {
+                if tabPreviewsCollapsed {
+                    HStack(spacing: 0) {
+                        if showsSplitHandle { splitHandle }
+                        closeButton
+                    }
+                } else {
+                    VStack(spacing: 4) {
+                        closeButton
+                        if showsSplitHandle { splitHandle }
+                    }
                 }
             }
             .padding(.top, 6)
@@ -7035,8 +7080,11 @@ struct ContentView: View {
                     fontSizeService.applyFontSize(to: tab.activateWebView())
                 }
             },
-            onDownloadMLXModel: { url in
-                downloadModel(to: url)
+            onDownloadMLXModel: { modelID, location in
+                downloadModel(modelID, to: location)
+            },
+            onCancelMLXDownload: {
+                cancelModelDownload()
             },
             onAppear: {
                 refreshWebAILoginStates()
@@ -7133,34 +7181,51 @@ struct ContentView: View {
         isCompactWidth ? 620 : 760
     }
 
-    private func downloadModel(to location: URL) {
+    /// Downloads a Hugging Face model, either into app storage (`location == nil`)
+    /// or into a user-picked folder, then makes it the active MLX model.
+    private func downloadModel(_ requestedModelID: String, to location: URL?) {
+        mlxDownloadTask?.cancel()
         mlxLoadError = nil
         mlxDownloadProgress = nil
+
+        guard mlxAvailable else {
+            mlxLoadError = "MLX Local is not available on this device/build."
+            return
+        }
+
+        let modelID = requestedModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !modelID.isEmpty, !MLXModelStorage.isExternal(modelID) else {
+            mlxLoadError = "Enter a Hugging Face model ID, like \(MLXLocalSettings.defaultModelID)."
+            return
+        }
+
         isLoadingMLXModel = true
-
-        Task {
+        mlxDownloadTask = Task { @MainActor in
             defer {
+                isLoadingMLXModel = false
+                mlxDownloadProgress = nil
+                mlxDownloadTask = nil
+            }
+
+            let progressHandler: @Sendable (Progress) -> Void = { progress in
                 Task { @MainActor in
-                    isLoadingMLXModel = false
+                    mlxDownloadProgress = progress
                 }
-            }
-
-            guard mlxAvailable else {
-                await MainActor.run {
-                    mlxLoadError = "MLX Local is not available on this device/build."
-                }
-                return
-            }
-
-            let modelID = mlxModelID.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !modelID.isEmpty else {
-                await MainActor.run {
-                    mlxLoadError = "Please enter a Hugging Face model id."
-                }
-                return
             }
 
             do {
+                guard let location else {
+                    try await MLXLocalService.shared.downloadModel(
+                        modelID: modelID,
+                        progressHandler: progressHandler
+                    )
+                    // App-storage models are selected by id: the sandbox path can
+                    // change across app updates, the id never does.
+                    MLXExternalModelStore.clearSelection()
+                    mlxModelID = modelID
+                    return
+                }
+
                 guard location.startAccessingSecurityScopedResource() else {
                     throw NSError(
                         domain: "MLXDownload",
@@ -7170,25 +7235,15 @@ struct ContentView: View {
                 }
                 defer { location.stopAccessingSecurityScopedResource() }
 
-                try await MLXLocalService.shared.downloadModelToLocation(
-                    modelID: modelID,
-                    location: location,
-                    progressHandler: { progress in
-                        Task { @MainActor in
-                            mlxDownloadProgress = progress
-                        }
-                    }
-                )
-
-                let modelPath = location.appending(path: "models/\(modelID)")
+                // Bookmark the picked folder before downloading: it carries the
+                // security scope, a bookmark of the model subfolder may not.
+                let bookmarkData: Data
                 do {
                     #if os(iOS)
-                    let bookmarkData = try modelPath.bookmarkData(options: .minimalBookmark)
+                    bookmarkData = try location.bookmarkData(options: .minimalBookmark)
                     #else
-                    let bookmarkData = try modelPath.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess])
+                    bookmarkData = try location.bookmarkData(options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess])
                     #endif
-                    MLXExternalModelStore.addEntry(path: modelPath.path, bookmark: bookmarkData)
-                    MLXExternalModelStore.setSelected(path: modelPath.path, bookmark: bookmarkData)
                 } catch {
                     throw NSError(
                         domain: "MLXDownload",
@@ -7197,15 +7252,27 @@ struct ContentView: View {
                     )
                 }
 
-                await MainActor.run {
-                    mlxModelID = "external:\(modelPath.path)"
-                }
+                let modelPath = try await MLXLocalService.shared.downloadModelToLocation(
+                    modelID: modelID,
+                    location: location,
+                    progressHandler: progressHandler
+                )
+                let relativePath = "models/\(modelID)"
+                MLXExternalModelStore.addEntry(path: modelPath.path, bookmark: bookmarkData, relativePath: relativePath)
+                MLXExternalModelStore.setSelected(path: modelPath.path, bookmark: bookmarkData)
+                mlxModelID = "external:\(modelPath.path)"
+            } catch is CancellationError {
+                // Cancelled from settings; partial files resume on the next download.
             } catch {
-                await MainActor.run {
+                if !Task.isCancelled {
                     mlxLoadError = error.localizedDescription
                 }
             }
         }
+    }
+
+    private func cancelModelDownload() {
+        mlxDownloadTask?.cancel()
     }
 
     // MARK: - AI Helpers

@@ -17,6 +17,15 @@ struct ManageMLXModelsView: View {
         let path: String
         let source: String
         let isSelected: Bool
+        /// Hugging Face id for models in app storage; selected by id, not path.
+        var hubModelID: String? = nil
+    }
+
+    /// The active Hugging Face id, or nil when the active model is a folder.
+    private var selectedHubModelID: String? {
+        let trimmed = selectedModelID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !MLXModelStorage.isExternal(trimmed) else { return nil }
+        return trimmed.isEmpty ? MLXLocalSettings.defaultModelID : trimmed
     }
 
     private var selectedPath: String? {
@@ -39,7 +48,7 @@ struct ManageMLXModelsView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(URL(fileURLWithPath: modelPath).lastPathComponent)
                                     .font(.body)
-                                Text("Selected")
+                                Text("Saved folder")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             }
@@ -53,9 +62,16 @@ struct ManageMLXModelsView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                    } else {
-                        Text("No model selected")
-                            .foregroundStyle(.secondary)
+                    } else if let hubModelID = selectedHubModelID {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(hubModelID)
+                                .font(.body)
+                            Text(MLXModelStorage.isDownloaded(modelID: hubModelID)
+                                 ? "Downloaded to Vortex"
+                                 : "Hugging Face (downloads on first use)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
 
                     Button {
@@ -66,7 +82,7 @@ struct ManageMLXModelsView: View {
                 } header: {
                     Text("Selected Model")
                 } footer: {
-                    Text("Select a model folder from iCloud Drive, local storage, or external drives. Use \"Download Model\" in Settings to download new models to your preferred location.")
+                    Text("Select a model folder from iCloud Drive, local storage, or external drives. To download a new model, use Add a Model in On-Device Models settings.")
                 }
 
                 if !externalModels.isEmpty {
@@ -93,10 +109,16 @@ struct ManageMLXModelsView: View {
                         ForEach(cachedModels) { model in
                             modelRow(model)
                         }
+                        .onDelete { indices in
+                            for index in indices {
+                                deleteDownloadedModel(cachedModels[index])
+                            }
+                            reloadModels()
+                        }
                     } header: {
                         Text("Downloaded Models")
                     } footer: {
-                        Text("Models found in the app's Hugging Face cache.")
+                        Text("Models downloaded into Vortex. Swipe to delete a model and free up its storage.")
                     }
                 }
             }
@@ -187,12 +209,19 @@ struct ManageMLXModelsView: View {
                 name: model.name,
                 path: model.path,
                 source: "Downloaded",
-                isSelected: model.path == selected
+                isSelected: model.hubModelID.map { $0 == selectedHubModelID } ?? (model.path == selected),
+                hubModelID: model.hubModelID
             )
         }
     }
 
     private func selectModel(_ model: ModelItem) {
+        if let hubModelID = model.hubModelID {
+            MLXExternalModelStore.clearSelection()
+            selectedModelID = hubModelID
+            reloadModels()
+            return
+        }
         let prefix = "external:"
         selectedModelID = "\(prefix)\(model.path)"
         let bookmark = MLXExternalModelStore.bookmark(for: model.path)
@@ -237,6 +266,22 @@ struct ManageMLXModelsView: View {
         }
     }
 
+    private func deleteDownloadedModel(_ model: ModelItem) {
+        guard model.hubModelID != nil else {
+            errorMessage = "\(model.name) is shared with other apps, so Vortex won't delete it."
+            return
+        }
+        if model.isSelected {
+            let id = selectedModelID
+            Task { await MLXLocalService.shared.unloadModel(modelID: id) }
+        }
+        do {
+            try FileManager.default.removeItem(atPath: model.path)
+        } catch {
+            errorMessage = "Couldn't delete \(model.name): \(error.localizedDescription)"
+        }
+    }
+
     private func clearSelection() {
         MLXExternalModelStore.clearSelection()
         selectedModelID = ""
@@ -267,6 +312,8 @@ struct ManageMLXModelsView: View {
 
             guard url.lastPathComponent == "config.json" else { continue }
             let modelDir = url.deletingLastPathComponent()
+            // Skip cancelled or partial downloads.
+            guard MLXModelStorage.isCompleteModelDirectory(modelDir) else { continue }
             let modelID = cachedModelID(from: modelDir)
             let modified = (try? url.resourceValues(forKeys: Set(keys)).contentModificationDate)
             if let existing = models[modelID], let existingDate = existing.modified, let modified {
@@ -282,23 +329,21 @@ struct ManageMLXModelsView: View {
                 name: key,
                 path: value.url.path,
                 source: "Downloaded",
-                isSelected: value.url.path == selected
+                isSelected: value.url.path == selected,
+                hubModelID: MLXModelStorage.appStorageModelID(for: value.url)
             )
         }
         .sorted { $0.name.lowercased() < $1.name.lowercased() }
     }
 
     private func cachedModelsBaseURL() -> URL? {
-        #if os(macOS)
-        return URL.homeDirectory.appendingPathComponent(".cache/huggingface/hub")
-        #else
-        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)
-            .first?
-            .appendingPathComponent("huggingface")
-        #endif
+        MLXModelStorage.appDownloadBase
     }
 
     private func cachedModelID(from url: URL) -> String {
+        if let hubModelID = MLXModelStorage.appStorageModelID(for: url) {
+            return hubModelID
+        }
         let components = url.pathComponents
         if let idx = components.firstIndex(where: { $0.hasPrefix("models--") }) {
             let raw = components[idx].replacingOccurrences(of: "models--", with: "")

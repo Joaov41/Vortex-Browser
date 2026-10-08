@@ -935,6 +935,8 @@ class SimpleAIService: ObservableObject {
     private let redditProcessingTimeoutNanoseconds: UInt64 = 1_800_000_000_000
     private let maxRetainedMessagesForWebProviders = 2
     private let maxRetainedMessagesForAppBackends = 4
+    /// Messages from the ChatGPT/Gemini web panes; never sent as history to the app's own models.
+    private var webChannelMessageIDs = Set<UUID>()
     private let appleLocalQueryContextCharacterLimit = 1_200
     private let appleLocalSummaryContextCharacterLimit = 1_800
     private let appleLocalShortSummaryContextCharacterLimit = 1_350
@@ -1138,6 +1140,11 @@ class SimpleAIService: ObservableObject {
         let contextTokens = maxContextTokens ?? loadedSettings.maxContextTokens
         let trimmed = configured.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
+        // Warm-up only loads models already on disk; it must never start a
+        // multi-GB download in the background without any progress UI.
+        guard MLXModelStorage.isExternal(trimmed) || MLXModelStorage.isDownloaded(modelID: trimmed) else {
+            return false
+        }
 
         do {
             try await MLXLocalService.shared.warmUpConfiguredModel(
@@ -1294,7 +1301,15 @@ class SimpleAIService: ObservableObject {
                     }
                     return sourcePageContext ?? providedPageContent
                 }()
-                recentConversation = nil
+                let isRedditQuery = resolvedPageContent.map(RedditSummaryPlanner.isRedditContext) ?? false
+                switch selectedBackend {
+                case .cloudShortcuts where !isRedditQuery:
+                    recentConversation = previousExchanges(maxExchanges: 2, maxQuestionChars: 400, maxAnswerChars: 700)
+                case .chatGPTPlan where !isRedditQuery:
+                    recentConversation = previousExchanges(maxExchanges: 3, maxQuestionChars: 600, maxAnswerChars: 1_500)
+                default:
+                    recentConversation = nil
+                }
             }
             let showsUserPromptInSidebar = consumeNextUserPromptSidebarVisibility(defaultValue: true)
             let treatsPromptAsInstruction = !showsUserPromptInSidebar
@@ -3361,6 +3376,32 @@ class SimpleAIService: ObservableObject {
         return parts.joined(separator: "\n\n")
     }
 
+    /// The last few question-and-answer pairs on this page, oldest first, for follow-up questions.
+    /// Read before the new question is added. The history clears when the page changes.
+    private func previousExchanges(maxExchanges: Int, maxQuestionChars: Int, maxAnswerChars: Int) -> String? {
+        func clipped(_ text: String, _ limit: Int) -> String {
+            let normalized = normalizePrompt(text)
+            return normalized.count > limit ? String(normalized.prefix(limit)) + "…" : normalized
+        }
+        var exchanges: [String] = []
+        var pendingAnswer: String?
+        for message in archiveMessages.reversed() where !webChannelMessageIDs.contains(message.id) {
+            switch message.role {
+            case .assistant:
+                let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                pendingAnswer = text.isEmpty || text.hasPrefix("Request timed out") ? nil : text
+            case .user:
+                if let answer = pendingAnswer {
+                    exchanges.append("User: \(clipped(message.text, maxQuestionChars))\nAssistant: \(clipped(answer, maxAnswerChars))")
+                }
+                pendingAnswer = nil
+            }
+            if exchanges.count >= maxExchanges { break }
+        }
+        guard !exchanges.isEmpty else { return nil }
+        return exchanges.reversed().joined(separator: "\n\n")
+    }
+
     private func recentConversationContext(
         excludingCurrentPrompt prompt: String,
         maxMessages: Int = 2,
@@ -3810,6 +3851,7 @@ class SimpleAIService: ObservableObject {
     @MainActor
     private func appendRetainedMessage(_ message: ChatMessage, channel: MessageChannel) {
         let resolvedMessage = resolvedSidebarVisibility(for: message)
+        if channel == .webProvider { webChannelMessageIDs.insert(resolvedMessage.id) }
         appendArchiveMessage(resolvedMessage)
         messages.append(resolvedMessage)
         browserAIServiceLog("append message role=\(message.role == .user ? "user" : "assistant") chars=\(message.text.count) channel=\(channel == .webProvider ? "web" : "app") compactStoredBeforeTrim=\(messages.count) archiveStored=\(archiveMessages.count)")
@@ -3818,6 +3860,7 @@ class SimpleAIService: ObservableObject {
 
     @MainActor
     private func replaceMessagesForWebRequest(_ message: ChatMessage) {
+        webChannelMessageIDs.insert(message.id)
         messages = [message]
         browserAIServiceLog("replaceMessagesForWebRequest userChars=\(message.text.count) archiveStored=\(archiveMessages.count)")
         trimRetainedMessages(for: .webProvider)
