@@ -184,7 +184,7 @@ struct BrowserSettingsView: View {
             Text("AI Accounts")
         } footer: {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Sign in inside Vortex so the in-app ChatGPT and Gemini assistants reuse your session.")
+                Text("Sign in inside Vortyra so the in-app ChatGPT and Gemini assistants reuse your session.")
                 if let webAIStatusMessage, !webAIStatusMessage.isEmpty {
                     Text(webAIStatusMessage)
                 }
@@ -281,7 +281,7 @@ private struct MLXAdvancedSettingsView: View {
     private var activeModelStatus: String {
         if isActiveModelExternal { return "Saved folder" }
         return isActiveModelDownloaded
-            ? "Downloaded to Vortex"
+            ? "Downloaded to Vortyra"
             : "Not downloaded yet. It downloads the first time you use it."
     }
 
@@ -379,7 +379,7 @@ private struct MLXAdvancedSettingsView: View {
             } header: {
                 Text("Add a Model")
             } footer: {
-                Text("Paste an MLX model ID from Hugging Face. Download saves it in Vortex so it works offline. Download to Folder saves it somewhere you choose, like iCloud Drive. The new model becomes the active model.")
+                Text("Paste an MLX model ID from Hugging Face. Download saves it in Vortyra so it works offline. Download to Folder saves it somewhere you choose, like iCloud Drive. The new model becomes the active model.")
             }
 
             Section("Generation") {

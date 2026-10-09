@@ -66,7 +66,7 @@ final class UBOLRulesUpdater: ObservableObject {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 300
-        configuration.httpAdditionalHeaders = ["Accept": "application/vnd.github+json", "User-Agent": "Vortex-Lite-Lab"]
+        configuration.httpAdditionalHeaders = ["Accept": "application/vnd.github+json", "User-Agent": "Vortyra-Lite-Lab"]
         session = URLSession(configuration: configuration)
         lastCheck = store.loadState()?.lastCheck
     }

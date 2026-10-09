@@ -365,7 +365,7 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
                 ("client_id", current.clientID)
             ], expectsJSON: false)
         } catch {
-            lastError = "Signed out here, but OpenAI did not confirm the disconnect. You can remove Vortex in ChatGPT settings."
+            lastError = "Signed out here, but OpenAI did not confirm the disconnect. You can remove Vortyra in ChatGPT settings."
         }
     }
 
@@ -397,7 +397,7 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
             URLQueryItem(name: "code_challenge", value: challenge)
         ]
         if savedClientID == nil {
-            items.append(URLQueryItem(name: "agent_name_hint", value: "Vortex"))
+            items.append(URLQueryItem(name: "agent_name_hint", value: "Vortyra"))
         }
         if let email = connection?.email ?? UserDefaults.standard.string(forKey: Self.lastEmailDefaultsKey) {
             items.append(URLQueryItem(name: "login_hint", value: email))
@@ -1121,7 +1121,7 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
             ?? (object?["detail"] as? String)
             ?? fallback
         if code == ChatGPTPlanError.usageLimitCode {
-            message = "You've reached your ChatGPT plan's usage limit for apps. Vortex won't switch to paid billing; wait for the limit to reset or manage usage at chatgpt.com/settings/usage."
+            message = "You've reached your ChatGPT plan's usage limit for apps. Vortyra won't switch to paid billing; wait for the limit to reset or manage usage at chatgpt.com/settings/usage."
         } else if status == 401, nested == nil, object?["error"] == nil {
             message = "ChatGPT rejected the saved sign-in. Sign in again in Settings → ChatGPT Plan."
         }
@@ -1276,13 +1276,13 @@ nonisolated final class ChatGPTLoopbackListener: @unchecked Sendable {
         let value: (String) -> String? = { name in items.first { $0.name == name }?.value }
         let states = items.filter { $0.name == "state" }
         guard !delivered, states.count == 1, states[0].value == expectedState else {
-            send(status: "400 Bad Request", body: "This sign-in link is no longer valid. Return to Vortex and try again.", on: connection)
+            send(status: "400 Bad Request", body: "This sign-in link is no longer valid. Return to Vortyra and try again.", on: connection)
             return
         }
         delivered = true
         send(
             status: "200 OK",
-            body: "<h1>Return to Vortex</h1><p>Vortex is finishing your ChatGPT connection. This window closes on its own.</p>",
+            body: "<h1>Return to Vortyra</h1><p>Vortyra is finishing your ChatGPT connection. This window closes on its own.</p>",
             on: connection
         )
         onCallback?(ChatGPTLoopbackCallback(
@@ -1294,7 +1294,7 @@ nonisolated final class ChatGPTLoopbackListener: @unchecked Sendable {
     }
 
     private func send(status: String, body: String, on connection: NWConnection) {
-        let html = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>Vortex</title><body style=\"font:17px -apple-system,system-ui;max-width:32rem;margin:18vh auto;padding:24px\">\(body)</body></html>"
+        let html = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>Vortyra</title><body style=\"font:17px -apple-system,system-ui;max-width:32rem;margin:18vh auto;padding:24px\">\(body)</body></html>"
         let response = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n\(html)"
         connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
             connection.cancel()

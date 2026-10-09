@@ -11,4 +11,4 @@
 MLX requires the MLX Swift packages and Apple Silicon; configure the model id and token limits in the AI panel.
 
 For user setup and the iOS 26/iOS 27 distinction, see
-[Using AI models in Vortex](../../docs/AI_MODELS.md).
+[Using AI models in Vortyra](../../docs/AI_MODELS.md).

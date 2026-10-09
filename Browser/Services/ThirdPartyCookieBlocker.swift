@@ -32,7 +32,7 @@ final class ThirdPartyCookieBlocker: NSObject, ObservableObject {
     var unavailabilityReason: String {
         if !Self.nativeRuleListsSupported {
             return "Disabled pending compatibility verification after an earlier iOS 27 WebKit crash. "
-                + "Vortex does not delete saved login cookies as a workaround."
+                + "Vortyra does not delete saved login cookies as a workaround."
         }
         return "WebKit could not load the cookie-blocking rules. Saved login cookies have not been deleted."
     }

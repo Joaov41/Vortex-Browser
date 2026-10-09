@@ -519,7 +519,7 @@ actor MLXLocalService {
                     code: 2,
                     userInfo: [NSLocalizedDescriptionKey: didStartAccessing || scope == nil
                         ? "Invalid model directory: missing config.json"
-                        : "Vortex no longer has access to this model folder. Re-add it in Manage Models."]
+                        : "Vortyra no longer has access to this model folder. Re-add it in Manage Models."]
                 )
             }
 

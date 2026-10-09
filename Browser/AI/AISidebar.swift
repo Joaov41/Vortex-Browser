@@ -810,7 +810,7 @@ struct AISidebar: View {
                     isInteractive: false
                 )
 
-            TextField("Ask Vortex...", text: $input)
+            TextField("Ask anything...", text: $input)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .keyboardType(.asciiCapable)
@@ -1048,7 +1048,7 @@ private struct AISidebarMessagesSection: View {
                     rowContainer {
                         HStack(spacing: 8) {
                             ProgressView()
-                            Text("Generating response...")
+                            Text("Answering...")
                                 .foregroundColor(secondaryText)
                         }
                     }
@@ -1066,7 +1066,7 @@ private struct AISidebarMessagesSection: View {
                 }
 
                 if messages.isEmpty && !isProcessing {
-                    Text(trimmedSelectionText == nil ? "Ask AI about this page..." : "Ask AI about this selection...")
+                    Text(trimmedSelectionText == nil ? "Ask about this page..." : "Ask about this selection...")
                         .foregroundColor(secondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 8)

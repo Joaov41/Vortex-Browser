@@ -18,7 +18,7 @@ struct UBlockLiteRootView: View {
             } else {
                 VStack(spacing: 16) {
                     ProgressView()
-                    Text("Starting Vortex Browser")
+                    Text("Starting Vortyra")
                     Text("Loading uBlock Origin Lite…").font(.caption).foregroundStyle(.secondary)
                 }
             }

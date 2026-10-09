@@ -213,7 +213,7 @@ final class AIWebView: WKWebView {
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
         let command = UICommand(
-            title: "Ask Vortex",
+            title: "Ask about this",
             action: #selector(askAI(_:))
         )
         let menu = UIMenu(
@@ -270,6 +270,15 @@ final class BrowserWebViewContainer: UIView {
         }
     }
 
+    /// Distance from the screen's bottom edge that the minimized address strip covers
+    /// while the full controls are away. Page bars stay above it rather than under it.
+    var bottomStripHeight: CGFloat = 0 {
+        didSet {
+            guard abs(oldValue - bottomStripHeight) > 0.5 else { return }
+            applyBottomChromeInset()
+        }
+    }
+
     /// Scroll room kept below the page so its end can clear the controls. Unlike the
     /// obscured height it stays put while the controls hide during scrolling, so the
     /// page doesn't jump.
@@ -300,8 +309,9 @@ final class BrowserWebViewContainer: UIView {
         if bottomChromeHeight > 0 {
             bottomObscured = safeAreaInsets.bottom + bottomChromeHeight
         } else {
-            // Controls scrolled away: keep page bars clear of the home indicator only.
-            bottomObscured = bottomScrollInset > 0 ? safeAreaInsets.bottom : 0
+            // Controls scrolled away: keep page bars clear of the home indicator and
+            // the minimized address strip.
+            bottomObscured = bottomScrollInset > 0 ? max(safeAreaInsets.bottom, bottomStripHeight) : 0
         }
 
         // Setting obscured insets replaces WebKit's own safe-area handling, so pass the
@@ -1570,20 +1580,32 @@ struct ContentView: View {
     private let splitDividerHandleThickness: CGFloat = 4
     private let splitDividerHitSize: CGFloat = 16
     @State private var isToolbarCollapsed: Bool = true
-    /// The bottom toolbar shows while the page scrolls and steps away when it stops;
-    /// a tap, a new page or the top of the page pins it back.
+    /// Like Safari: the bottom toolbar steps away while the page scrolls and comes
+    /// back as a small address strip when it stops. Tapping the strip or the page,
+    /// a new page or the top of the page brings the full toolbar back.
     private enum ToolbarScrollState {
-        /// Showing and staying; page bars sit above it.
+        /// Full toolbar showing and staying; page bars sit above it.
         case pinned
-        /// Showing while the page moves; page bars stay put underneath.
-        case scrolling
+        /// Nothing showing while the page moves.
         case hidden
+        /// Page at rest away from the top: only the address strip shows.
+        case minimized
     }
 
     @State private var toolbarScrollState: ToolbarScrollState = .pinned
 
     private var isToolbarScrolledAway: Bool {
-        toolbarScrollState == .hidden
+        toolbarScrollState != .pinned
+    }
+
+    /// Height of the minimized address strip and its gap above the screen's bottom edge.
+    private let minimizedStripHeight: CGFloat = 32
+    private let minimizedStripBottomGap: CGFloat = 8
+
+    /// What the strip covers from the screen's bottom edge whenever the full toolbar is
+    /// away, kept through scrolling as well so page bars don't bounce on every scroll.
+    private var activeTabBottomStripHeight: CGFloat {
+        isChromeHidden || toolbarScrollState == .pinned ? 0 : minimizedStripHeight + minimizedStripBottomGap
     }
     /// Width of the browser's content area; on iPad it changes with Split View and
     /// Stage Manager window sizes.
@@ -2038,9 +2060,9 @@ struct ContentView: View {
     private func handleToolbarScrollEvent(_ event: ToolbarScrollEvent) {
         switch event {
         case .scrollBegan:
-            setToolbarScrollState(.scrolling)
+            setToolbarScrollState(.hidden)
         case .scrollEnded(let atTop):
-            setToolbarScrollState(atTop ? .pinned : .hidden)
+            setToolbarScrollState(atTop ? .pinned : .minimized)
         case .pin:
             setToolbarScrollState(.pinned)
         }
@@ -2077,6 +2099,28 @@ struct ContentView: View {
                 refreshToolbarBackdrop()
             }
         }
+    }
+
+    /// Safari-style address strip shown while the page rests with the toolbar away.
+    /// It sits in the home-indicator band; tapping it brings the full toolbar back.
+    private func minimizedAddressStrip(for tab: BrowserTab) -> some View {
+        Button {
+            setToolbarScrollState(.pinned)
+        } label: {
+            MinimizedAddressLabel(tab: tab)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(isSidebarDark ? .white : .primary)
+                .padding(.horizontal, 14)
+                .frame(maxWidth: isPhone ? 220 : 280)
+                .frame(height: minimizedStripHeight)
+                .toolbarBackdrop(in: Capsule(), frosted: true)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .dynamicTypeSize(...DynamicTypeSize.large)
+        .environment(\.colorScheme, isSidebarDark ? .dark : .light)
+        .accessibilityLabel("Show toolbar")
+        .accessibilityValue(tab.currentURL?.host() ?? "")
     }
 
     private var showToolbarHandle: some View {
@@ -3610,6 +3654,17 @@ struct ContentView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .opacity(isToolbarScrolledAway ? 0 : 1)
                         .allowsHitTesting(!isToolbarScrolledAway)
+                }
+
+                if toolbarScrollState == .minimized,
+                   !isChromeHidden,
+                   distractionPickerTabID != vm.tabs[idx].id,
+                   !isPhone || !phoneSecondaryPanelIsPresented {
+                    minimizedAddressStrip(for: vm.tabs[idx])
+                        .padding(.bottom, minimizedStripBottomGap)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                        .ignoresSafeArea(.container, edges: .bottom)
+                        .transition(.opacity)
                 }
             }
 
@@ -5674,14 +5729,16 @@ struct ContentView: View {
                 Text(title)
                     .lineLimit(1)
                 Text("\(count)")
-                    .foregroundStyle(isSelected ? Color.accentColor.opacity(0.75) : sidebarSecondaryText)
+                    .foregroundStyle(sidebarSecondaryText)
             }
             .font(.system(size: 12, weight: .semibold))
-            .foregroundColor(isSelected ? .accentColor : sidebarPrimaryText)
+            .foregroundColor(sidebarPrimaryText)
             .padding(.horizontal, 12)
             .frame(minHeight: 32)
+            // Every chip shares the same plain look; blue text on a pale blue fill was
+            // hard to read in light mode.
             .background(
-                Capsule().fill(isSelected ? Color.accentColor.opacity(0.2) : sidebarIconBackground)
+                Capsule().fill(sidebarIconBackground)
             )
             .contentShape(Capsule())
         }
@@ -6731,6 +6788,7 @@ struct ContentView: View {
                                 }
                             },
                             bottomChromeHeight: activeTabBottomChromeHeight,
+                            bottomStripHeight: activeTabBottomStripHeight,
                             bottomScrollInset: activeTabBottomScrollInset,
                             onToolbarScrollEvent: handleToolbarScrollEvent
                         )
@@ -6921,6 +6979,7 @@ struct ContentView: View {
                             handlePrimaryNavigation(tab, url: url)
                         },
                         bottomChromeHeight: touchesBottom ? activeTabBottomChromeHeight : 0,
+                        bottomStripHeight: touchesBottom ? activeTabBottomStripHeight : 0,
                         bottomScrollInset: touchesBottom ? activeTabBottomScrollInset : 0,
                         onToolbarScrollEvent: handleToolbarScrollEvent
                     )
@@ -7655,6 +7714,7 @@ struct ContentView: View {
         var onNavigate: ((BrowserTab, URL) -> Void)?
         /// Space the floating bottom controls cover, above the bottom safe area.
         var bottomChromeHeight: CGFloat = 0
+        var bottomStripHeight: CGFloat = 0
         var bottomScrollInset: CGFloat = 0
         var onToolbarScrollEvent: ((ToolbarScrollEvent) -> Void)?
 
@@ -7692,12 +7752,14 @@ struct ContentView: View {
             let container = BrowserWebViewContainer(webView: webView)
             container.bottomScrollInset = bottomScrollInset
             container.bottomChromeHeight = bottomChromeHeight
+            container.bottomStripHeight = bottomStripHeight
             return container
         }
 
         func updateUIView(_ uiView: BrowserWebViewContainer, context: Context) {
             uiView.bottomScrollInset = bottomScrollInset
             uiView.bottomChromeHeight = bottomChromeHeight
+            uiView.bottomStripHeight = bottomStripHeight
             let webView = tab.liveWebView ?? tab.activateWebView()
             webView.navigationDelegate = context.coordinator
             webView.uiDelegate = context.coordinator
