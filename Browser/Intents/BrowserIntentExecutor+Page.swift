@@ -156,9 +156,13 @@ extension BrowserIntentExecutor {
         let adapter = makeAdapter()
         guard adapter.beginRun(in: binding.webView) else { throw BrowserIntentError.stalePage }
         defer { adapter.endRun() }
-        _ = try adapter.addBookmark(forTabID: binding.tab.id.uuidString, folderID: folderID ?? existingFolder)
+        let favoriteID = try adapter.addBookmark(forTabID: binding.tab.id.uuidString, folderID: folderID ?? existingFolder)
         try adapter.validateSource(tabID: binding.tab.id)
-        return output("Saved the page to Favorites.")
+        var result = output("Saved the page to Favorites.")
+        if let favoriteID, let favorite = viewModel.favorites.first(where: { $0.id == favoriteID }) {
+            result.savedBookmark = BrowserIntentSavedBookmark(id: favorite.id, title: favorite.title, url: favorite.url)
+        }
+        return result
     }
 
     func readingList() throws -> BrowserIntentOutput {

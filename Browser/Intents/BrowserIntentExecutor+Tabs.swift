@@ -12,7 +12,9 @@ extension BrowserIntentExecutor {
         switch command {
         case .newTab:
             viewModel.addTabBlank()
-            return output("Opened a new tab.")
+            var result = output("Opened a new tab.")
+            result.resultTabID = viewModel.selectedTabID
+            return result
         case .newPrivateTab:
             let tab = BrowserTab(title: "New Tab", url: nil, isIncognito: true)
             viewModel.tabs.append(tab)

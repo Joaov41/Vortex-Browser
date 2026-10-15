@@ -1,7 +1,7 @@
 import Combine
 import Foundation
 
-enum BrowserIntentCommand: Sendable {
+enum BrowserIntentCommand: Sendable, Equatable {
     case openURL(URL)
     case search(String)
     case newTab
@@ -33,6 +33,11 @@ enum BrowserIntentCommand: Sendable {
     case sendToWebAI(BrowserIntentWebProvider)
     case downloadURL(URL)
     case downloadVideo
+    case loadURLInTab(URL, UUID)
+    case closeTabs([UUID])
+    case deleteBookmarks([UUID])
+    case clearHistory(Date?)
+    case renameBookmark(UUID, String)
 }
 
 struct BrowserIntentOutput: Sendable {
@@ -42,6 +47,16 @@ struct BrowserIntentOutput: Sendable {
     /// Set only by the summary command, for its result card. Other commands leave both nil.
     var pageTitle: String? = nil
     var pageURL: URL? = nil
+    /// Set by the schema tab-creating commands so the schema intent can return the tab it made.
+    var resultTabID: UUID? = nil
+    /// Set by the bookmark command so the schema intent can return the saved bookmark.
+    var savedBookmark: BrowserIntentSavedBookmark? = nil
+}
+
+struct BrowserIntentSavedBookmark: Sendable, Equatable {
+    let id: UUID
+    let title: String
+    let url: URL
 }
 
 typealias BrowserIntentConfirmation = @MainActor @Sendable (String) async throws -> Void

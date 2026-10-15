@@ -135,6 +135,8 @@ final class BrowserIntentExecutor {
             return try await executeAICommand(command, confirm: confirm)
         case .downloadURL, .downloadVideo:
             return try await executeDownloadCommand(command, confirm: confirm)
+        case .loadURLInTab, .closeTabs, .deleteBookmarks, .clearHistory, .renameBookmark:
+            return try await executeSchemaCommand(command, confirm: confirm)
         }
     }
 
@@ -184,7 +186,9 @@ final class BrowserIntentExecutor {
         viewModel.selectTab(tab)
         viewModel.navigate(to: url, in: tab)
         callbacks.onTabSelected(tab.id)
-        return output(text)
+        var result = output(text)
+        result.resultTabID = tab.id
+        return result
     }
 
     func openGeneratedSearchTab(url: URL, text: String) throws -> BrowserIntentOutput {
