@@ -79,7 +79,7 @@ struct ResearchTopicIntent: AppIntent {
                 openSourcesInTabs: openSourcesInTabs,
                 makePDF: makePDF
             )
-            let request = PendingAgentTask(task: text)
+            let request = PendingAgentTask(task: text, notifiesWhenFinished: true)
             try AgentTaskIntentRuntime.enqueue(request)
             let title = AgentRunResultIntentSupport.title(forTask: "Research \(ResearchTopicTaskBuilder.normalizedTopic(topic))")
             return (request, title)

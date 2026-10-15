@@ -5108,6 +5108,9 @@ struct ContentView: View {
     }
 
     private func handlePendingAgentTaskStarted(_ requestID: UUID) {
+        let startedRequest = stagedAgentTask?.id == requestID
+            ? stagedAgentTask
+            : windowAgentTaskQueue.first { $0.id == requestID }
         var pending = windowAgentTaskQueue
         var staged = stagedAgentTask
         var isBusy = isAgentSidebarBusy
@@ -5122,6 +5125,9 @@ struct ContentView: View {
         isAgentSidebarBusy = isBusy
         stagedAgentTaskContext = nil
         agentTaskQueueStatusMessage = nil
+        if startedRequest?.notifiesWhenFinished == true {
+            AgentRunFinishNotifier.shared.runStarted(requestID: requestID)
+        }
     }
 
     private func cancelAgentTaskStartup(returnToWindowQueue: Bool) {
@@ -5142,6 +5148,8 @@ struct ContentView: View {
     ) {
         // Waiting App Intents must hear about every run, private ones included.
         AgentRunCompletionBroker.shared.complete(snapshot)
+        // Runs started by Shortcuts or Siri also get a notification; private ones say only "Finished".
+        AgentRunFinishNotifier.shared.runFinished(snapshot)
         // The reply ID is captured by the exact String completion callback in the
         // sidebar. Private runs return before even constructing the store provider.
         guard !snapshot.isPrivate else { return }
@@ -10515,6 +10523,14 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
                 name: PageWatchNotification.openRequested,
                 object: nil,
                 userInfo: ["url": watchURL]
+            )
+        } else if let runLink = userInfo[AgentRunFinishNotification.routeKey] as? String,
+                  let runURL = URL(string: runLink) {
+            // Finished-run taps open the run's detail page through the same in-app link handler.
+            NotificationCenter.default.post(
+                name: PageWatchNotification.openRequested,
+                object: nil,
+                userInfo: ["url": runURL]
             )
         } else if let urlString = userInfo["url"] as? String {
             // Post notification to ContentView to open this URL

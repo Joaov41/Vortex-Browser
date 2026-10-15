@@ -338,7 +338,7 @@ struct RunAgentTaskAndWaitIntent: AppIntent {
                   startURL.map(AgentTaskURLParser.isAllowedStartURL) ?? true else {
                 throw PendingAgentTaskQueueError.invalidTask
             }
-            let request = PendingAgentTask(task: task, startURL: startURL)
+            let request = PendingAgentTask(task: task, startURL: startURL, notifiesWhenFinished: true)
             try AgentTaskIntentRuntime.enqueue(request)
             return request
         }
@@ -383,7 +383,7 @@ struct RunSavedAgentTaskAndWaitIntent: AppIntent {
                   let saved = try AgentTaskIntentRuntime.savedTask(id: id) else {
                 throw AgentTaskStoreError.missingTask
             }
-            let request = AgentTaskIntentRuntime.pendingRequest(for: saved)
+            let request = AgentTaskIntentRuntime.pendingRequest(for: saved, notifiesWhenFinished: true)
             try AgentTaskIntentRuntime.enqueue(request)
             return (request, saved.title)
         }

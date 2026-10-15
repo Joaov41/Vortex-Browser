@@ -27,6 +27,7 @@ struct BrowserSettingsView: View {
     @AppStorage(BrowserSpotlightSettings.savedTasksKey) private var spotlightSavedTasks = true
     @AppStorage(BrowserSpotlightSettings.historyKey) private var spotlightHistory = false
     @AppStorage(AgentRunLiveActivitySettings.enabledKey) private var agentLiveActivity = true
+    @AppStorage(AgentRunFinishNotification.enabledKey) private var agentShortcutNotifications = true
     @State private var showBookmarkImporter = false
     @State private var bookmarkImportMessage: String?
 
@@ -234,10 +235,13 @@ struct BrowserSettingsView: View {
             Toggle(isOn: $agentLiveActivity) {
                 Label("Live Activity While Running", systemImage: "sparkles.rectangle.stack")
             }
+            Toggle(isOn: $agentShortcutNotifications) {
+                Label("Notify When Shortcuts Tasks Finish", systemImage: "bell.badge")
+            }
         } header: {
             Text("Browser Tasks")
         } footer: {
-            Text("Shows a running browser task's steps on the Lock Screen and in the Dynamic Island. Private tasks show no page text.")
+            Text("The Live Activity shows a running task's steps on the Lock Screen and in the Dynamic Island. Tasks started from Shortcuts or Siri can notify you when they finish. Private tasks never show page text: their notification says only \"Finished\".")
         }
     }
 

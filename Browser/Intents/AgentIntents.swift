@@ -35,17 +35,23 @@ enum AgentTaskIntentRuntime {
     }
 
     /// The queued request for a saved task. Its text includes any recorded steps.
-    static func pendingRequest(for task: SavedAgentTask) -> PendingAgentTask {
-        PendingAgentTask(task: task.runTaskText, startURL: task.startURL, savedTaskID: task.id)
+    /// Shortcuts and Siri runs pass `notifiesWhenFinished` so the app posts a notification when they finish.
+    static func pendingRequest(for task: SavedAgentTask, notifiesWhenFinished: Bool = false) -> PendingAgentTask {
+        PendingAgentTask(
+            task: task.runTaskText,
+            startURL: task.startURL,
+            savedTaskID: task.id,
+            notifiesWhenFinished: notifiesWhenFinished ? true : nil
+        )
     }
 
     /// Queues a saved task. Shared by Run Saved Browser Task and Open Saved Browser Task.
-    static func queueSavedTask(_ entity: AgentTaskEntity) throws -> String {
+    static func queueSavedTask(_ entity: AgentTaskEntity, notifiesWhenFinished: Bool = false) throws -> String {
         guard let id = UUID(uuidString: entity.id),
               let task = try savedTask(id: id) else {
             throw AgentTaskStoreError.missingTask
         }
-        try enqueue(pendingRequest(for: task))
+        try enqueue(pendingRequest(for: task, notifiesWhenFinished: notifiesWhenFinished))
         return task.title
     }
 }
@@ -117,7 +123,7 @@ struct RunAgentTaskIntent: AppIntent {
                   startURL.map(AgentTaskURLParser.isAllowedStartURL) ?? true else {
                 throw PendingAgentTaskQueueError.invalidTask
             }
-            let request = PendingAgentTask(task: task, startURL: startURL)
+            let request = PendingAgentTask(task: task, startURL: startURL, notifiesWhenFinished: true)
             try AgentTaskIntentRuntime.enqueue(request)
         }
         return .result(dialog: "Queued the browser task. Vortyra will continue when it is ready.")
@@ -138,7 +144,7 @@ struct RunSavedAgentTaskIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         let queuedTitle = try await MainActor.run { () throws -> String in
-            try AgentTaskIntentRuntime.queueSavedTask(savedTask)
+            try AgentTaskIntentRuntime.queueSavedTask(savedTask, notifiesWhenFinished: true)
         }
         return .result(dialog: "Queued \(queuedTitle). Vortyra will continue when it is ready.")
     }

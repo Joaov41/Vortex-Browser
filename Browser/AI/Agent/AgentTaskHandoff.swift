@@ -8,19 +8,24 @@ struct PendingAgentTask: Codable, Equatable, Identifiable, Sendable {
     var startURL: URL?
     var savedTaskID: UUID?
     var enqueuedAt: Date
+    /// True for requests from the Shortcuts and Siri intents: the app posts a notification when the run
+    /// finishes. Nil for every other source, and absent from queues written before this field existed.
+    var notifiesWhenFinished: Bool?
 
     init(
         id: UUID = UUID(),
         task: String,
         startURL: URL? = nil,
         savedTaskID: UUID? = nil,
-        enqueuedAt: Date = Date()
+        enqueuedAt: Date = Date(),
+        notifiesWhenFinished: Bool? = nil
     ) {
         self.id = id
         self.task = task
         self.startURL = startURL
         self.savedTaskID = savedTaskID
         self.enqueuedAt = enqueuedAt
+        self.notifiesWhenFinished = notifiesWhenFinished
     }
 }
 
