@@ -293,6 +293,35 @@ Everything is prepared for the user, who confirms or sends.
 
 ---
 
+## Follow-up: three ideas from OpenMinis
+
+Ideas only: OpenMinis is GPLv3 and Vortyra is MIT, so no code was copied. Status: all three committed on 2026-10-15, one `checkpoint-vortyra-openminis-phaseN` tag each. Unlike phases 1 to 11, these were implemented directly by the supervising session, not by Haiku agents (the request to use Haiku agents arrived after the work was done). Full suite: 662 passed (the Phase 11 baseline's 635 plus 27 new), 2 skipped, and the 1 known failure. Every baseline test has the same result as in Phase 11. Log: `.codex-checkpoints/agent-expansion/openminis-full-tests.log`.
+
+### Phase O1: tool loop detector (f856687)
+
+- `BrowserAgentToolLoopDetector.swift` + `BrowserAgentController+LoopGuard.swift`, in the controller's tool executor, so it covers every engine.
+- A call is the tool name plus a hash of its normalized arguments and the page state (address and scroll position). The page state keeps reading several pages, or scrolling down a long page, from counting as repeats.
+- Three identical calls in a row: run, with a warning in front of the result. Five in a row: not run. Eighth identical call in a run: the run ends as failed. `ask_user` and `finish` are never counted; a question ends the streak. The 25-step limit is unchanged.
+- Tests: `BrowserAgentToolLoopTests.swift`. The full-action-log test in `BrowserAgentLoopTests` now scrolls a page tall enough to scroll.
+
+### Phase O2: Live Activity for agent progress (8cf01e2)
+
+- `VortyraWidgets/AgentRunActivityAttributes.swift` is compiled by both the app and VortyraWidgets; `VortyraWidgets/AgentRunLiveActivity.swift` draws the Lock Screen and Dynamic Island. Both were added with `.codex-checkpoints/agent-expansion/add_live_activity_files.rb`.
+- The controller reports progress through `BrowserAgentRunObserver` (`BrowserAgentController+Progress.swift`); `AgentRunLiveActivityController` starts, updates (at most every 0.75 s) and ends the activity. Private runs show generic text only and are dismissed at once. There is no activity on Mac Catalyst.
+- `NSSupportsLiveActivities` in `Info.plist`; Settings > Browser Tasks > Live Activity While Running (on by default).
+- Tests: `AgentRunLiveActivityTests.swift`.
+
+### Phase O3: finish notifications for Shortcuts and Siri runs (0c58ab9)
+
+- `PendingAgentTask.notifiesWhenFinished` (optional, so old queues decode) is set only by Run Browser Task, Run Saved Browser Task, their "and Get Result" versions and Research a Topic.
+- `AgentRunFinishNotifier` asks for permission when the first such run starts, and posts the task's first line and the result's first line when it finishes. Private runs say only "Finished". A tap opens the run's detail page.
+- Settings > Browser Tasks > Notify When Shortcuts Tasks Finish (on by default).
+- Tests: `AgentRunFinishNotifierTests.swift`.
+
+Still to verify by hand: the Live Activity's look on an iPhone Lock Screen and in the Dynamic Island, a notification tap, and a Mac Catalyst build.
+
+---
+
 ## Supervisor gate per phase
 
 1. Read the agent's report and the diff (`git diff --stat`, then the full diff of changed files).
