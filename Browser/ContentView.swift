@@ -1728,6 +1728,8 @@ struct ContentView: View {
     @State private var agentTaskReadyWebViews: Set<ObjectIdentifier> = []
     @State private var agentTaskQueueStatusMessage: String?
     @State private var agentRunDetailRequest: AgentRunDetailRequest?
+    @State private var agentWatchOpenRequest: AgentWatchOpenRequest?
+    @State private var pageWatchDraft: PageWatchDraft?
     @State private var lastAgentBackendStatusShown: String?
     @StateObject private var browserIntentRuntime = BrowserIntentRuntime.shared
     @State private var browserIntentWindowID = UUID()
@@ -2264,6 +2266,20 @@ struct ContentView: View {
                 sitePrivacyTabID = tab.id
             } label: {
                 Label("Site Protection…", systemImage: "shield.lefthalf.filled")
+            }
+        }
+
+        // Private tabs and non-web pages can never be watched.
+        if !tab.isIncognito, !tab.isBlank, tab.liveWebView != nil,
+           let pageURL = tab.currentURL, PageWatch.isWebURL(pageURL) {
+            Button {
+                collapseToolbar()
+                pageWatchDraft = PageWatchDraft(
+                    url: pageURL,
+                    title: tab.title.isEmpty ? (pageURL.host ?? pageURL.absoluteString) : tab.title
+                )
+            } label: {
+                Label("Watch This Page…", systemImage: "eye")
             }
         }
 
@@ -3950,6 +3966,9 @@ struct ContentView: View {
                 .presentationDragIndicator(.visible)
             }
         }
+        .sheet(item: $pageWatchDraft) { draft in
+            PageWatchEditorView(url: draft.url, title: draft.title, existing: nil)
+        }
         .translationTask(translationConfiguration) { session in
             await runPageTranslation(with: session)
         }
@@ -4058,7 +4077,14 @@ struct ContentView: View {
                 checkForSharedURL()
                 checkForPendingAgentTasks()
                 drainWindowAgentTasks()
-            } else {
+                checkDuePageWatchesIfIdle()
+            } else if newPhase == .background {
+                PageWatchBackgroundScheduler.refreshSchedule()
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: PageWatchNotification.openRequested)) { notification in
+            if let url = notification.userInfo?["url"] as? URL {
+                handleIncomingURL(url)
             }
         }
         .onChange(of: browserIntentRuntime.isBusy) { _, busy in
@@ -4584,6 +4610,28 @@ struct ContentView: View {
         agentRunDetailRequest = AgentRunDetailRequest(runID: runID)
     }
 
+    /// Shows the agent library on the Watches tab for one page watch, from a `webmebrowser://watch?id=` link.
+    private func openAgentWatchDetail(_ watchID: UUID) {
+        revealAgentTaskSidebar()
+        agentWatchOpenRequest = AgentWatchOpenRequest(watchID: watchID)
+    }
+
+    /// Checks due page watches in the foreground, but only when the window is ready and no agent work is running.
+    /// The coordinator itself allows at most one check of due watches per 15 minutes.
+    private func checkDuePageWatchesIfIdle() {
+        guard agentTaskSidebarForegroundReady,
+              !aiService.isProcessing,
+              !isAgentSidebarBusy,
+              !browserIntentRuntime.isBusy,
+              agentTaskStartup == nil,
+              stagedAgentTask == nil,
+              windowAgentTaskQueue.isEmpty else { return }
+        Task { @MainActor in
+            _ = await PageWatchCoordinator.shared.checkOnActivation(isIdle: true)
+            PageWatchBackgroundScheduler.refreshSchedule()
+        }
+    }
+
     private func revealAgentTaskSidebar() {
         let wasAlreadyVisible = showAIPanel
         showAIPanel = true
@@ -4612,6 +4660,7 @@ struct ContentView: View {
         if isReady {
             drainPendingAgentTaskQueue()
             drainWindowAgentTasks()
+            checkDuePageWatchesIfIdle()
         }
     }
 
@@ -5124,6 +5173,18 @@ struct ContentView: View {
             }
             return
         }
+        if url.scheme?.lowercased() == AgentIncomingURLRouter.appScheme,
+           url.host?.lowercased() == PageWatchURLParser.host {
+            do {
+                guard let watchID = try PageWatchURLParser.parse(url) else {
+                    throw PageWatchURLParseError.malformedWatchURL
+                }
+                openAgentWatchDetail(watchID)
+            } catch {
+                showPageStatus(error.localizedDescription, autoHide: false)
+            }
+            return
+        }
         guard url.scheme?.lowercased() == shareAppURLScheme else {
             return
         }
@@ -5532,6 +5593,10 @@ struct ContentView: View {
             agentRunDetailRequest: agentRunDetailRequest,
             onAgentRunDetailRequestHandled: {
                 agentRunDetailRequest = nil
+            },
+            agentWatchOpenRequest: agentWatchOpenRequest,
+            onAgentWatchOpenRequestHandled: {
+                agentWatchOpenRequest = nil
             }
         )
     }
@@ -10299,8 +10364,13 @@ struct BrowserApp: App {
 // MARK: - App Delegate for Notification Handling
 class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // Background refresh for page watches must be registered before launch finishes.
+        PageWatchBackgroundScheduler.register()
         let center = UNUserNotificationCenter.current()
         center.delegate = self
+        Task { @MainActor in
+            PageWatchBackgroundScheduler.refreshSchedule()
+        }
         return true
     }
 
@@ -10313,7 +10383,15 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     // Handle notification tap
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let userInfo = response.notification.request.content.userInfo
-        if let urlString = userInfo["url"] as? String {
+        if let watchLink = userInfo[PageWatchNotification.routeKey] as? String,
+           let watchURL = URL(string: watchLink) {
+            // Page-watch taps route through the same handler as webmebrowser://watch links.
+            NotificationCenter.default.post(
+                name: PageWatchNotification.openRequested,
+                object: nil,
+                userInfo: ["url": watchURL]
+            )
+        } else if let urlString = userInfo["url"] as? String {
             // Post notification to ContentView to open this URL
             NotificationCenter.default.post(
                 name: Notification.Name("OpenSharedURL"),

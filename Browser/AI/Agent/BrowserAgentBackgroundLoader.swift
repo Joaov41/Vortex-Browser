@@ -25,6 +25,7 @@ final class BrowserAgentBackgroundLoader: NSObject, WKNavigationDelegate, WKUIDe
         case downloadBlocked
         case autofillProtectedOrigin
         case pageUnavailable
+        case selectorNotFound
 
         var errorDescription: String? {
             switch self {
@@ -40,6 +41,8 @@ final class BrowserAgentBackgroundLoader: NSObject, WKNavigationDelegate, WKUIDe
                 return "Background reads are unavailable for a site that received autofill."
             case .pageUnavailable:
                 return "The page loaded without readable text."
+            case .selectorNotFound:
+                return "The part of the page selected for this watch was not found."
             }
         }
     }
@@ -57,6 +60,7 @@ final class BrowserAgentBackgroundLoader: NSObject, WKNavigationDelegate, WKUIDe
     private var fetchURLPolicy: FetchURLPolicy?
     private var fetchDataStore: WKWebsiteDataStore?
     private var collectsSearchResults = false
+    private var rootSelector: String?
     private(set) var activeGeneration: UUID?
     private var webView: WKWebView?
     private var continuation: CheckedContinuation<Page, Error>?
@@ -83,7 +87,8 @@ final class BrowserAgentBackgroundLoader: NSObject, WKNavigationDelegate, WKUIDe
         startingDataStore: WKWebsiteDataStore,
         isPrivate: Bool,
         urlPolicy: FetchURLPolicy? = nil,
-        collectSearchResults: Bool = false
+        collectSearchResults: Bool = false,
+        rootSelector: String? = nil
     ) async throws -> Page {
         guard Self.isHTTPURL(url) else { throw LoadError.invalidURL }
         guard urlPolicy?(url, startingDataStore) ?? true else { throw LoadError.autofillProtectedOrigin }
@@ -99,6 +104,7 @@ final class BrowserAgentBackgroundLoader: NSObject, WKNavigationDelegate, WKUIDe
         fetchURLPolicy = urlPolicy
         fetchDataStore = startingDataStore
         collectsSearchResults = collectSearchResults
+        self.rootSelector = rootSelector.map { String($0.prefix(500)) }
         self.webView = webView
 
         return try await withTaskCancellationHandler {
@@ -278,11 +284,15 @@ final class BrowserAgentBackgroundLoader: NSObject, WKNavigationDelegate, WKUIDe
             do {
                 let value = try await webView.callAsyncJavaScript(
                     Self.readablePageScript,
-                    arguments: ["limit": Self.maximumTextCharacters],
+                    arguments: ["limit": Self.maximumTextCharacters, "rootSelector": self.rootSelector ?? ""],
                     in: nil,
                     contentWorld: .page
                 )
                 guard self.isActive(generation: generation, webView: webView) else { return }
+                if let object = value as? [String: Any], object["selectorMissing"] as? Bool == true {
+                    finish(.failure(LoadError.selectorNotFound), generation: generation, webView: webView)
+                    return
+                }
                 guard let object = value as? [String: Any],
                       let text = object["text"] as? String,
                       (self.collectsSearchResults || !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty),
@@ -395,6 +405,7 @@ final class BrowserAgentBackgroundLoader: NSObject, WKNavigationDelegate, WKUIDe
         fetchURLPolicy = nil
         fetchDataStore = nil
         collectsSearchResults = false
+        rootSelector = nil
         expectedWebView.stopLoading()
         expectedWebView.navigationDelegate = nil
         expectedWebView.uiDelegate = nil
@@ -459,7 +470,15 @@ final class BrowserAgentBackgroundLoader: NSObject, WKNavigationDelegate, WKUIDe
 
     private static let readablePageScript = #"""
     const maxChars = Math.max(1, Math.min(8000, Number(limit) || 8000));
-    const root = document.querySelector('main,article,[role=main]') || document.body || document.documentElement;
+    const selector = typeof rootSelector === 'string' ? rootSelector.trim() : '';
+    let selected = null;
+    if (selector) {
+      try { selected = document.querySelector(selector); } catch (error) { selected = null; }
+      if (!selected) {
+        return { url: String(document.URL || ''), title: '', text: '', truncated: false, selectorMissing: true };
+      }
+    }
+    const root = selected || document.querySelector('main,article,[role=main]') || document.body || document.documentElement;
     const ignored = 'script,style,template,noscript,input,textarea,select,option,button,[contenteditable],[role=textbox],[role=searchbox],[hidden],[aria-hidden="true"],[inert]';
     const block = 'address,article,blockquote,dd,div,dl,dt,fieldset,figcaption,figure,footer,h1,h2,h3,h4,h5,h6,header,li,main,nav,ol,p,pre,section,table,td,th,ul';
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);

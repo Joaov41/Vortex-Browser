@@ -56,6 +56,10 @@ struct AISidebar: View {
     var agentRunDetailRequest: AgentRunDetailRequest? = nil
     /// Called once a requested run detail has been presented, so the window can clear its request.
     var onAgentRunDetailRequestHandled: (() -> Void)? = nil
+    /// Set by the window when a `webmebrowser://watch?id=` link arrives; opens the library on the Watches tab.
+    var agentWatchOpenRequest: AgentWatchOpenRequest? = nil
+    /// Called once a requested watch has been presented, so the window can clear its request.
+    var onAgentWatchOpenRequestHandled: (() -> Void)? = nil
 
     @State private var input: String = ""
     @AppStorage("customPrompts") private var customPromptsData: String = "[]"
@@ -400,15 +404,20 @@ struct AISidebar: View {
                     initialDraft: presentation.initialDraft,
                     onRun: { request in onAgentTaskLaunch?(request) },
                     onSavedReply: { id in savedAgentReplyIDs.insert(id) },
-                    initialRunID: presentation.initialRunID
+                    initialRunID: presentation.initialRunID,
+                    initialWatchID: presentation.initialWatchID
                 )
             }
         }
         .onAppear {
             presentRequestedRunDetail()
+            presentRequestedWatch()
         }
         .onChange(of: agentRunDetailRequest) { _, _ in
             presentRequestedRunDetail()
+        }
+        .onChange(of: agentWatchOpenRequest) { _, _ in
+            presentRequestedWatch()
         }
         .fullScreenCover(item: $presentedResponseCanvas) { presentation in
             AIResponseCanvas(presentation: presentation, onOpenSource: openLookupSource)
@@ -431,6 +440,15 @@ struct AISidebar: View {
             agentTaskLibraryPresentation = .run(request)
         }
         onAgentRunDetailRequestHandled?()
+    }
+
+    /// Presents the library on the Watches tab for a requested watch, the same way as a requested run.
+    private func presentRequestedWatch() {
+        guard let request = agentWatchOpenRequest else { return }
+        if agentTaskStoreProvider != nil {
+            agentTaskLibraryPresentation = .watch(request)
+        }
+        onAgentWatchOpenRequestHandled?()
     }
 
     private var headerRow: some View {

@@ -178,6 +178,7 @@ enum AgentIncomingURLRoute: Equatable {
     case cloudShortcut(URL)
     case agentTask(PendingAgentTask)
     case run(UUID)
+    case pageWatch(UUID)
     case sharedText(String)
     case sharedPayload
     case unhandled
@@ -198,6 +199,9 @@ enum AgentIncomingURLRouter {
         }
         if let runID = try AgentRunURLParser.parse(url) {
             return .run(runID)
+        }
+        if let watchID = try PageWatchURLParser.parse(url) {
+            return .pageWatch(watchID)
         }
         let text = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .first(where: { $0.name == "text" })?.value

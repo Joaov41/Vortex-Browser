@@ -28,13 +28,20 @@ enum AgentTaskLibraryPresentation: Identifiable {
     case browse(UUID)
     case save(AgentTaskSaveDraft)
     case run(AgentRunDetailRequest)
+    case watch(AgentWatchOpenRequest)
 
     var id: UUID {
         switch self {
         case .browse(let id): id
         case .save(let draft): draft.id
         case .run(let request): request.id
+        case .watch(let request): request.id
         }
+    }
+
+    var initialWatchID: UUID? {
+        guard case .watch(let request) = self else { return nil }
+        return request.watchID
     }
 
     var initialDraft: AgentTaskSaveDraft? {
@@ -68,10 +75,15 @@ struct AgentTaskLibrarySheet: View {
     let onSavedReply: (UUID) -> Void
     /// Opens this run's detail page on appear, when the sheet was requested from a `webmebrowser://run` link.
     var initialRunID: UUID? = nil
+    /// Opens the Watches tab on this watch, when the sheet was requested from a `webmebrowser://watch` link.
+    var initialWatchID: UUID? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var savedTasks: [SavedAgentTask] = []
     @State private var history: [AgentRunRecord] = []
+    @State private var pageWatches: [PageWatch] = []
+    @State private var checkingWatchIDs: Set<UUID> = []
+    @State private var editingWatch: PageWatch?
     @State private var selectedSection = 0
     @State private var showingEditor = false
     @State private var editingTask: SavedAgentTask?
@@ -137,8 +149,14 @@ struct AgentTaskLibrarySheet: View {
             } message: {
                 Text(errorMessage ?? "")
             }
+            .sheet(item: $editingWatch) { watch in
+                PageWatchEditorView(url: watch.url, title: watch.title, existing: watch) { _ in
+                    reloadWatches()
+                }
+            }
             .onAppear {
                 reload()
+                reloadWatches()
                 if let initialDraft {
                     titleText = initialDraft.title
                     taskText = initialDraft.task
@@ -148,6 +166,9 @@ struct AgentTaskLibrarySheet: View {
                 }
                 if let initialRunID {
                     openRun(initialRunID)
+                }
+                if let initialWatchID {
+                    openWatch(initialWatchID)
                 }
             }
         }
@@ -167,6 +188,7 @@ struct AgentTaskLibrarySheet: View {
             Picker("Library", selection: $selectedSection) {
                 Text("Tasks").tag(0)
                 Text("History").tag(1)
+                Text("Watches").tag(2)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal)
@@ -181,13 +203,27 @@ struct AgentTaskLibrarySheet: View {
                     ForEach(savedTasks) { task in
                         savedTaskRow(task)
                     }
-                } else {
+                } else if selectedSection == 1 {
                     if history.isEmpty {
                         ContentUnavailableView("No Run History", systemImage: "clock.arrow.circlepath", description: Text("Completed regular agent runs appear here."))
                             .listRowSeparator(.hidden)
                     }
                     ForEach(history) { record in
                         historyRow(record)
+                    }
+                } else {
+                    if pageWatches.isEmpty {
+                        ContentUnavailableView("No Page Watches", systemImage: "eye", description: Text("Use Watch This Page in the page menu to be told when a page changes."))
+                            .listRowSeparator(.hidden)
+                    }
+                    ForEach(pageWatches) { watch in
+                        PageWatchRow(
+                            watch: watch,
+                            isChecking: checkingWatchIDs.contains(watch.id),
+                            onCheck: { checkWatch(watch) },
+                            onEdit: { editingWatch = watch },
+                            onDelete: { deleteWatch(watch) }
+                        )
                     }
                 }
             }
@@ -296,6 +332,45 @@ struct AgentTaskLibrarySheet: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 5)
+    }
+
+    /// Shows the Watches page on one watch. A watch that no longer exists gets a short notice instead.
+    private func openWatch(_ watchID: UUID) {
+        reloadWatches()
+        if pageWatches.contains(where: { $0.id == watchID }) {
+            libraryNotice = nil
+            selectedSection = 2
+        } else {
+            libraryNotice = PageWatchURLParser.missingWatchMessage
+        }
+    }
+
+    private func reloadWatches() {
+        pageWatches = (try? PageWatchCoordinator.shared.watches()) ?? []
+    }
+
+    private func checkWatch(_ watch: PageWatch) {
+        guard !checkingWatchIDs.contains(watch.id) else { return }
+        checkingWatchIDs.insert(watch.id)
+        Task { @MainActor in
+            defer { checkingWatchIDs.remove(watch.id) }
+            do {
+                let result = try await PageWatchCoordinator.shared.checkWatch(id: watch.id)
+                libraryNotice = result.statusMessage(for: watch.title)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+            reloadWatches()
+        }
+    }
+
+    private func deleteWatch(_ watch: PageWatch) {
+        do {
+            try PageWatchCoordinator.shared.deleteWatch(id: watch.id)
+            reloadWatches()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     /// Shows the History page with one run's detail. A run that has left history gets a short notice instead.

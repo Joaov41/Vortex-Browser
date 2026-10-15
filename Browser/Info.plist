@@ -85,6 +85,11 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>
+		<string>fetch</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.web.me.Browser.pagewatch</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
