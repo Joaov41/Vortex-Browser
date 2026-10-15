@@ -47,6 +47,8 @@ xcodebuild test-without-building $COMMON -only-testing:BrowserTests/<TestClass> 
 xcodebuild test-without-building $COMMON 2>&1 | tail -80
 ```
 
+Always pass `-parallel-testing-enabled NO` to test runs. The internal disk has about 9 GB free, and parallel runs create simulator clones that can fill it. In serial mode results print as `Test Case '-[BrowserTests.Class testName]' passed (…)`. If xcodebuild hangs after printing results, stop it with `perl -e 'alarm shift; exec @ARGV' 1500 xcodebuild …` (there is no `timeout` command on this Mac). Never delete files outside the repository or kill system services; if the disk fills up, stop and report.
+
 To find compile errors quickly: `xcodebuild build-for-testing $COMMON 2>&1 | grep -E "error:|warning: .*(Browser|Intents|Agent)" | head -40`.
 
 The baseline (402 tests: 399 passed, 1 failed, 2 skipped) is in `.codex-checkpoints/agent-expansion/baseline-tests.log`, with a sorted per-test list in `baseline-results.txt`. Known pre-existing failure: `AIResponseCanvasTests/testRedditReductionGroupsRetainAllPartialSummaries`. A phase may not add new failures.
