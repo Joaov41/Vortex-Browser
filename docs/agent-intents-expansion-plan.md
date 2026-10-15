@@ -1,6 +1,8 @@
 # Agent and App Intents expansion: implementation plan
 
-Status: approved by the owner on 2026-10-15. Implementation is delegated one phase at a time to a Haiku 5.5 agent. A supervising agent reviews each phase, builds, runs the tests and commits a phase checkpoint before the next phase starts.
+Status: all 11 phases implemented and committed on 2026-10-15 (commits 4ae77f2 to 50cee08, one `checkpoint-vortyra-agent-expansion-phaseN` tag per phase). Final full suite: 635 passed, 1 known pre-existing failure, 2 skipped. Each phase was implemented by a Haiku 5.5 agent and reviewed, built and tested by a supervising agent before commit.
+
+Still to verify on a device or by hand: Siri and Shortcuts result cards, Spotlight results, the browser schemas in Siri, page-watch background refresh and notification taps, the widgets and controls in their galleries, the teach-mode banner and recording, the Calendar/Reminders/Mail/Messages sheets, and a Mac Catalyst build. Deferred: tab group and reading list schemas, window intents, incremental Spotlight sync, lazy loading of research tabs.
 
 Restore point: commit `d14e1ad`, tag `checkpoint-vortyra-pre-agent-expansion-20261015-121908`. Work stays on the current branch (`codex/ublock-origin-lite-experiment`). Nothing is pushed.
 
