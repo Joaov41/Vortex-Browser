@@ -42,7 +42,7 @@ extension BrowserAgentController {
         "compose_comparison", "export_comparison_csv", "export_comparison_pdf"
     ]
 
-    static let researchToolNames: Set<String> = ["fetch_page"]
+    static let researchToolNames: Set<String> = ["fetch_page", "open_sources_in_group"]
     static let browserBundleToolNames = browserToolNames
         .subtracting(dataToolNames)
         .subtracting(researchToolNames)
@@ -182,7 +182,11 @@ extension BrowserAgentController {
             if bundles.contains(.data) { names.formUnion(dataToolNames) }
             if bundles.contains(.research) { names.formUnion(researchToolNames) }
         }
-        if !browserAdapterAvailable { names.subtract(browserToolNames) }
+        if !browserAdapterAvailable {
+            names.subtract(browserToolNames)
+            // Tab groups need the browser adapter, so the research tab tool is unavailable without it.
+            names.remove("open_sources_in_group")
+        }
         if !fetchPageAvailable { names.remove("fetch_page") }
         if !supportsVision { names.remove("screenshot") }
         else if !coreOnly { names.insert("screenshot") }
@@ -264,6 +268,7 @@ extension BrowserAgentController {
     a Markdown comparison table when useful, key bullets, and a final Sources list with source titles and URLs.
     - If a source cannot be fetched, is blocked, or only partial text is available, say so and do not imply full coverage. Distinguish sourced facts from uncertainty.
     - When the user asks to save or export findings, create run-scoped datasets from fetched sources and use the available data tools. Do not describe fetched text as a live browser tab or HTML table.
+    - When the user asks to research in tabs or to open the sources, call open_sources_in_group after choosing the sources: use a short group title (up to 60 characters) and up to 8 distinct HTTP or HTTPS URLs. If it returns an error, say the tabs were not opened.
     - Finish with the complete bounded answer, including the Sources list.
     """
 
@@ -544,6 +549,23 @@ extension BrowserAgentController {
                 + "blockers. Only HTTP or HTTPS pages are allowed; the page is not interacted with.",
             properties: ["url": ["type": "string", "description": "HTTP or HTTPS web address to read."]],
             required: ["url"]
+        ),
+        function(
+            "open_sources_in_group",
+            "Create or reuse a normal-browsing tab group with this exact title, then open 1 to 8 chosen HTTP or "
+                + "HTTPS sources in new background tabs in that group. Your current tab stays selected. The pages "
+                + "are not read; use fetch_page for their text.",
+            properties: [
+                "groupTitle": ["type": "string", "description": "Tab group name, 1 to 60 characters."],
+                "urls": [
+                    "type": "array",
+                    "description": "1 to 8 full HTTP or HTTPS addresses to open.",
+                    "items": ["type": "string"],
+                    "minItems": 1,
+                    "maxItems": 8
+                ]
+            ],
+            required: ["groupTitle", "urls"]
         ),
         function("screenshot", "Capture a bounded screenshot of the current page after masking sensitive controls. Available only for vision-capable engines.", properties: [:], required: []),
         function(

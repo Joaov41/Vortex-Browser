@@ -540,7 +540,8 @@ final class BrowserAgentLoopTests: XCTestCase {
             "synthetic_drag_drop", "translate_page", "type_text", "wait", "web_search"
         ]
         var withFetchPage = base
-        withFetchPage.insert("fetch_page")
+        // Research-bundle tools. open_sources_in_group joined this bundle in Phase 9.
+        withFetchPage.formUnion(["fetch_page", "open_sources_in_group"])
 
         let recordedSets: [String: Set<String>] = [
             "find foo fighters next concert in the ua": base,

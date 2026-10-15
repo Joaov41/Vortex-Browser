@@ -40,7 +40,7 @@ final class AgentControllerSplitTests: XCTestCase {
     ]
 
     private let expectedResearchToolNames: Set<String> = [
-        "fetch_page"
+        "fetch_page", "open_sources_in_group"
     ]
 
     private let expectedBrowserBundleToolNames: Set<String> = [
@@ -79,7 +79,7 @@ final class AgentControllerSplitTests: XCTestCase {
         "read_page", "wait", "go_forward",
         "reload", "press_key", "set_checked",
         "inspect", "dismiss_overlays", "copy_to_clipboard",
-        "ask_user", "finish", "fetch_page"
+        "ask_user", "finish", "fetch_page", "open_sources_in_group"
     ]
 
     private let expectedToolDefinitionNames: [String] = [
@@ -103,7 +103,7 @@ final class AgentControllerSplitTests: XCTestCase {
         "dismiss_overlays", "close_tab", "search_history",
         "set_desktop_mode", "open_in_split", "hide_element",
         "copy_to_clipboard", "web_search", "fill_form",
-        "ask_user", "fetch_page", "screenshot",
+        "ask_user", "fetch_page", "open_sources_in_group", "screenshot",
         "finish"
     ]
 
@@ -133,7 +133,7 @@ final class AgentControllerSplitTests: XCTestCase {
             .union(BrowserAgentController.dataToolNames)
             .union(BrowserAgentController.researchToolNames)
         XCTAssertEqual(names, expectedCatalogNames)
-        XCTAssertEqual(names.count, 63)
+        XCTAssertEqual(names.count, 64)
     }
 
     func testToolDefinitionNamesMatchLiteralList() {

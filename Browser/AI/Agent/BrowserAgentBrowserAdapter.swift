@@ -343,6 +343,35 @@ final class BrowserAgentBrowserAdapter {
         return Group(id: group.id, title: Self.safeTitle(group.title), tabCount: 0)
     }
 
+    /// Returns the normal-browsing group whose title matches exactly, creating it only when none exists.
+    func sourceGroup(title rawTitle: String) throws -> Group {
+        try requirePersistentFeatures()
+        let title = bounded(rawTitle.trimmingCharacters(in: .whitespacesAndNewlines), limit: 120)
+        guard let existing = viewModel.tabGroups.first(where: { $0.title == title }) else {
+            return try createGroup(title: title)
+        }
+        let count = viewModel.tabs.filter { $0.groupID == existing.id && !$0.isIncognito && $0.webAIProvider == nil }.count
+        return Group(id: existing.id, title: Self.safeTitle(existing.title, limit: 120), tabCount: count)
+    }
+
+    /// Opens a page in a new normal-browsing tab inside the group. The tab is not selected, so the
+    /// agent's tab and the browser's current selection stay where they were.
+    @discardableResult
+    func openBackgroundTab(url: URL, groupID: UUID) throws -> UUID {
+        try requirePersistentFeatures()
+        guard AgentTaskURLParser.isAllowedStartURL(url) else { throw AccessError.invalidURL }
+        guard viewModel.tabGroups.contains(where: { $0.id == groupID }) else { throw AccessError.unknownGroup }
+        let tab = BrowserTab(
+            title: Self.safeTitle(url.host ?? "New Tab", limit: 120),
+            url: url,
+            isIncognito: false,
+            groupID: groupID
+        )
+        viewModel.tabs.append(tab)
+        viewModel.navigate(to: url, in: tab)
+        return tab.id
+    }
+
     func renameGroup(id: UUID, title: String) throws {
         try requirePersistentFeatures()
         guard let group = viewModel.tabGroups.first(where: { $0.id == id }) else { throw AccessError.unknownGroup }
