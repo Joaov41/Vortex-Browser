@@ -5,6 +5,7 @@ struct AgentRunDetailView: View {
     let record: AgentRunRecord
     let onRunAgain: () -> Void
     let onSaveAsTask: () -> Void
+    @State private var handoffRequest: AgentHandoffRequest?
 
     var body: some View {
         List {
@@ -31,6 +32,12 @@ struct AgentRunDetailView: View {
             Section("Outcome") {
                 Text(record.outcome)
                     .textSelection(.enabled)
+            }
+
+            Section("Hand Off") {
+                AgentResultHandoffRow { action in
+                    handoffRequest = AgentHandoffRequest(kind: AgentResultHandoffDraft(record: record).request(for: action))
+                }
             }
 
             Section("Actions") {
@@ -124,6 +131,7 @@ struct AgentRunDetailView: View {
             }
         }
         .listStyle(.insetGrouped)
+        .agentHandoffSheet($handoffRequest)
         .navigationTitle("Run Details")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

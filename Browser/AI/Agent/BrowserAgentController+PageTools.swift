@@ -63,6 +63,9 @@ extension BrowserAgentController {
         if name == "open_sources_in_group" {
             return try openSourcesInGroup(arguments: arguments, token: token)
         }
+        if Self.handoffToolNames.contains(name) {
+            return try prepareHandoff(name: name, arguments: arguments, token: token)
+        }
         if name == "copy_to_clipboard" {
             let text = bounded(stringArgument(arguments["text"]), to: 10_000)
             guard !text.isEmpty else { throw BrowserToolFailure.invalidArgument("Provide text between 1 and 10,000 characters.") }

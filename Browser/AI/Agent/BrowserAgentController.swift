@@ -135,6 +135,8 @@ final class BrowserAgentController: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var pendingConfirmation: Confirmation?
     @Published private(set) var pendingQuestion: UserQuestion?
+    /// Handoffs prepared by the current run's prepare_* tools. The sidebar shows them one at a time after the run ends.
+    @Published private(set) var handoffRequests: [AgentHandoffRequest] = []
 
     static let maxSteps = 25
     private static let maxElements = 150
@@ -284,6 +286,7 @@ final class BrowserAgentController: ObservableObject {
         runQuestions = []
         runExports = []
         runEndStatus = nil
+        handoffRequests = []
         self.onComplete = onComplete
         self.onRunCompleted = onRunCompleted
         self.onPageQuestion = onPageQuestion
@@ -447,6 +450,20 @@ final class BrowserAgentController: ObservableObject {
     func finishRunQuestion(_ id: UUID?, answered: Bool) {
         guard let id, let index = runQuestions.firstIndex(where: { $0.id == id }) else { return }
         runQuestions[index].answered = answered
+    }
+
+    /// Queues a prepared handoff for the user. Returns false when this run already has the maximum.
+    /// Nothing is presented or sent here; the sidebar shows the request after the run ends.
+    @discardableResult
+    func enqueueHandoffRequest(_ kind: AgentHandoffRequest.Kind) -> Bool {
+        guard handoffRequests.count < Self.maxHandoffRequestsPerRun else { return false }
+        handoffRequests.append(AgentHandoffRequest(kind: kind))
+        return true
+    }
+
+    /// Removes a handoff after the user confirms or cancels it.
+    func dismissHandoffRequest(_ id: UUID) {
+        handoffRequests.removeAll { $0.id == id }
     }
 
     private static func presetName(for preset: Preset) -> String {

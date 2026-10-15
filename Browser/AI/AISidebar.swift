@@ -81,6 +81,7 @@ struct AISidebar: View {
     @AppStorage("browserAgentMode") private var isAgentMode = false
     @State private var agentTaskLibraryPresentation: AgentTaskLibraryPresentation?
     @State private var latestAgentCompletion: AgentCompletionUI?
+    @State private var manualHandoffRequest: AgentHandoffRequest?
     @State private var savedAgentReplyIDs: Set<UUID> = []
     @State private var attemptedPendingAgentTaskID: UUID?
     @State private var isSidebarVisible = false
@@ -411,6 +412,7 @@ struct AISidebar: View {
                 )
             }
         }
+        .agentHandoffSheet(handoffSheetBinding)
         .onAppear {
             presentRequestedRunDetail()
             presentRequestedWatch()
@@ -1030,7 +1032,49 @@ struct AISidebar: View {
                 onOpenLookupSource: openLookupSource
             )
 
+            if let handoffCompletion = agentHandoffEligible {
+                rowContainer {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Hand off this result")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(secondaryText)
+                        AgentResultHandoffRow { action in
+                            beginHandoff(action, completion: handoffCompletion)
+                        }
+                    }
+                }
+            }
+
         }
+    }
+
+    /// The action row appears under the latest finished agent reply while it is the last sidebar message.
+    private var agentHandoffEligible: AgentCompletionUI? {
+        guard let completion = latestAgentCompletion,
+              aiService.messages.last(where: \.showsInSidebar)?.id == completion.replyID else { return nil }
+        return completion
+    }
+
+    private func beginHandoff(_ action: AgentHandoffAction, completion: AgentCompletionUI) {
+        let draft = AgentResultHandoffDraft(snapshot: completion.snapshot)
+        manualHandoffRequest = AgentHandoffRequest(kind: draft.request(for: action))
+    }
+
+    /// One sheet at a time: a row action first, then the handoffs the run prepared, in order, once the run has ended.
+    private var handoffSheetBinding: Binding<AgentHandoffRequest?> {
+        Binding(
+            get: {
+                manualHandoffRequest ?? (agent.isRunning ? nil : agent.handoffRequests.first)
+            },
+            set: { newValue in
+                guard newValue == nil else { return }
+                if manualHandoffRequest != nil {
+                    manualHandoffRequest = nil
+                } else if let first = agent.handoffRequests.first {
+                    agent.dismissHandoffRequest(first.id)
+                }
+            }
+        )
     }
 
     private var agentTaskReplyEligible: AgentCompletionUI? {

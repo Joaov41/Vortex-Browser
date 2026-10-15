@@ -17,6 +17,7 @@ extension BrowserAgentController {
         case browser
         case data
         case research
+        case handoff
     }
 
     static let browserToolNames: Set<String> = [
@@ -43,6 +44,8 @@ extension BrowserAgentController {
     ]
 
     static let researchToolNames: Set<String> = ["fetch_page", "open_sources_in_group"]
+    /// Only queue a review for the user; nothing is presented, saved or sent until the user confirms after the run.
+    static let handoffToolNames: Set<String> = ["prepare_calendar_event", "prepare_reminder", "prepare_email"]
     static let browserBundleToolNames = browserToolNames
         .subtracting(dataToolNames)
         .subtracting(researchToolNames)
@@ -51,6 +54,11 @@ extension BrowserAgentController {
         "extract", "collect", "export", "csv", "pdf", "spreadsheet", "dataset", "html table", "table", "tables",
         "link", "links", "comparison", "compare", "save the result", "save this research", "research report",
         "save a report", "save the comparison"
+    ]
+
+    private static let handoffIntentCues = [
+        "calendar", "event", "meeting", "appointment", "schedule", "remind", "reminder", "email", "e-mail", "mail",
+        "message", "text me", "send to"
     ]
 
     private static let researchIntentCues = [
@@ -117,6 +125,9 @@ extension BrowserAgentController {
         if taskContainsAny(researchIntentCues, in: normalized) {
             bundles.insert(.research)
         }
+        if taskContainsAny(handoffIntentCues, in: normalized) {
+            bundles.insert(.handoff)
+        }
         return bundles
     }
 
@@ -181,6 +192,7 @@ extension BrowserAgentController {
             if bundles.contains(.browser) { names.formUnion(browserBundleToolNames) }
             if bundles.contains(.data) { names.formUnion(dataToolNames) }
             if bundles.contains(.research) { names.formUnion(researchToolNames) }
+            if bundles.contains(.handoff) { names.formUnion(handoffToolNames) }
         }
         if !browserAdapterAvailable {
             names.subtract(browserToolNames)
@@ -566,6 +578,36 @@ extension BrowserAgentController {
                 ]
             ],
             required: ["groupTitle", "urls"]
+        ),
+        function(
+            "prepare_calendar_event",
+            "Prepare a calendar event for the user to review after this task finishes. Nothing is saved; the user confirms in Calendar.",
+            properties: [
+                "title": ["type": "string", "description": "Event title, 1 to 200 characters."],
+                "start": ["type": ["string", "null"], "description": "Start as ISO 8601 with time zone, e.g. 2026-11-02T14:00:00+01:00, or null."],
+                "end": ["type": ["string", "null"], "description": "End as ISO 8601, or null to use one hour after start."],
+                "notes": ["type": ["string", "null"], "description": "Notes up to 4,000 characters, or null."]
+            ],
+            required: ["title", "start", "end", "notes"]
+        ),
+        function(
+            "prepare_reminder",
+            "Prepare a reminder for the user to review after this task finishes. Nothing is saved until the user confirms.",
+            properties: [
+                "title": ["type": "string", "description": "Reminder title, 1 to 200 characters."],
+                "due": ["type": ["string", "null"], "description": "Due date and time as ISO 8601 with time zone, or null."]
+            ],
+            required: ["title", "due"]
+        ),
+        function(
+            "prepare_email",
+            "Prepare an email for the user to review after this task finishes. Nothing is sent; the user sends it from Mail.",
+            properties: [
+                "subject": ["type": "string", "description": "Subject, 1 to 200 characters."],
+                "body": ["type": "string", "description": "Plain-text body, up to 4,000 characters."],
+                "attachExports": ["type": "boolean", "description": "true to attach files this run exported; false for none."]
+            ],
+            required: ["subject", "body", "attachExports"]
         ),
         function("screenshot", "Capture a bounded screenshot of the current page after masking sensitive controls. Available only for vision-capable engines.", properties: [:], required: []),
         function(

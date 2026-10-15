@@ -43,6 +43,10 @@ final class AgentControllerSplitTests: XCTestCase {
         "fetch_page", "open_sources_in_group"
     ]
 
+    private let expectedHandoffToolNames: Set<String> = [
+        "prepare_calendar_event", "prepare_reminder", "prepare_email"
+    ]
+
     private let expectedBrowserBundleToolNames: Set<String> = [
         "list_tabs", "switch_tab", "list_tab_groups",
         "create_tab_group", "rename_tab_group", "move_tab_to_group",
@@ -79,7 +83,8 @@ final class AgentControllerSplitTests: XCTestCase {
         "read_page", "wait", "go_forward",
         "reload", "press_key", "set_checked",
         "inspect", "dismiss_overlays", "copy_to_clipboard",
-        "ask_user", "finish", "fetch_page", "open_sources_in_group"
+        "ask_user", "finish", "fetch_page", "open_sources_in_group",
+        "prepare_calendar_event", "prepare_reminder", "prepare_email"
     ]
 
     private let expectedToolDefinitionNames: [String] = [
@@ -103,7 +108,8 @@ final class AgentControllerSplitTests: XCTestCase {
         "dismiss_overlays", "close_tab", "search_history",
         "set_desktop_mode", "open_in_split", "hide_element",
         "copy_to_clipboard", "web_search", "fill_form",
-        "ask_user", "fetch_page", "open_sources_in_group", "screenshot",
+        "ask_user", "fetch_page", "open_sources_in_group",
+        "prepare_calendar_event", "prepare_reminder", "prepare_email", "screenshot",
         "finish"
     ]
 
@@ -127,13 +133,18 @@ final class AgentControllerSplitTests: XCTestCase {
         XCTAssertEqual(BrowserAgentController.browserBundleToolNames, expectedBrowserBundleToolNames)
     }
 
+    func testHandoffToolNamesMatchLiteralCatalog() {
+        XCTAssertEqual(BrowserAgentController.handoffToolNames, expectedHandoffToolNames)
+    }
+
     func testEveryNameInEverySetIsInTheLiteralCatalog() {
         let names = BrowserAgentController.browserToolNames
             .union(BrowserAgentController.coreToolNames)
             .union(BrowserAgentController.dataToolNames)
             .union(BrowserAgentController.researchToolNames)
+            .union(BrowserAgentController.handoffToolNames)
         XCTAssertEqual(names, expectedCatalogNames)
-        XCTAssertEqual(names.count, 64)
+        XCTAssertEqual(names.count, 67)
     }
 
     func testToolDefinitionNamesMatchLiteralList() {
