@@ -227,12 +227,12 @@ The iOS 27 SDK defines `AppSchema` browser schemas (the older `AssistantSchemas`
 **Project change** (Ruby script kept at `.codex-checkpoints/agent-expansion/add_widget_target.rb`, run once):
 - Add an app extension target `VortyraWidgets` (product type `com.apple.product-type.app-extension`, extension point `com.apple.widgetkit-extension`), bundle ID `com.web.me.Browser.Widgets`, deployment target 26.0, same team, `SKIP_INSTALL = YES`, its own `Info.plist` with `NSExtension.NSExtensionPointIdentifier = com.apple.widgetkit-extension`, entitlements file with the app group `group.com.browser.app`. Embed it in the `Browser` app ("Embed Foundation Extensions"). If the Mac Catalyst build complains, set the embed build file's platform filter to iOS.
 - Source folder `VortyraWidgets/` as a synchronized root group for the new target.
-- Create `Shared/` as a synchronized root group that belongs to **both** `Browser` and `VortyraWidgets`; `git mv` `AgentTaskStore.swift` (and `PageWatchStore.swift`/`PageWatch.swift`) into it. They must compile in the extension (Foundation/Combine only; if a file pulls in app-only types, split out a small read-only reader instead of moving the whole file).
+- No shared source files (revised 2026-10-15). The widget reads the app's JSON files directly with its own small read-only `Codable` readers (saved tasks: `AgentTasks.<app bundle id>.json` → `savedTasks[].id/title`; watches: `PageWatches.<app bundle id>.json` → the fields the widget shows). The app bundle ID is the widget's bundle ID without the trailing `.Widgets`. Both files live in the `group.com.browser.app` container.
 - Verify with `xcodebuild -list` and a full build. Back up `project.pbxproj` to `.codex-checkpoints/agent-expansion/project.pbxproj.before-phase8` first.
 
 **Controls** (iOS 18+ `ControlWidget`):
 - **New Private Tab**: `ControlWidgetButton` with `OpenURLIntent(webmebrowser://private-tab)`.
-- **Search Clipboard**: `OpenURLIntent(webmebrowser://search-clipboard)` (the app reads the clipboard after launch; the system paste prompt applies).
+- **Search Clipboard**: `OpenURLIntent(webmebrowser://search-clipboard)`. The app puts the clipboard text into the address/search field and focuses it; it never searches automatically, so a web page that opens this link cannot send the clipboard anywhere.
 - **Run Saved Task** (configurable): `AppIntentControlConfiguration` with `SelectSavedTaskControlIntent: ControlConfigurationIntent` whose parameter is a widget-side `SavedTaskOption` entity read from the shared store; action `OpenURLIntent(webmebrowser://saved-task?id=<uuid>)`.
 - App side: add the three routes to `AgentIncomingURLRouter`. `saved-task` only accepts a UUID that exists in the user's store and queues it exactly like `RunSavedAgentTaskIntent` (all approvals still apply). Unknown IDs show "That saved task no longer exists."
 
