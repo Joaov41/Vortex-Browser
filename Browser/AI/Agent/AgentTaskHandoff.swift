@@ -38,7 +38,7 @@ struct AgentTaskLaunchRequest: Equatable, Sendable {
     }
 
     init(savedTask: SavedAgentTask) {
-        self.init(task: savedTask.task, startURL: savedTask.startURL, savedTaskID: savedTask.id)
+        self.init(task: savedTask.runTaskText, startURL: savedTask.startURL, savedTaskID: savedTask.id)
     }
 
     init(historyRecord: AgentRunRecord) {
@@ -242,7 +242,7 @@ enum AgentControlURLParser {
 
     /// The queued request for a saved task. It matches what Run Saved Browser Task enqueues.
     static func pendingRequest(for task: SavedAgentTask) -> PendingAgentTask {
-        PendingAgentTask(task: task.task, startURL: task.startURL, savedTaskID: task.id)
+        PendingAgentTask(task: task.runTaskText, startURL: task.startURL, savedTaskID: task.id)
     }
 }
 

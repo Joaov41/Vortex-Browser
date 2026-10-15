@@ -16,7 +16,8 @@ enum BrowserAgentPageScript {
     /// Installs `globalThis.__vxAgent` once per document in the agent world.
     /// Prepended to every call; after a navigation the new document gets a
     /// fresh copy and old element ids stop resolving.
-    private static let bootstrap = #"""
+    /// Shared with the teach-mode recorder, which reuses `agent.sensitive` so the definition of a sensitive field stays in one place.
+    static let bootstrap = #"""
     if (!globalThis.__vxAgent) {
       const RISKY = new RegExp(
         '\\b(buy|purchase|pay|checkout|check out|place order|order now|subscribe|donate|'
@@ -130,6 +131,9 @@ enum BrowserAgentPageScript {
           if (/cc-|password|one-time-code/.test(ac)) return true;
           const hint = [el.name, el.id, el.getAttribute('aria-label'), el.getAttribute('placeholder')].join(' ');
           return agent.isTextField(el) && isSensitiveName(hint);
+        },
+        sensitiveText(text) {
+          return isSensitiveName(text);
         },
 
         risk(el) {

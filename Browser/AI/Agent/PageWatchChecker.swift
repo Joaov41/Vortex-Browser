@@ -236,7 +236,7 @@ nonisolated struct URLSessionPageWatchFetcher: PageWatchBackgroundFetching {
 @MainActor
 struct AgentTaskWatchRunner: PageWatchAgentRunning {
     func runSavedTask(_ task: SavedAgentTask, timeout: Duration) async -> AgentRunWaitOutcome {
-        let request = PendingAgentTask(task: task.task, startURL: task.startURL, savedTaskID: task.id)
+        let request = PendingAgentTask(task: task.runTaskText, startURL: task.startURL, savedTaskID: task.id)
         do {
             try AgentTaskIntentRuntime.enqueue(request)
         } catch {

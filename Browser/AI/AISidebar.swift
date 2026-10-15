@@ -42,6 +42,7 @@ struct AISidebar: View {
     /// E2 task-library hooks are window-local; they never use the app-wide handoff queue.
     var agentTaskStoreProvider: (@MainActor @Sendable () throws -> AgentTaskStore)? = nil
     var onAgentTaskLaunch: ((AgentTaskLaunchRequest) -> Void)? = nil
+    var onAgentTaskRecordRequest: (() -> Void)? = nil
     var pendingAgentTask: PendingAgentTask? = nil
     var onPendingAgentTaskStarted: ((UUID) -> Void)? = nil
     var onPendingAgentTaskDispatchCheck: ((UUID, WKWebView) -> Bool)? = nil
@@ -405,7 +406,8 @@ struct AISidebar: View {
                     onRun: { request in onAgentTaskLaunch?(request) },
                     onSavedReply: { id in savedAgentReplyIDs.insert(id) },
                     initialRunID: presentation.initialRunID,
-                    initialWatchID: presentation.initialWatchID
+                    initialWatchID: presentation.initialWatchID,
+                    onRecordNewTask: onAgentTaskRecordRequest
                 )
             }
         }

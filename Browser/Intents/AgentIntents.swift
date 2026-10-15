@@ -34,14 +34,18 @@ enum AgentTaskIntentRuntime {
         return try store.savedTask(id: id)
     }
 
+    /// The queued request for a saved task. Its text includes any recorded steps.
+    static func pendingRequest(for task: SavedAgentTask) -> PendingAgentTask {
+        PendingAgentTask(task: task.runTaskText, startURL: task.startURL, savedTaskID: task.id)
+    }
+
     /// Queues a saved task. Shared by Run Saved Browser Task and Open Saved Browser Task.
     static func queueSavedTask(_ entity: AgentTaskEntity) throws -> String {
         guard let id = UUID(uuidString: entity.id),
               let task = try savedTask(id: id) else {
             throw AgentTaskStoreError.missingTask
         }
-        let request = PendingAgentTask(task: task.task, startURL: task.startURL, savedTaskID: task.id)
-        try enqueue(request)
+        try enqueue(pendingRequest(for: task))
         return task.title
     }
 }

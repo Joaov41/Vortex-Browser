@@ -1736,6 +1736,8 @@ struct ContentView: View {
     @State private var agentRunDetailRequest: AgentRunDetailRequest?
     @State private var agentWatchOpenRequest: AgentWatchOpenRequest?
     @State private var pageWatchDraft: PageWatchDraft?
+    @StateObject private var agentTaskRecorder = AgentTaskRecorder()
+    @State private var recordedTaskDraft: AgentTaskSaveDraft?
     @State private var lastAgentBackendStatusShown: String?
     @StateObject private var browserIntentRuntime = BrowserIntentRuntime.shared
     @State private var browserIntentWindowID = UUID()
@@ -3935,6 +3937,16 @@ struct ContentView: View {
                     .zIndex(160)
             }
 
+            if agentTaskRecorder.isRecording {
+                AgentTaskRecordingBanner(recorder: agentTaskRecorder) {
+                    finishTaskRecording()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .padding(.top, 8)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .zIndex(165)
+            }
+
             if let request = activeWebAIRequest {
                 webAIOverlay(for: request)
             }
@@ -3975,6 +3987,14 @@ struct ContentView: View {
         .sheet(item: $pageWatchDraft) { draft in
             PageWatchEditorView(url: draft.url, title: draft.title, existing: nil)
         }
+        .sheet(item: $recordedTaskDraft) { draft in
+            AgentTaskLibrarySheet(
+                storeProvider: { try AgentTaskStoreLocation.makeDefaultStore(bundleIdentifier: Bundle.main.bundleIdentifier) },
+                initialDraft: draft,
+                onRun: { request in enqueueWindowAgentTask(request) },
+                onSavedReply: { _ in }
+            )
+        }
         .translationTask(translationConfiguration) { session in
             await runPageTranslation(with: session)
         }
@@ -3983,6 +4003,11 @@ struct ContentView: View {
             syncAIContextSelection()
         }
         .onChange(of: vm.selectedTabID) { _, _ in
+            if agentTaskRecorder.isRecording,
+               vm.tabs.first(where: { $0.id == vm.selectedTabID })?.isIncognito == true {
+                agentTaskRecorder.selectedTabDidChange(toPrivate: true)
+                showPageStatus("Recording stopped. Private tabs are never recorded.", autoHide: false)
+            }
             setToolbarScrollState(.pinned)
             if distractionPickerTabID != nil {
                 finishDistractionPicker()
@@ -4716,6 +4741,36 @@ struct ContentView: View {
             agentTaskQueueStatusMessage = error.localizedDescription
             showPageStatus(error.localizedDescription, autoHide: false)
         }
+    }
+
+    /// Teach mode: records the current regular tab. The library has already closed, so the page is visible.
+    private func startTaskRecording() {
+        guard !agentTaskRecorder.isRecording else {
+            showPageStatus("A task is already being recorded.")
+            return
+        }
+        guard let tab = vm.tabs.first(where: { $0.id == vm.selectedTabID }) else {
+            showPageStatus("Open a web page to record a task.", autoHide: false)
+            return
+        }
+        guard !tab.isIncognito else {
+            showPageStatus(AgentTaskRecorderError.privateTab.errorDescription ?? "", autoHide: false)
+            return
+        }
+        let webView = tab.activateWebView()
+        Task { @MainActor in
+            do {
+                try await agentTaskRecorder.start(tabID: tab.id, webView: webView, isPrivate: tab.isIncognito)
+            } catch {
+                showPageStatus(error.localizedDescription, autoHide: false)
+            }
+        }
+    }
+
+    /// Stops the recording and opens the save editor, prefilled with a generated title and task text.
+    private func finishTaskRecording() {
+        guard let recording = agentTaskRecorder.stop() else { return }
+        recordedTaskDraft = AgentTaskSaveDraft(recording: recording)
     }
 
     private func enqueueWindowAgentTask(_ request: AgentTaskLaunchRequest) {
@@ -5621,6 +5676,9 @@ struct ContentView: View {
             },
             onAgentTaskLaunch: { request in
                 enqueueWindowAgentTask(request)
+            },
+            onAgentTaskRecordRequest: {
+                startTaskRecording()
             },
             pendingAgentTask: stagedAgentTask,
             onPendingAgentTaskStarted: { requestID in

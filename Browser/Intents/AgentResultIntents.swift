@@ -383,7 +383,7 @@ struct RunSavedAgentTaskAndWaitIntent: AppIntent {
                   let saved = try AgentTaskIntentRuntime.savedTask(id: id) else {
                 throw AgentTaskStoreError.missingTask
             }
-            let request = PendingAgentTask(task: saved.task, startURL: saved.startURL, savedTaskID: saved.id)
+            let request = AgentTaskIntentRuntime.pendingRequest(for: saved)
             try AgentTaskIntentRuntime.enqueue(request)
             return (request, saved.title)
         }

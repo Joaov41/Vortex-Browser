@@ -8,6 +8,8 @@ struct SavedAgentTask: Codable, Equatable, Identifiable, Sendable {
     var startURL: URL?
     var createdAt: Date
     var lastRunAt: Date?
+    /// Steps recorded in teach mode. Nil in tasks written before recording existed.
+    var recipe: [RecordedStep]?
 
     init(
         id: UUID = UUID(),
@@ -15,7 +17,8 @@ struct SavedAgentTask: Codable, Equatable, Identifiable, Sendable {
         task: String,
         startURL: URL? = nil,
         createdAt: Date = Date(),
-        lastRunAt: Date? = nil
+        lastRunAt: Date? = nil,
+        recipe: [RecordedStep]? = nil
     ) {
         self.id = id
         self.title = title
@@ -23,6 +26,7 @@ struct SavedAgentTask: Codable, Equatable, Identifiable, Sendable {
         self.startURL = startURL
         self.createdAt = createdAt
         self.lastRunAt = lastRunAt
+        self.recipe = recipe
     }
 }
 
@@ -228,7 +232,8 @@ final class AgentTaskStore: ObservableObject {
               task.task.utf8.count <= AgentTaskURLParser.maximumTaskUTF8Bytes,
               task.createdAt.timeIntervalSince1970.isFinite,
               task.lastRunAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true,
-              task.startURL.map(AgentTaskURLParser.isAllowedStartURL) ?? true else {
+              task.startURL.map(AgentTaskURLParser.isAllowedStartURL) ?? true,
+              AgentTaskRecipe.isValid(task.recipe, forTask: task.task) else {
             throw AgentTaskStoreError.invalidTask
         }
     }

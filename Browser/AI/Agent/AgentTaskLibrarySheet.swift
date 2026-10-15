@@ -6,13 +6,20 @@ struct AgentTaskSaveDraft: Identifiable {
     let task: String
     let startURL: URL?
     let title: String
+    /// Recorded steps from teach mode. Nil for a draft that is not a recording.
+    let recipe: [RecordedStep]?
 
-    init(replyID: UUID, task: String, startURL: URL?) {
+    init(replyID: UUID, task: String, startURL: URL?, title: String? = nil, recipe: [RecordedStep]? = nil) {
         self.replyID = replyID
         self.task = task
         self.startURL = startURL
-        let words = task.split(whereSeparator: \.isWhitespace).prefix(8).joined(separator: " ")
-        title = String((words.isEmpty ? "Browser task" : words).prefix(64))
+        self.recipe = recipe
+        if let title {
+            self.title = title
+        } else {
+            let words = task.split(whereSeparator: \.isWhitespace).prefix(8).joined(separator: " ")
+            self.title = String((words.isEmpty ? "Browser task" : words).prefix(64))
+        }
     }
 }
 
@@ -77,6 +84,8 @@ struct AgentTaskLibrarySheet: View {
     var initialRunID: UUID? = nil
     /// Opens the Watches tab on this watch, when the sheet was requested from a `webmebrowser://watch` link.
     var initialWatchID: UUID? = nil
+    /// Starts teach-mode recording on the current tab. Shown as "Record a New Task" when provided.
+    var onRecordNewTask: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var savedTasks: [SavedAgentTask] = []
@@ -94,6 +103,10 @@ struct AgentTaskLibrarySheet: View {
     @State private var errorMessage: String?
     @State private var detailRecord: AgentRunRecord?
     @State private var libraryNotice: String?
+    /// Recipe of the task being saved or edited. Kept so editing a recorded task does not drop its steps.
+    @State private var editingRecipe: [RecordedStep]?
+    /// True for a fresh recording: Cancel in its editor discards the recording and closes the sheet.
+    @State private var discardsDraftOnCancel = false
 
     private var isEditingExistingTask: Bool { editingTask != nil }
 
@@ -122,9 +135,14 @@ struct AgentTaskLibrarySheet: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(showingEditor ? "Cancel" : "Done") {
                         if showingEditor {
+                            if discardsDraftOnCancel {
+                                dismiss()
+                                return
+                            }
                             showingEditor = false
                             editingTask = nil
                             editorReplyID = nil
+                            editingRecipe = nil
                         } else {
                             dismiss()
                         }
@@ -162,6 +180,8 @@ struct AgentTaskLibrarySheet: View {
                     taskText = initialDraft.task
                     startURLText = initialDraft.startURL?.absoluteString ?? ""
                     editorReplyID = initialDraft.replyID
+                    editingRecipe = initialDraft.recipe
+                    discardsDraftOnCancel = initialDraft.recipe != nil
                     showingEditor = true
                 }
                 if let initialRunID {
@@ -196,6 +216,14 @@ struct AgentTaskLibrarySheet: View {
 
             List {
                 if selectedSection == 0 {
+                    if let onRecordNewTask {
+                        Button {
+                            dismiss()
+                            onRecordNewTask()
+                        } label: {
+                            Label("Record a New Task", systemImage: "record.circle")
+                        }
+                    }
                     if savedTasks.isEmpty {
                         ContentUnavailableView("No Saved Tasks", systemImage: "checklist", description: Text("Save a finished agent run or create a task to reuse it."))
                             .listRowSeparator(.hidden)
@@ -390,6 +418,8 @@ struct AgentTaskLibrarySheet: View {
         detailRecord = nil
         editingTask = nil
         editorReplyID = nil
+        editingRecipe = nil
+        discardsDraftOnCancel = false
         titleText = draft.title
         taskText = record.task
         startURLText = record.startURL?.absoluteString ?? ""
@@ -400,6 +430,8 @@ struct AgentTaskLibrarySheet: View {
     private func prepareNewTask() {
         editingTask = nil
         editorReplyID = nil
+        editingRecipe = nil
+        discardsDraftOnCancel = false
         titleText = ""
         taskText = ""
         startURLText = ""
@@ -410,6 +442,8 @@ struct AgentTaskLibrarySheet: View {
     private func prepareEdit(_ task: SavedAgentTask) {
         editingTask = task
         editorReplyID = nil
+        editingRecipe = task.recipe
+        discardsDraftOnCancel = false
         titleText = task.title
         taskText = task.task
         startURLText = task.startURL?.absoluteString ?? ""
@@ -439,7 +473,8 @@ struct AgentTaskLibrarySheet: View {
                 task: taskText,
                 startURL: startURL,
                 createdAt: editingTask?.createdAt ?? Date(),
-                lastRunAt: editingTask?.lastRunAt
+                lastRunAt: editingTask?.lastRunAt,
+                recipe: editingRecipe
             )
             if editingTask == nil {
                 try store.saveTask(saved)
@@ -453,6 +488,8 @@ struct AgentTaskLibrarySheet: View {
             showingEditor = false
             editingTask = nil
             editorReplyID = nil
+            editingRecipe = nil
+            discardsDraftOnCancel = false
         } catch {
             errorMessage = error.localizedDescription
         }
