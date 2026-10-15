@@ -7,7 +7,7 @@ struct FindBrowserTextIntent: AppIntent {
     static var supportedModes: IntentModes { .foreground }
     static var authenticationPolicy: IntentAuthenticationPolicy { .requiresLocalDeviceAuthentication }
 
-    @Parameter(title: "Search Text")
+    @Parameter(title: "Search Text", requestValueDialog: "What do you want to find on the page?")
     var query: String
 
     static var parameterSummary: some ParameterSummary {

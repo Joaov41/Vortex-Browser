@@ -203,12 +203,14 @@ struct BrowserAgentShortcuts: AppShortcutsProvider {
             systemImageName: "eye.slash"
         )
         AppShortcut(
-            intent: SetBrowserReaderIntent(),
+            intent: FindBrowserTextIntent(),
             phrases: [
-                "Read this page with \(.applicationName)"
+                "Find on this page with \(.applicationName)",
+                "Find text on this page in \(.applicationName)",
+                "Find on the page in \(.applicationName)"
             ],
-            shortTitle: "Reader mode",
-            systemImageName: "doc.plaintext"
+            shortTitle: "Find on page",
+            systemImageName: "text.magnifyingglass"
         )
         AppShortcut(
             intent: TranslateBrowserPageIntent(),
