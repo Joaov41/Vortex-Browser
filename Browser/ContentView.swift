@@ -4760,6 +4760,7 @@ struct ContentView: View {
             agentTaskQueueStatusMessage = message
             showPageStatus(message, autoHide: false)
             windowAgentTaskQueue.removeAll { $0.id == request.id }
+            AgentRunCompletionBroker.shared.reject(requestID: request.id, message: message)
         }
     }
 
@@ -4930,6 +4931,7 @@ struct ContentView: View {
             agentTaskQueueStatusMessage = nil
         case .failed(let message):
             windowAgentTaskQueue.removeAll { $0.id == attempt.request.id }
+            AgentRunCompletionBroker.shared.reject(requestID: attempt.request.id, message: message)
             agentTaskQueueStatusMessage = message
             showPageStatus(message, autoHide: false)
             drainPendingAgentTaskQueue()
@@ -4979,6 +4981,7 @@ struct ContentView: View {
         stagedAgentTask = nil
         stagedAgentTaskContext = nil
         windowAgentTaskQueue.removeAll { $0.id == request.id }
+        AgentRunCompletionBroker.shared.reject(requestID: request.id, message: message)
         agentTaskQueueStatusMessage = message
         showPageStatus(message, autoHide: false)
     }
@@ -5016,6 +5019,8 @@ struct ContentView: View {
         _ snapshot: BrowserAgentController.CompletionSnapshot,
         replyID: UUID
     ) {
+        // Waiting App Intents must hear about every run, private ones included.
+        AgentRunCompletionBroker.shared.complete(snapshot)
         // The reply ID is captured by the exact String completion callback in the
         // sidebar. Private runs return before even constructing the store provider.
         guard !snapshot.isPrivate else { return }
@@ -5472,7 +5477,13 @@ struct ContentView: View {
                 validateAgentTaskDispatch(requestID: requestID, webView: webView)
             },
             onPendingAgentTaskRejected: { requestID in
-                guard stagedAgentTask?.id == requestID else { return }
+                guard stagedAgentTask?.id == requestID else {
+                    AgentRunCompletionBroker.shared.reject(
+                        requestID: requestID,
+                        message: "The browser page or navigation changed before the task could start. Review the current page and run it again."
+                    )
+                    return
+                }
                 rejectStagedAgentTask("The browser page or navigation changed before the task could start. Review the current page and run it again.")
             },
             agentTaskStatusMessage: agentTaskQueueStatusMessage,

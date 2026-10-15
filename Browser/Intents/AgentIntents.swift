@@ -9,7 +9,7 @@ enum AgentTaskShortcutMetadata {
 }
 
 @MainActor
-private enum AgentTaskIntentRuntime {
+enum AgentTaskIntentRuntime {
     static func makeQueue() throws -> PendingAgentTaskQueue {
         guard let defaults = UserDefaults(suiteName: AgentTaskStoreLocation.appGroupIdentifier),
               let bundleIdentifier = Bundle.main.bundleIdentifier else {
