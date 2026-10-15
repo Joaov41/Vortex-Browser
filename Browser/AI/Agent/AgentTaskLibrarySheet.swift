@@ -65,6 +65,7 @@ struct AgentTaskLibrarySheet: View {
     @State private var taskText = ""
     @State private var startURLText = ""
     @State private var errorMessage: String?
+    @State private var detailRecord: AgentRunRecord?
 
     private var isEditingExistingTask: Bool { editingTask != nil }
 
@@ -76,6 +77,16 @@ struct AgentTaskLibrarySheet: View {
                 } else {
                     library
                 }
+            }
+            .navigationDestination(item: $detailRecord) { record in
+                AgentRunDetailView(
+                    record: record,
+                    onRunAgain: {
+                        onRun(AgentTaskLaunchRequest(historyRecord: record))
+                        dismiss()
+                    },
+                    onSaveAsTask: { prepareSaveFromRun(record) }
+                )
             }
             .navigationTitle(showingEditor ? (isEditingExistingTask ? "Edit Task" : "Save Task") : "Agent Tasks")
             .navigationBarTitleDisplayMode(.inline)
@@ -218,17 +229,34 @@ struct AgentTaskLibrarySheet: View {
 
     private func historyRow(_ record: AgentRunRecord) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(record.task)
-                .font(.headline)
-                .lineLimit(3)
-            Text(record.outcome)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-                .lineLimit(4)
+            Button {
+                detailRecord = record
+            } label: {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(record.task)
+                        .font(.headline)
+                        .lineLimit(3)
+                    Text(record.outcome)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(4)
+                    HStack {
+                        Text(record.date, style: .date)
+                        Text("·")
+                        Text(AIModelBackend(rawValue: record.backend)?.displayName ?? record.backend)
+                        if let status = record.status, status != .completed {
+                            Text("·")
+                            Text(status.title)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             HStack {
-                Text(record.date, style: .date)
-                Text("·")
-                Text(AIModelBackend(rawValue: record.backend)?.displayName ?? record.backend)
                 Spacer()
                 Button("Run Again") {
                     onRun(AgentTaskLaunchRequest(historyRecord: record))
@@ -241,6 +269,19 @@ struct AgentTaskLibrarySheet: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 5)
+    }
+
+    /// Opens the existing new-task editor with this run's task, replacing the detail page.
+    private func prepareSaveFromRun(_ record: AgentRunRecord) {
+        let draft = AgentTaskSaveDraft(replyID: record.id, task: record.task, startURL: record.startURL)
+        detailRecord = nil
+        editingTask = nil
+        editorReplyID = nil
+        titleText = draft.title
+        taskText = record.task
+        startURLText = record.startURL?.absoluteString ?? ""
+        errorMessage = nil
+        showingEditor = true
     }
 
     private func prepareNewTask() {

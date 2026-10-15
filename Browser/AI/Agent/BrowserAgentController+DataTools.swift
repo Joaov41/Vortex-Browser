@@ -72,7 +72,25 @@ extension BrowserAgentController {
     ) throws -> UUID {
         guard let runIsIncognito = adapter.runIncognitoMode else { throw BrowserAgentBrowserAdapter.AccessError.runNotStarted }
         try adapter.validateSource(tabID: sourceTabID)
-        return try adapter.enqueueExport(data: data, filename: filename, sourceURL: sourceURL, sourceTabID: sourceTabID, isIncognito: runIsIncognito)
+        let queued = try adapter.enqueueExportFile(data: data, filename: filename, sourceURL: sourceURL, sourceTabID: sourceTabID, isIncognito: runIsIncognito)
+        recordRunExport(fileURL: queued.fileURL)
+        return queued.id
+    }
+
+    /// Only files this run wrote through the export path are recorded.
+    private func recordRunExport(fileURL: URL) {
+        guard let context = runContext, !context.isPrivate,
+              runExports.count < AgentTaskStore.maximumExportsPerRun else { return }
+        let filename = runHistoryText(
+            fileURL.lastPathComponent,
+            characters: 240,
+            utf8Bytes: AgentTaskStore.maximumRunFilenameUTF8Bytes
+        )
+        runExports.append(AgentRunExport(
+            filename: filename,
+            kind: AgentRunExportKind(filename: filename),
+            fileURL: fileURL
+        ))
     }
 
     func exportOriginTabID(

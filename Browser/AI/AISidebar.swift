@@ -1258,7 +1258,7 @@ struct AISidebar: View {
             onPendingAgentTaskRejected?(request.id)
             return
         }
-        guard startAgent(task: request.task, savedTaskID: request.savedTaskID) else { return }
+        guard startAgent(task: request.task, savedTaskID: request.savedTaskID, requestID: request.id) else { return }
         attemptedPendingAgentTaskID = request.id
         onPendingAgentTaskStarted?(request.id)
     }
@@ -1267,7 +1267,8 @@ struct AISidebar: View {
     private func startAgent(
         task: String,
         preset: BrowserAgentController.Preset = .standard,
-        savedTaskID: UUID? = nil
+        savedTaskID: UUID? = nil,
+        requestID: UUID? = nil
     ) -> Bool {
         guard !browserActionIsBusy,
               !agent.isRunning, !aiService.isProcessing,
@@ -1301,6 +1302,7 @@ struct AISidebar: View {
             backend: aiService.backend,
             startingTabIsPrivate: currentContext?.isPrivate ?? false,
             savedTaskID: savedTaskID,
+            requestID: requestID,
             onAutofillQuarantine: quarantineHandler,
             onPageQuestion: { [onSend] question in
                 onSend(question)

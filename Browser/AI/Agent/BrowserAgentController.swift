@@ -73,9 +73,18 @@ final class BrowserAgentController: ObservableObject {
         let savedTaskID: UUID?
         var sources: [BrowserLookupSource] = []
         var usedBrowserPath = false
+        /// The PendingAgentTask ID that started this run; nil for runs typed in the sidebar.
+        var requestID: UUID? = nil
+        var startedAt: Date = Date()
+        var status: AgentRunStatus = .completed
+        var approvals: [AgentRunApproval] = []
+        var questions: [AgentRunQuestion] = []
+        var exportedFiles: [AgentRunExport] = []
 
+        /// Private runs produce a record that is never stored, so their details stay empty here too.
         var historyRecord: AgentRunRecord {
-            AgentRunRecord(
+            let durable = !isPrivate
+            return AgentRunRecord(
                 id: runID,
                 task: task,
                 outcome: outcome,
@@ -84,7 +93,28 @@ final class BrowserAgentController: ObservableObject {
                 backend: backend,
                 preset: preset,
                 startURL: startURL,
-                isPrivate: isPrivate
+                isPrivate: isPrivate,
+                requestID: requestID,
+                startedAt: startedAt,
+                status: status,
+                approvals: durable ? approvals : [],
+                questions: durable ? questions : [],
+                exports: durable ? exportedFiles.map { AgentRunExportRecord(filename: $0.filename, kind: $0.kind) } : [],
+                sources: durable ? sources.prefix(AgentTaskStore.maximumSourcesPerRun).compactMap { Self.recordSource($0) } : [],
+                savedTaskID: savedTaskID,
+                duration: max(0, date.timeIntervalSince(startedAt))
+            )
+        }
+
+        private static func recordSource(_ source: BrowserLookupSource) -> AgentRunSourceRecord? {
+            guard !source.isPrivate, AgentTaskURLParser.isAllowedStartURL(source.url) else { return nil }
+            return AgentRunSourceRecord(
+                title: AgentRunTextLimit.bounded(
+                    source.title,
+                    characters: 240,
+                    utf8Bytes: AgentTaskStore.maximumRunSourceTitleUTF8Bytes
+                ),
+                url: source.url
             )
         }
     }
@@ -97,6 +127,8 @@ final class BrowserAgentController: ObservableObject {
         let startURL: URL?
         let isPrivate: Bool
         let savedTaskID: UUID?
+        let requestID: UUID?
+        let startedAt: Date
     }
 
     @Published private(set) var steps: [Step] = []
@@ -139,6 +171,12 @@ final class BrowserAgentController: ObservableObject {
     private var runIsAppleInformationRun = false
     private var runUsedBrowserPath = false
     @Published private(set) var lookupSources: [BrowserLookupSource] = []
+    /// Run-scoped history details. Each run resets them; private runs never append.
+    var runApprovals: [AgentRunApproval] = []
+    var runQuestions: [AgentRunQuestion] = []
+    var runExports: [AgentRunExport] = []
+    /// Set only for Stop and step-limit endings; other endings are derived from the steps.
+    private var runEndStatus: AgentRunStatus?
     private let engineFactory: EngineFactory
     private let appleLookup: BrowserAppleWebLookup
     let screenshotCapture: ScreenshotCapture
@@ -205,6 +243,7 @@ final class BrowserAgentController: ObservableObject {
         backend: AIModelBackend = .chatGPTPlan,
         startingTabIsPrivate: Bool = false,
         savedTaskID: UUID? = nil,
+        requestID: UUID? = nil,
         onAutofillQuarantine: AutofillQuarantineHandler? = nil,
         onPageQuestion: ((String) -> Void)? = nil,
         onRunCompleted: ((CompletionSnapshot) -> Void)? = nil,
@@ -237,8 +276,14 @@ final class BrowserAgentController: ObservableObject {
             preset: Self.presetName(for: runPreset),
             startURL: Self.historySafeStartURL(webView.url),
             isPrivate: resolvedPrivate,
-            savedTaskID: savedTaskID
+            savedTaskID: savedTaskID,
+            requestID: requestID,
+            startedAt: Date()
         )
+        runApprovals = []
+        runQuestions = []
+        runExports = []
+        runEndStatus = nil
         self.onComplete = onComplete
         self.onRunCompleted = onRunCompleted
         self.onPageQuestion = onPageQuestion
@@ -277,6 +322,7 @@ final class BrowserAgentController: ObservableObject {
     func stop() {
         guard isRunning else { return }
         let stoppedRunID = runContext?.id
+        runEndStatus = .stopped
         questionGate.cancel()
         runTask?.cancel()
         resolveConfirmation(false)
@@ -310,6 +356,10 @@ final class BrowserAgentController: ObservableObject {
         runIsAppleInformationRun = false
         runUsedBrowserPath = false
         lookupSources = []
+        runApprovals = []
+        runQuestions = []
+        runExports = []
+        runEndStatus = nil
         runContext = nil
         onComplete = nil
         onRunCompleted = nil
@@ -329,6 +379,9 @@ final class BrowserAgentController: ObservableObject {
         let actions = steps
             .filter { $0.kind == .action || $0.kind == .note || $0.kind == .error }
             .map { autofillPrivacy.redactPotentiallyTruncated($0.text, wasTruncated: true) }
+        let lastTerminal = steps.last { $0.kind == .answer || $0.kind == .error }
+        let derivedStatus: AgentRunStatus = lastTerminal?.kind == .error ? .failed : .completed
+        let isPrivate = context.isPrivate
         return CompletionSnapshot(
             runID: context.id,
             task: autofillPrivacy.redactPotentiallyTruncated(context.task, wasTruncated: true),
@@ -338,11 +391,62 @@ final class BrowserAgentController: ObservableObject {
             backend: context.backend,
             preset: context.preset,
             startURL: context.startURL,
-            isPrivate: context.isPrivate,
+            isPrivate: isPrivate,
             savedTaskID: context.savedTaskID,
             sources: lookupSources,
-            usedBrowserPath: runUsedBrowserPath
+            usedBrowserPath: runUsedBrowserPath,
+            requestID: context.requestID,
+            startedAt: context.startedAt,
+            status: runEndStatus ?? derivedStatus,
+            approvals: isPrivate ? [] : runApprovals,
+            questions: isPrivate ? [] : runQuestions,
+            exportedFiles: isPrivate ? [] : runExports
         )
+    }
+
+    /// Bounds run-history text by characters, then by UTF-8 bytes, after redacting profile values.
+    func runHistoryText(_ text: String, characters: Int, utf8Bytes: Int) -> String {
+        AgentRunTextLimit.bounded(
+            autofillPrivacy.redactPotentiallyTruncated(text, wasTruncated: true),
+            characters: characters,
+            utf8Bytes: utf8Bytes
+        )
+    }
+
+    /// Records an approval decision. Private runs, and runs that have already ended, record nothing.
+    func recordRunApproval(reason: String, host: String?, decision: AgentRunApprovalDecision) {
+        guard let context = runContext, !context.isPrivate,
+              runApprovals.count < AgentTaskStore.maximumApprovalsPerRun else { return }
+        runApprovals.append(AgentRunApproval(
+            reason: runHistoryText(
+                reason,
+                characters: 300,
+                utf8Bytes: AgentTaskStore.maximumRunReasonUTF8Bytes
+            ),
+            host: host.map {
+                AgentRunTextLimit.bounded($0, characters: 253, utf8Bytes: AgentTaskStore.maximumRunHostUTF8Bytes)
+            },
+            decision: decision,
+            date: Date()
+        ))
+    }
+
+    /// Records that the agent asked `prompt`. The answer is never stored; the returned ID is used to mark the question finished.
+    func beginRunQuestion(_ prompt: String) -> UUID? {
+        guard let context = runContext, !context.isPrivate,
+              runQuestions.count < AgentTaskStore.maximumQuestionsPerRun else { return nil }
+        let question = AgentRunQuestion(
+            prompt: runHistoryText(prompt, characters: 600, utf8Bytes: AgentTaskStore.maximumRunQuestionUTF8Bytes),
+            answered: false,
+            date: Date()
+        )
+        runQuestions.append(question)
+        return question.id
+    }
+
+    func finishRunQuestion(_ id: UUID?, answered: Bool) {
+        guard let id, let index = runQuestions.firstIndex(where: { $0.id == id }) else { return }
+        runQuestions[index].answered = answered
     }
 
     private static func presetName(for preset: Preset) -> String {
@@ -487,6 +591,9 @@ final class BrowserAgentController: ObservableObject {
             // stop() already logged it.
         } catch {
             if !Task.isCancelled {
+                if let failure = error as? BrowserAgentEngineFailure, case .stepLimit(_) = failure {
+                    runEndStatus = .stepLimit
+                }
                 append(.error, error.localizedDescription)
             }
         }
@@ -572,9 +679,10 @@ final class BrowserAgentController: ObservableObject {
             runPreset = BrowserAgentRouter.isResearchIntent(task) ? .research : .standard
             return false
         case .clarify:
-            let reply = await questionGate.ask(UserQuestion(
-                prompt: "Search the public web, read the current page, or operate the browser? Reply search, page, or browser."
-            ))
+            let clarifyPrompt = "Search the public web, read the current page, or operate the browser? Reply search, page, or browser."
+            let questionID = beginRunQuestion(clarifyPrompt)
+            let reply = await questionGate.ask(UserQuestion(prompt: clarifyPrompt))
+            finishRunQuestion(questionID, answered: reply != nil)
             guard isCurrentRun(token) else { return true }
             switch reply?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
             case "search":
@@ -725,13 +833,23 @@ final class BrowserAgentController: ObservableObject {
         id: UUID = UUID(),
         allowsSiteTrust: Bool = false
     ) async -> ConfirmationDecision {
-        await withCheckedContinuation { continuation in
+        let owningRunID = runContext?.id
+        let decision: ConfirmationDecision = await withCheckedContinuation { continuation in
             if let previous = pendingConfirmation {
                 confirmationContinuation?.resume(returning: ConfirmationDecision(id: previous.id, allowed: false, alwaysAllow: false))
             }
             confirmationContinuation = continuation
             pendingConfirmation = Confirmation(id: id, summary: summary, reason: reason, allowsSiteTrust: allowsSiteTrust)
         }
+        // A late resume after Stop, or after a newer run started, must not write into that run's history.
+        if let owningRunID, runContext?.id == owningRunID {
+            let host = activeWebView?.url?.host.flatMap(AgentTrustStore.canonicalHost)
+            let recorded: AgentRunApprovalDecision = decision.allowed
+                ? (decision.alwaysAllow ? .alwaysAllowed : .allowed)
+                : .denied
+            recordRunApproval(reason: reason, host: host, decision: recorded)
+        }
+        return decision
     }
 
     enum ToolResult {

@@ -26,7 +26,7 @@ struct SavedAgentTask: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
-struct AgentRunRecord: Codable, Equatable, Identifiable, Sendable {
+struct AgentRunRecord: Codable, Equatable, Hashable, Identifiable, Sendable {
     var id: UUID
     var task: String
     var outcome: String
@@ -37,6 +37,16 @@ struct AgentRunRecord: Codable, Equatable, Identifiable, Sendable {
     var preset: String
     var startURL: URL?
     var isPrivate: Bool
+    /// Optional detail fields are nil in history written before run details existed.
+    var requestID: UUID?
+    var startedAt: Date?
+    var status: AgentRunStatus?
+    var approvals: [AgentRunApproval]?
+    var questions: [AgentRunQuestion]?
+    var exports: [AgentRunExportRecord]?
+    var sources: [AgentRunSourceRecord]?
+    var savedTaskID: UUID?
+    var duration: TimeInterval?
 
     init(
         id: UUID = UUID(),
@@ -47,7 +57,16 @@ struct AgentRunRecord: Codable, Equatable, Identifiable, Sendable {
         backend: String,
         preset: String,
         startURL: URL? = nil,
-        isPrivate: Bool = false
+        isPrivate: Bool = false,
+        requestID: UUID? = nil,
+        startedAt: Date? = nil,
+        status: AgentRunStatus? = nil,
+        approvals: [AgentRunApproval]? = nil,
+        questions: [AgentRunQuestion]? = nil,
+        exports: [AgentRunExportRecord]? = nil,
+        sources: [AgentRunSourceRecord]? = nil,
+        savedTaskID: UUID? = nil,
+        duration: TimeInterval? = nil
     ) {
         self.id = id
         self.task = task
@@ -58,6 +77,15 @@ struct AgentRunRecord: Codable, Equatable, Identifiable, Sendable {
         self.preset = preset
         self.startURL = startURL
         self.isPrivate = isPrivate
+        self.requestID = requestID
+        self.startedAt = startedAt
+        self.status = status
+        self.approvals = approvals
+        self.questions = questions
+        self.exports = exports
+        self.sources = sources
+        self.savedTaskID = savedTaskID
+        self.duration = duration
     }
 }
 
@@ -110,6 +138,15 @@ final class AgentTaskStore: ObservableObject {
     static let maximumActionCount = 500
     static let maximumActionUTF8Bytes = 8_000
     static let maximumActionsPerRunUTF8Bytes = 128_000
+    static let maximumApprovalsPerRun = 50
+    static let maximumQuestionsPerRun = 20
+    static let maximumExportsPerRun = 20
+    static let maximumSourcesPerRun = 50
+    static let maximumRunReasonUTF8Bytes = 1_200
+    static let maximumRunHostUTF8Bytes = 253
+    static let maximumRunQuestionUTF8Bytes = 2_400
+    static let maximumRunFilenameUTF8Bytes = 960
+    static let maximumRunSourceTitleUTF8Bytes = 960
 
     @Published private(set) var savedTasks: [SavedAgentTask] = []
     @Published private(set) var history: [AgentRunRecord] = []
@@ -207,6 +244,36 @@ final class AgentTaskStore: ObservableObject {
               record.preset.utf8.count <= 256,
               record.date.timeIntervalSince1970.isFinite,
               record.startURL.map(AgentTaskURLParser.isAllowedStartURL) ?? true else {
+            throw AgentTaskStoreError.invalidRunRecord
+        }
+        try validateRunDetails(of: record)
+    }
+
+    private func validateRunDetails(of record: AgentRunRecord) throws {
+        let approvals = record.approvals ?? []
+        let questions = record.questions ?? []
+        let exports = record.exports ?? []
+        let sources = record.sources ?? []
+        guard record.startedAt.map({ $0.timeIntervalSince1970.isFinite }) ?? true,
+              record.duration.map({ $0.isFinite && $0 >= 0 }) ?? true,
+              approvals.count <= Self.maximumApprovalsPerRun,
+              approvals.allSatisfy({ approval in
+                  approval.reason.utf8.count <= Self.maximumRunReasonUTF8Bytes
+                      && (approval.host?.utf8.count ?? 0) <= Self.maximumRunHostUTF8Bytes
+                      && approval.date.timeIntervalSince1970.isFinite
+              }),
+              questions.count <= Self.maximumQuestionsPerRun,
+              questions.allSatisfy({ question in
+                  question.prompt.utf8.count <= Self.maximumRunQuestionUTF8Bytes
+                      && question.date.timeIntervalSince1970.isFinite
+              }),
+              exports.count <= Self.maximumExportsPerRun,
+              exports.allSatisfy({ $0.filename.utf8.count <= Self.maximumRunFilenameUTF8Bytes }),
+              sources.count <= Self.maximumSourcesPerRun,
+              sources.allSatisfy({ source in
+                  source.title.utf8.count <= Self.maximumRunSourceTitleUTF8Bytes
+                      && AgentTaskURLParser.isAllowedStartURL(source.url)
+              }) else {
             throw AgentTaskStoreError.invalidRunRecord
         }
     }

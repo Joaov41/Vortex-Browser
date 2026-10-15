@@ -512,6 +512,12 @@ final class BrowserAgentBrowserAdapter {
         try validateSource(tabID: tabID)
     }
 
+    /// A file written for one export, with the queued Files UI item that represents it.
+    struct QueuedExport {
+        let id: UUID
+        let fileURL: URL
+    }
+
     /// Writes into the current BrowserDownloadManager session and queues its existing Files UI.
     @discardableResult
     func enqueueExport(
@@ -521,6 +527,16 @@ final class BrowserAgentBrowserAdapter {
         sourceTabID: UUID,
         isIncognito: Bool
     ) throws -> UUID {
+        try enqueueExportFile(data: data, filename: filename, sourceURL: sourceURL, sourceTabID: sourceTabID, isIncognito: isIncognito).id
+    }
+
+    func enqueueExportFile(
+        data: Data,
+        filename: String,
+        sourceURL: URL?,
+        sourceTabID: UUID,
+        isIncognito: Bool
+    ) throws -> QueuedExport {
         try validateSource(tabID: sourceTabID)
         guard runIsIncognito == isIncognito else { throw AccessError.staleSource }
         guard data.count <= BrowserAgentExportService.maximumExportBytes else { throw AccessError.fileTooLarge }
@@ -545,7 +561,7 @@ final class BrowserAgentBrowserAdapter {
             try? FileManager.default.removeItem(at: destination)
             throw AccessError.exportQueueRejected
         }
-        return id
+        return QueuedExport(id: id, fileURL: destination)
     }
 
     private func allowedTab(id: UUID) -> BrowserTab? {

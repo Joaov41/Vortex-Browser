@@ -16,7 +16,9 @@ extension BrowserAgentController {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             guard !question.isEmpty else { throw BrowserToolFailure.invalidArgument("Provide a question between 1 and 600 characters.") }
             append(.note, "Waiting for your answer.")
+            let questionID = beginRunQuestion(question)
             let answer = await questionGate.ask(UserQuestion(prompt: question))
+            finishRunQuestion(questionID, answered: answer != nil)
             try Task.checkCancellation()
             guard isCurrentRun(token) else { throw CancellationError() }
             guard let answer else {

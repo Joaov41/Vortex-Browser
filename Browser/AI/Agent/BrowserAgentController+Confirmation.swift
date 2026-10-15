@@ -124,6 +124,8 @@ extension BrowserAgentController {
 
             let decision: ConfirmationDecision
             if remembered {
+                // A standing permission answers this approval without a prompt, so record it as a saved decision.
+                recordRunApproval(reason: reason, host: host, decision: .alwaysAllowed)
                 decision = ConfirmationDecision(id: confirmationID, allowed: true, alwaysAllow: false)
             } else {
                 decision = await requestConfirmationDecision(
