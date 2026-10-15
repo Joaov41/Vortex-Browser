@@ -1432,7 +1432,8 @@ final class BrowserAgentLoopTests: XCTestCase {
         }
         let controller = BrowserAgentController(engineFactory: { _ in engine })
         defer { controller.stop() }
-        let webView = await loadedWebView("<main>Completion snapshot fixture</main>")
+        // Tall enough that each of the 12 scrolls moves the page, so none is a repeated call.
+        let webView = await loadedWebView(#"<main style="height:20000px">Completion snapshot fixture</main>"#)
         let startingURL = webView.url
         let savedTaskID = UUID()
         var callbackOrder: [String] = []

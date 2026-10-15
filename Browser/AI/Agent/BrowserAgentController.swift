@@ -177,8 +177,10 @@ final class BrowserAgentController: ObservableObject {
     var runApprovals: [AgentRunApproval] = []
     var runQuestions: [AgentRunQuestion] = []
     var runExports: [AgentRunExport] = []
-    /// Set only for Stop and step-limit endings; other endings are derived from the steps.
+    /// Set only for Stop, step-limit and repeated-call endings; other endings are derived from the steps.
     private var runEndStatus: AgentRunStatus?
+    /// Watches this run's tool calls for repeats. Each run starts with a fresh one.
+    var toolLoopDetector = BrowserAgentToolLoopDetector()
     private let engineFactory: EngineFactory
     private let appleLookup: BrowserAppleWebLookup
     let screenshotCapture: ScreenshotCapture
@@ -286,6 +288,7 @@ final class BrowserAgentController: ObservableObject {
         runQuestions = []
         runExports = []
         runEndStatus = nil
+        toolLoopDetector = BrowserAgentToolLoopDetector()
         handoffRequests = []
         self.onComplete = onComplete
         self.onRunCompleted = onRunCompleted
@@ -363,6 +366,7 @@ final class BrowserAgentController: ObservableObject {
         runQuestions = []
         runExports = []
         runEndStatus = nil
+        toolLoopDetector = BrowserAgentToolLoopDetector()
         runContext = nil
         onComplete = nil
         onRunCompleted = nil
@@ -501,6 +505,14 @@ final class BrowserAgentController: ObservableObject {
         steps.append(Step(kind: kind, text: autofillPrivacy.redactKnownValues(text)))
     }
 
+    /// Ends the current run as failed from inside a tool call. Cancelling the run task makes the engine return.
+    func endRunAsFailed(_ message: String, token: UUID) {
+        guard isCurrentRun(token) else { return }
+        runEndStatus = .failed
+        append(.error, message)
+        runTask?.cancel()
+    }
+
     // MARK: Loop
 
     private func run(task: String, conversation: String?, webView: WKWebView?, backend: AIModelBackend, token: UUID) async {
@@ -586,16 +598,23 @@ final class BrowserAgentController: ObservableObject {
                       self.isCurrentRun(token) else {
                     return BrowserAgentToolOutput(text: "Cancelled.")
                 }
-                guard self.runDeclaredToolNames.contains(name) else {
-                    return BrowserAgentToolOutput(text: "That tool was not included in this run. Use only the tools listed for the current task.")
-                }
-                let arguments = Self.parseArguments(argumentsJSON)
-                return await self.execute(
+                return await self.executeCheckingForLoops(
                     name: name,
-                    arguments: arguments,
+                    argumentsJSON: argumentsJSON,
                     in: self.activeWebView ?? initialWebView,
                     token: token
-                )
+                ) {
+                    guard self.runDeclaredToolNames.contains(name) else {
+                        return BrowserAgentToolOutput(text: "That tool was not included in this run. Use only the tools listed for the current task.")
+                    }
+                    let arguments = Self.parseArguments(argumentsJSON)
+                    return await self.execute(
+                        name: name,
+                        arguments: arguments,
+                        in: self.activeWebView ?? initialWebView,
+                        token: token
+                    )
+                }
             }
             let note: BrowserAgentNoteHandler = { [weak self] text in
                 guard let self, self.isCurrentRun(token) else { return }
