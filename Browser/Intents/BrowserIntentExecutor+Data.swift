@@ -161,7 +161,10 @@ extension BrowserIntentExecutor {
         let suffix = total > text.utf16.count
             ? "\n\nBased on the first \(text.utf16.count) characters of readable page text."
             : ""
-        return output(result + suffix)
+        var summary = output(result + suffix)
+        summary.pageTitle = privacy.redactKnownValues(binding.tab.title)
+        summary.pageURL = binding.url
+        return summary
     }
 
     func askLocal(_ rawQuestion: String) async throws -> BrowserIntentOutput {

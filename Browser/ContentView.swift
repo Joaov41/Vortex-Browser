@@ -1727,6 +1727,7 @@ struct ContentView: View {
     @State private var agentTaskLastFinishedNavigationIDs: [ObjectIdentifier: ObjectIdentifier] = [:]
     @State private var agentTaskReadyWebViews: Set<ObjectIdentifier> = []
     @State private var agentTaskQueueStatusMessage: String?
+    @State private var agentRunDetailRequest: AgentRunDetailRequest?
     @State private var lastAgentBackendStatusShown: String?
     @StateObject private var browserIntentRuntime = BrowserIntentRuntime.shared
     @State private var browserIntentWindowID = UUID()
@@ -4576,6 +4577,12 @@ struct ContentView: View {
         }
     }
 
+    /// Shows the agent library on one stored run's detail page, from a `webmebrowser://run?id=` link.
+    private func openAgentRunDetail(_ runID: UUID) {
+        revealAgentTaskSidebar()
+        agentRunDetailRequest = AgentRunDetailRequest(runID: runID)
+    }
+
     private func revealAgentTaskSidebar() {
         let wasAlreadyVisible = showAIPanel
         showAIPanel = true
@@ -5104,6 +5111,18 @@ struct ContentView: View {
             }
             return
         }
+        if url.scheme?.lowercased() == AgentIncomingURLRouter.appScheme,
+           url.host?.lowercased() == AgentRunURLParser.host {
+            do {
+                guard let runID = try AgentRunURLParser.parse(url) else {
+                    throw AgentRunURLParseError.malformedRunURL
+                }
+                openAgentRunDetail(runID)
+            } catch {
+                showPageStatus(error.localizedDescription, autoHide: false)
+            }
+            return
+        }
         guard url.scheme?.lowercased() == shareAppURLScheme else {
             return
         }
@@ -5497,6 +5516,10 @@ struct ContentView: View {
             },
             onAgentNeedsAttention: {
                 revealAgentTaskSidebar()
+            },
+            agentRunDetailRequest: agentRunDetailRequest,
+            onAgentRunDetailRequestHandled: {
+                agentRunDetailRequest = nil
             }
         )
     }

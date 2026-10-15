@@ -122,13 +122,62 @@ enum AgentTaskURLParser {
     }
 }
 
+enum AgentRunURLParseError: Error, Equatable, LocalizedError {
+    case malformedRunURL
+
+    var errorDescription: String? {
+        switch self {
+        case .malformedRunURL: return "The browser-task result link is malformed."
+        }
+    }
+}
+
+/// Parses `webmebrowser://run?id=<UUID>`, the link that opens a finished run's detail page.
+/// Exactly one `id` query item holding a UUID is accepted. Any other shape is rejected.
+enum AgentRunURLParser {
+    static let host = "run"
+    static let idParameter = "id"
+    static let missingRunMessage = "That browser task is no longer in your history."
+
+    /// Returns nil for every URL whose host is not `run`. Throws for a `run` link that is not exactly one valid UUID `id`.
+    static func parse(_ url: URL) throws -> UUID? {
+        guard url.scheme?.lowercased() == AgentIncomingURLRouter.appScheme,
+              url.host?.lowercased() == host else { return nil }
+        guard url.path.isEmpty || url.path == "/",
+              url.user == nil, url.password == nil, url.port == nil,
+              url.fragment == nil,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.user == nil, components.password == nil, components.port == nil,
+              components.fragment == nil,
+              (components.percentEncodedQuery ?? "").components(separatedBy: "&").count == 1,
+              let items = components.queryItems,
+              items.count == 1,
+              items[0].name == idParameter,
+              let value = items[0].value,
+              let runID = UUID(uuidString: value) else {
+            throw AgentRunURLParseError.malformedRunURL
+        }
+        return runID
+    }
+
+    /// The canonical link for a run. Used by the snippet's Open button.
+    static func url(for runID: UUID) -> URL? {
+        var components = URLComponents()
+        components.scheme = AgentIncomingURLRouter.appScheme
+        components.host = host
+        components.queryItems = [URLQueryItem(name: idParameter, value: runID.uuidString)]
+        return components.url
+    }
+}
+
 /// A pure decision seam that preserves the app's existing URL-dispatch precedence.
-/// ContentView will consume the `.agentTask` case in the later launch-integration phase.
+/// ContentView handles `.agentTask` and `.run` in its own URL handler; these cases are the testable decision for each URL.
 enum AgentIncomingURLRoute: Equatable {
     case bookmarkFile(URL)
     case defaultBrowserLink(URL)
     case cloudShortcut(URL)
     case agentTask(PendingAgentTask)
+    case run(UUID)
     case sharedText(String)
     case sharedPayload
     case unhandled
@@ -146,6 +195,9 @@ enum AgentIncomingURLRouter {
         guard url.scheme?.lowercased() == appScheme else { return .unhandled }
         if let task = try AgentTaskURLParser.parse(url) {
             return .agentTask(task)
+        }
+        if let runID = try AgentRunURLParser.parse(url) {
+            return .run(runID)
         }
         let text = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .first(where: { $0.name == "text" })?.value

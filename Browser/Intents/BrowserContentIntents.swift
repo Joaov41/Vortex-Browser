@@ -138,8 +138,19 @@ struct SummarizeBrowserPageIntent: AppIntent {
     static var supportedModes: IntentModes { .foreground }
     static var authenticationPolicy: IntentAuthenticationPolicy { .requiresLocalDeviceAuthentication }
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        try await performBrowserIntent(.summarize)
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog & ShowsSnippetIntent {
+        let output = try await BrowserIntentRuntime.shared.perform(.summarize) { message in
+            try await browserIntentConfirmation(message: message)
+        }
+        return .result(
+            value: output.text,
+            dialog: IntentDialog(stringLiteral: output.text),
+            snippetIntent: PageSummarySnippetIntent(
+                pageTitle: output.pageTitle,
+                pageURL: output.pageURL,
+                summary: output.text
+            )
+        )
     }
 }
 

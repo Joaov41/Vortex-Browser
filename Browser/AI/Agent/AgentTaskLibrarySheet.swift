@@ -18,20 +18,33 @@ struct AgentTaskSaveDraft: Identifiable {
 
 /// Carries the requested library mode and its exact save draft in one sheet
 /// presentation update, avoiding a first-render race between separate state.
+/// One request to open a stored run's detail page. A new value is made for each link, so opening the same run again still presents.
+struct AgentRunDetailRequest: Identifiable, Equatable {
+    let id = UUID()
+    let runID: UUID
+}
+
 enum AgentTaskLibraryPresentation: Identifiable {
     case browse(UUID)
     case save(AgentTaskSaveDraft)
+    case run(AgentRunDetailRequest)
 
     var id: UUID {
         switch self {
         case .browse(let id): id
         case .save(let draft): draft.id
+        case .run(let request): request.id
         }
     }
 
     var initialDraft: AgentTaskSaveDraft? {
         guard case .save(let draft) = self else { return nil }
         return draft
+    }
+
+    var initialRunID: UUID? {
+        guard case .run(let request) = self else { return nil }
+        return request.runID
     }
 }
 
@@ -53,6 +66,8 @@ struct AgentTaskLibrarySheet: View {
     let initialDraft: AgentTaskSaveDraft?
     let onRun: (AgentTaskLaunchRequest) -> Void
     let onSavedReply: (UUID) -> Void
+    /// Opens this run's detail page on appear, when the sheet was requested from a `webmebrowser://run` link.
+    var initialRunID: UUID? = nil
 
     @Environment(\.dismiss) private var dismiss
     @State private var savedTasks: [SavedAgentTask] = []
@@ -66,6 +81,7 @@ struct AgentTaskLibrarySheet: View {
     @State private var startURLText = ""
     @State private var errorMessage: String?
     @State private var detailRecord: AgentRunRecord?
+    @State private var libraryNotice: String?
 
     private var isEditingExistingTask: Bool { editingTask != nil }
 
@@ -130,6 +146,9 @@ struct AgentTaskLibrarySheet: View {
                     editorReplyID = initialDraft.replyID
                     showingEditor = true
                 }
+                if let initialRunID {
+                    openRun(initialRunID)
+                }
             }
         }
         .presentationDetents([.medium, .large])
@@ -137,6 +156,14 @@ struct AgentTaskLibrarySheet: View {
 
     private var library: some View {
         VStack(spacing: 0) {
+            if let libraryNotice {
+                Text(libraryNotice)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.top, 10)
+            }
             Picker("Library", selection: $selectedSection) {
                 Text("Tasks").tag(0)
                 Text("History").tag(1)
@@ -269,6 +296,17 @@ struct AgentTaskLibrarySheet: View {
             .foregroundStyle(.secondary)
         }
         .padding(.vertical, 5)
+    }
+
+    /// Shows the History page with one run's detail. A run that has left history gets a short notice instead.
+    private func openRun(_ runID: UUID) {
+        if let record = history.first(where: { $0.id == runID }) {
+            libraryNotice = nil
+            selectedSection = 1
+            detailRecord = record
+        } else {
+            libraryNotice = AgentRunURLParser.missingRunMessage
+        }
     }
 
     /// Opens the existing new-task editor with this run's task, replacing the detail page.

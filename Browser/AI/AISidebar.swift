@@ -52,6 +52,10 @@ struct AISidebar: View {
     var onAgentReadinessChanged: ((Bool, Bool, Bool) -> Void)? = nil
     var onAgentRunCompleted: ((BrowserAgentController.CompletionSnapshot, UUID) -> Void)? = nil
     var onAgentNeedsAttention: (() -> Void)? = nil
+    /// Set by the window when a `webmebrowser://run?id=` link arrives; opens the library on that run's detail page.
+    var agentRunDetailRequest: AgentRunDetailRequest? = nil
+    /// Called once a requested run detail has been presented, so the window can clear its request.
+    var onAgentRunDetailRequestHandled: (() -> Void)? = nil
 
     @State private var input: String = ""
     @AppStorage("customPrompts") private var customPromptsData: String = "[]"
@@ -395,9 +399,16 @@ struct AISidebar: View {
                     storeProvider: storeProvider,
                     initialDraft: presentation.initialDraft,
                     onRun: { request in onAgentTaskLaunch?(request) },
-                    onSavedReply: { id in savedAgentReplyIDs.insert(id) }
+                    onSavedReply: { id in savedAgentReplyIDs.insert(id) },
+                    initialRunID: presentation.initialRunID
                 )
             }
+        }
+        .onAppear {
+            presentRequestedRunDetail()
+        }
+        .onChange(of: agentRunDetailRequest) { _, _ in
+            presentRequestedRunDetail()
         }
         .fullScreenCover(item: $presentedResponseCanvas) { presentation in
             AIResponseCanvas(presentation: presentation, onOpenSource: openLookupSource)
@@ -410,6 +421,16 @@ struct AISidebar: View {
                 shouldAutoCollapseAfterNextReply = false
             }
         }
+    }
+
+    /// Presents the library on a requested run's detail page. Runs on appear as well as on change,
+    /// because the sidebar is only mounted while the panel is shown.
+    private func presentRequestedRunDetail() {
+        guard let request = agentRunDetailRequest else { return }
+        if agentTaskStoreProvider != nil {
+            agentTaskLibraryPresentation = .run(request)
+        }
+        onAgentRunDetailRequestHandled?()
     }
 
     private var headerRow: some View {

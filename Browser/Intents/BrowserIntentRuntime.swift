@@ -38,6 +38,9 @@ struct BrowserIntentOutput: Sendable {
     let text: String
     var fileData: Data?
     var filename: String?
+    /// Set only by the summary command, for its result card. Other commands leave both nil.
+    var pageTitle: String? = nil
+    var pageURL: URL? = nil
 }
 
 typealias BrowserIntentConfirmation = @MainActor @Sendable (String) async throws -> Void

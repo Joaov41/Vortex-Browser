@@ -58,6 +58,8 @@ struct AgentRunResultFields: Equatable {
     var files: [AgentRunResultFile]
     /// Plain sentences about skipped files, shown in the dialog.
     var fileNotes: [String]
+    /// The stored run's ID, set only for non-private finished runs. Used by the snippet's Open button; not part of the entity.
+    var runID: UUID? = nil
 }
 
 struct AgentRunResultFile: Equatable {
@@ -132,7 +134,8 @@ enum AgentRunResultMapper {
                 finishedAt: snapshot.date,
                 sources: sources,
                 files: collected.files,
-                fileNotes: collected.notes
+                fileNotes: collected.notes,
+                runID: snapshot.runID
             )
         case .rejected(let message):
             return AgentRunResultFields(
@@ -187,7 +190,8 @@ enum AgentRunResultMapper {
             finishedAt: record.date,
             sources: (record.sources ?? []).map(\.url),
             files: [],
-            fileNotes: []
+            fileNotes: [],
+            runID: record.id
         )
     }
 
@@ -270,11 +274,12 @@ enum AgentRunResultIntentSupport {
         taskTitle: String,
         now: Date = Date(),
         files: AgentRunFileAccess = .live
-    ) -> (entity: AgentRunResultEntity, dialog: String) {
+    ) -> (entity: AgentRunResultEntity, dialog: String, snippet: AgentRunResultSnippetIntent) {
         let fields = AgentRunResultMapper.fields(for: outcome, taskTitle: taskTitle, now: now, files: files)
         return (
             AgentRunResultEntity(fields: fields),
-            dialogText(outcome: fields.outcome, fileNotes: fields.fileNotes)
+            dialogText(outcome: fields.outcome, fileNotes: fields.fileNotes),
+            AgentRunResultSnippetIntent(fields: fields)
         )
     }
 }
@@ -326,7 +331,7 @@ struct RunAgentTaskAndWaitIntent: AppIntent {
     }
 
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<AgentRunResultEntity> & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<AgentRunResultEntity> & ProvidesDialog & ShowsSnippetIntent {
         let request = try await MainActor.run { () throws -> PendingAgentTask in
             guard !task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                   task.utf8.count <= AgentTaskURLParser.maximumTaskUTF8Bytes,
@@ -345,7 +350,7 @@ struct RunAgentTaskAndWaitIntent: AppIntent {
             for: outcome,
             taskTitle: AgentRunResultIntentSupport.title(forTask: task)
         )
-        return .result(value: result.entity, dialog: IntentDialog(stringLiteral: result.dialog))
+        return .result(value: result.entity, dialog: IntentDialog(stringLiteral: result.dialog), snippetIntent: result.snippet)
     }
 }
 
@@ -372,7 +377,7 @@ struct RunSavedAgentTaskAndWaitIntent: AppIntent {
     }
 
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<AgentRunResultEntity> & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<AgentRunResultEntity> & ProvidesDialog & ShowsSnippetIntent {
         let queued = try await MainActor.run { () throws -> (request: PendingAgentTask, title: String) in
             guard let id = UUID(uuidString: savedTask.id),
                   let saved = try AgentTaskIntentRuntime.savedTask(id: id) else {
@@ -387,7 +392,7 @@ struct RunSavedAgentTaskAndWaitIntent: AppIntent {
             timeout: AgentRunResultIntentSupport.waitTimeout(seconds: timeoutSeconds)
         )
         let result = AgentRunResultIntentSupport.makeResult(for: outcome, taskTitle: queued.title)
-        return .result(value: result.entity, dialog: IntentDialog(stringLiteral: result.dialog))
+        return .result(value: result.entity, dialog: IntentDialog(stringLiteral: result.dialog), snippetIntent: result.snippet)
     }
 }
 
@@ -398,7 +403,7 @@ struct GetLastAgentRunResultIntent: AppIntent {
     )
 
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<AgentRunResultEntity> & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<AgentRunResultEntity> & ProvidesDialog & ShowsSnippetIntent {
         let fields = try await MainActor.run { () throws -> AgentRunResultFields in
             let store = try AgentTaskIntentRuntime.makeStore()
             try store.load()
@@ -415,7 +420,8 @@ struct GetLastAgentRunResultIntent: AppIntent {
         }
         return .result(
             value: AgentRunResultEntity(fields: fields),
-            dialog: IntentDialog(stringLiteral: AgentRunResultIntentSupport.dialogText(outcome: fields.outcome, fileNotes: []))
+            dialog: IntentDialog(stringLiteral: AgentRunResultIntentSupport.dialogText(outcome: fields.outcome, fileNotes: [])),
+            snippetIntent: AgentRunResultSnippetIntent(fields: fields)
         )
     }
 }
