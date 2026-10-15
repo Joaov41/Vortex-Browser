@@ -285,9 +285,26 @@ struct CloseBrowserTabsSchemaIntent: AppIntent {
     }
 }
 
-// No `.system.searchInApp` intent on purpose: Siri routed "find … on this page" requests to it,
-// which ran a web search in a new tab with a word carried over from an earlier request.
-// Web search stays available through "Search with Vortyra" and the Search in Vortyra action.
+/// Replaces the deprecated `.browser.search` schema. Needs iOS 27.
+@available(iOS 27.0, *)
+@AppIntent(schema: .system.searchInApp)
+struct SearchBrowserInAppSchemaIntent: AppIntent {
+    static let title: LocalizedStringResource = "Search Web in Vortyra"
+    static var supportedModes: IntentModes { .foreground }
+    static var authenticationPolicy: IntentAuthenticationPolicy { .requiresLocalDeviceAuthentication }
+
+    @Parameter(title: "Search")
+    var criteria: StringSearchCriteria
+
+    func commands() throws -> [BrowserIntentCommand] {
+        BrowserSchemaCommands.search(criteria.term)
+    }
+
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        let output = try await performBrowserCommands(try commands())
+        return .result(value: output.text, dialog: IntentDialog(stringLiteral: output.text))
+    }
+}
 
 /// Destructive: the executor asks for confirmation before any bookmark is removed.
 @AppIntent(schema: .browser.deleteBookmarks)
