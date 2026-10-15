@@ -121,7 +121,7 @@ final class BrowserIntentExecutor {
         case .openURL, .search:
             return try executeOpenCommand(command)
         case .newTab, .newPrivateTab, .reopenClosedTab, .closeCurrentTab, .closeGroup,
-             .switchGroup, .moveToGroup, .openSplit, .endSplit:
+             .switchGroup, .switchToTab, .moveToGroup, .openSplit, .endSplit:
             return try await executeTabCommand(command, confirm: confirm)
         case .back, .forward, .reload, .setDesktop:
             return try executePageNavigation(command)

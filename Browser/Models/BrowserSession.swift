@@ -1397,6 +1397,8 @@ final class BrowserViewModel: ObservableObject {
         if let data = try? JSONEncoder().encode(favoriteFolders) {
             defaults.set(data, forKey: favoriteFoldersKey)
         }
+        // Every bookmark add, move, rename and removal saves here; Spotlight re-syncs from this.
+        NotificationCenter.default.post(name: .browserFavoritesDidChange, object: nil)
     }
 
     private func loadFavorites() {

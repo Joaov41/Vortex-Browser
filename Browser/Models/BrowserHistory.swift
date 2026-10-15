@@ -117,6 +117,8 @@ final class HistoryStore: ObservableObject {
     /// Coalesces bursts of visits into one write; encoding stays on the main actor,
     /// only the file write runs in the background.
     private func scheduleSave() {
+        // Record, remove and clear all end here, so Spotlight hears about every change.
+        NotificationCenter.default.post(name: .browserHistoryDidChange, object: nil)
         saveTask?.cancel()
         saveTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 1_500_000_000)

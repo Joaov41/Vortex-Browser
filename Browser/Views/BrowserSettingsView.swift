@@ -23,6 +23,9 @@ struct BrowserSettingsView: View {
     @ObservedObject private var darkModeService = DarkModeService.shared
     @ObservedObject private var fontSizeService = FontSizeService.shared
     @AppStorage("requestDesktopSite") private var requestDesktopSite = false
+    @AppStorage(BrowserSpotlightSettings.bookmarksKey) private var spotlightBookmarks = true
+    @AppStorage(BrowserSpotlightSettings.savedTasksKey) private var spotlightSavedTasks = true
+    @AppStorage(BrowserSpotlightSettings.historyKey) private var spotlightHistory = false
     @State private var showBookmarkImporter = false
     @State private var bookmarkImportMessage: String?
 
@@ -32,6 +35,7 @@ struct BrowserSettingsView: View {
                 Group {
                     generalSection
                     privacySection
+                    spotlightSection
                     appearanceSection
                     aiSection
                     advancedSection
@@ -145,6 +149,27 @@ struct BrowserSettingsView: View {
                     Text(cookieBlocker.unavailabilityReason)
                 }
             }
+        }
+    }
+
+    private var spotlightSection: some View {
+        Section {
+            Toggle("Bookmarks", isOn: $spotlightBookmarks)
+                .onChange(of: spotlightBookmarks) { _, _ in
+                    BrowserSpotlightIndexer.shared.settingChanged(.bookmarks)
+                }
+            Toggle("Saved browser tasks", isOn: $spotlightSavedTasks)
+                .onChange(of: spotlightSavedTasks) { _, _ in
+                    BrowserSpotlightIndexer.shared.settingChanged(.savedTasks)
+                }
+            Toggle("History", isOn: $spotlightHistory)
+                .onChange(of: spotlightHistory) { _, _ in
+                    BrowserSpotlightIndexer.shared.settingChanged(.history)
+                }
+        } header: {
+            Text("Spotlight")
+        } footer: {
+            Text("Private browsing is never shown in Spotlight.")
         }
     }
 

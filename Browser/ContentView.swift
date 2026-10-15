@@ -4028,6 +4028,7 @@ struct ContentView: View {
             setupSharedURLHandling()
             setupAgentTaskHandling()
             registerBrowserIntentEndpoint()
+            startSpotlightIndexing()
             checkForSharedURL()
             mlxMaxOutputTokens = min(max(64, mlxMaxOutputTokens), 512)
             mlxMaxContextTokens = min(max(0, mlxMaxContextTokens), 8192)
@@ -5209,6 +5210,17 @@ struct ContentView: View {
                 try await makeBrowserIntentExecutor(isCurrent: isCurrent).execute(command, confirm: confirm)
             }
         )
+        browserIntentRuntime.registerTabSnapshot(windowID: browserIntentWindowID) {
+            vm.tabs
+        }
+    }
+
+    /// Starts Spotlight syncing for bookmarks, saved tasks and history, then rebuilds once per launch.
+    private func startSpotlightIndexing() {
+        BrowserSpotlightIndexer.shared.startObserving()
+        Task(priority: .background) {
+            await BrowserSpotlightIndexer.shared.reindexAll()
+        }
     }
 
     private func makeBrowserIntentExecutor(

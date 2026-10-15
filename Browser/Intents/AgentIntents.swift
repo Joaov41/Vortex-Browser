@@ -33,10 +33,21 @@ enum AgentTaskIntentRuntime {
         try store.load()
         return try store.savedTask(id: id)
     }
+
+    /// Queues a saved task. Shared by Run Saved Browser Task and Open Saved Browser Task.
+    static func queueSavedTask(_ entity: AgentTaskEntity) throws -> String {
+        guard let id = UUID(uuidString: entity.id),
+              let task = try savedTask(id: id) else {
+            throw AgentTaskStoreError.missingTask
+        }
+        let request = PendingAgentTask(task: task.task, startURL: task.startURL, savedTaskID: task.id)
+        try enqueue(request)
+        return task.title
+    }
 }
 
 /// The entity intentionally exposes display metadata only; task text and start URLs stay in the app store.
-struct AgentTaskEntity: AppEntity, Identifiable, Sendable {
+struct AgentTaskEntity: AppEntity, IndexedEntity, Identifiable, Sendable {
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Saved browser task"
     static let defaultQuery = AgentTaskEntityQuery()
 
@@ -123,13 +134,7 @@ struct RunSavedAgentTaskIntent: AppIntent {
 
     func perform() async throws -> some IntentResult {
         let queuedTitle = try await MainActor.run { () throws -> String in
-            guard let id = UUID(uuidString: savedTask.id),
-                  let task = try AgentTaskIntentRuntime.savedTask(id: id) else {
-                throw AgentTaskStoreError.missingTask
-            }
-            let request = PendingAgentTask(task: task.task, startURL: task.startURL, savedTaskID: task.id)
-            try AgentTaskIntentRuntime.enqueue(request)
-            return task.title
+            try AgentTaskIntentRuntime.queueSavedTask(savedTask)
         }
         return .result(dialog: "Queued \(queuedTitle). Vortyra will continue when it is ready.")
     }

@@ -184,6 +184,7 @@ final class AgentTaskStore: ObservableObject {
         }
         document.savedTasks.sort { $0.createdAt > $1.createdAt }
         try commit(document)
+        NotificationCenter.default.post(name: .savedAgentTasksDidChange, object: nil)
     }
 
     func updateTask(_ task: SavedAgentTask) throws {
@@ -197,12 +198,14 @@ final class AgentTaskStore: ObservableObject {
         document.savedTasks[index] = replacement
         document.savedTasks.sort { $0.createdAt > $1.createdAt }
         try commit(document)
+        NotificationCenter.default.post(name: .savedAgentTasksDidChange, object: nil)
     }
 
     func deleteTask(id: UUID) throws {
         var document = try readDocument()
         document.savedTasks.removeAll { $0.id == id }
         try commit(document)
+        NotificationCenter.default.post(name: .savedAgentTasksDidChange, object: nil)
     }
 
     func appendRun(_ record: AgentRunRecord) throws {

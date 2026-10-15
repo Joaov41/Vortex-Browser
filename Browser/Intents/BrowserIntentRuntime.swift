@@ -10,6 +10,7 @@ enum BrowserIntentCommand: Sendable {
     case closeCurrentTab
     case closeGroup(UUID)
     case switchGroup(UUID)
+    case switchToTab(UUID)
     case moveToGroup(UUID)
     case back
     case forward
@@ -123,7 +124,11 @@ final class BrowserIntentRuntime: ObservableObject {
 
     @Published private(set) var isBusy = false
 
+    typealias TabSnapshot = @MainActor () -> [BrowserTab]
+
     private var endpoints: [UUID: Endpoint] = [:]
+    /// Each window's current tabs, read by Spotlight tab entities. Kept apart from `endpoints`.
+    private var tabSnapshots: [UUID: TabSnapshot] = [:]
     private var activeEndpointID: UUID?
     private var activeToken: UUID?
     private var activeRegistrationID: UUID?
@@ -167,8 +172,20 @@ final class BrowserIntentRuntime: ObservableObject {
         }
     }
 
+    func registerTabSnapshot(windowID: UUID, tabs: @escaping TabSnapshot) {
+        tabSnapshots[windowID] = tabs
+    }
+
+    /// Tabs of the one active window. Returns nothing when no window or several windows are active.
+    func liveTabs() -> [BrowserTab] {
+        let active = endpoints.values.filter(\.isActive)
+        guard active.count == 1, let windowID = active.first?.windowID else { return [] }
+        return tabSnapshots[windowID]?() ?? []
+    }
+
     func unregister(windowID: UUID) {
         endpoints.removeValue(forKey: windowID)
+        tabSnapshots.removeValue(forKey: windowID)
         if activeEndpointID == windowID {
             activeToken = nil
             activeEndpointID = nil

@@ -26,6 +26,8 @@ extension BrowserIntentExecutor {
             return try await closeGroup(groupID, confirm: confirm)
         case .switchGroup(let groupID):
             return try switchGroup(groupID)
+        case .switchToTab(let tabID):
+            return try switchToTab(tabID)
         case .moveToGroup(let groupID):
             return try moveToGroup(groupID)
         case .openSplit(let first, let second):
@@ -193,6 +195,16 @@ extension BrowserIntentExecutor {
         viewModel.selectTab(first)
         callbacks.onTabSelected(first.id)
         return output("Switched to the tab group.")
+    }
+
+    /// Selects one regular tab. Private tabs and web AI pages are never switch targets.
+    func switchToTab(_ tabID: UUID) throws -> BrowserIntentOutput {
+        guard let tab = regularTabs().first(where: { $0.id == tabID }) else {
+            throw BrowserIntentError.emptyResult("That tab is no longer open in Vortyra.")
+        }
+        viewModel.selectTab(tab)
+        callbacks.onTabSelected(tab.id)
+        return output("Switched to the tab.")
     }
 
     func moveToGroup(_ groupID: UUID) throws -> BrowserIntentOutput {
