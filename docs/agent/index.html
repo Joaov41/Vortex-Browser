@@ -32,6 +32,7 @@
         <a href="#start">Turn on Agent mode</a>
         <a href="#words">The words that matter</a>
         <a href="#examples">What to ask</a>
+        <a href="#abilities">Everything the agent can do</a>
         <a href="#research">Research mode</a>
         <a href="#safety">Approvals and privacy</a>
         <a href="#tasks">Saved tasks and history</a>
@@ -126,6 +127,50 @@
 
       <p>If a request is unclear, the agent asks you a question in the panel and waits for your answer.</p>
 
+      <h2 id="abilities">Everything the agent can do</h2>
+      <p>You never call these by name; just describe what you want. Items marked <em>(asks first)</em> always wait for your approval.</p>
+
+      <h3>Work on the page</h3>
+      <ul>
+        <li>Click links, buttons, tabs and menu items; type into fields and press Enter; pick dropdown options; tick checkboxes, radio buttons and switches.</li>
+        <li>Press keys, scroll the page or a single panel, bring an element into view, hover over menus, set sliders <em>(asks first)</em> and drag and drop <em>(asks first)</em>.</li>
+        <li>Read the page text, inspect one element, wait for loading, and close cookie banners and pop-ups (only through their safe close or reject buttons).</li>
+        <li>Go to an address, go back and forward, reload, and search the web with your search engine.</li>
+        <li>Fill contact and address forms from your Autofill Profile <em>(asks first, shows a preview)</em>.</li>
+        <li>Open a website's file picker for an upload form <em>(asks first)</em>. You choose the file; the agent never submits it.</li>
+        <li>Take a screenshot of the page to understand its layout, on models that can see images. Sensitive fields are masked first.</li>
+      </ul>
+
+      <h3>Tabs, groups and bookmarks</h3>
+      <ul>
+        <li>List, switch and open tabs, open a page side by side in split view, and close tabs <em>(asks first)</em>.</li>
+        <li>List, create and rename tab groups, and move tabs between groups.</li>
+        <li>List Favorites, create folders, bookmark the current page, move bookmarks, and remove them <em>(asks first)</em>.</li>
+        <li>Search your browsing history (not in private browsing).</li>
+      </ul>
+
+      <h3>Page tools</h3>
+      <ul>
+        <li>Turn reader mode on or off, translate the page on the device and switch back to the original, and request the desktop or mobile site.</li>
+        <li>Find and highlight text on the page, and clear the highlights.</li>
+        <li>Hide an annoying element (such as a sticky banner) and remember that for the website.</li>
+        <li>Copy text to the clipboard.</li>
+      </ul>
+
+      <h3>Data and files</h3>
+      <ul>
+        <li>Extract visible tables and links, compare data from several pages, and write a comparison.</li>
+        <li>Export tables or comparisons as CSV or PDF, and save the whole page as a PDF with its address.</li>
+        <li>Download a file or link <em>(asks first)</em>, list downloads, and cancel one <em>(asks first)</em>.</li>
+      </ul>
+
+      <h3>Research and other apps</h3>
+      <ul>
+        <li>Read other pages quietly in the background and open chosen sources in a tab group (research mode).</li>
+        <li>Prepare a calendar event, a reminder or an email for you to review after the task. Nothing is saved or sent by the agent.</li>
+        <li>Ask you a question when something is unclear, and finish with a written answer.</li>
+      </ul>
+
       <h2 id="research">Research mode</h2>
       <p>Start with <em>Research</em> and the agent searches the web, reads up to 8 sources quietly in the background, compares them and writes a short report with sources. It never leaves the page you're on. Research mode needs the ChatGPT model.</p>
       <ul class="guide-examples">
@@ -179,20 +224,56 @@
       <p>Everything opens prefilled for you to check. Nothing is saved or sent until you tap Add, Save or Send. Reminders access is requested only the first time you save one.</p>
 
       <h2 id="shortcuts">Shortcuts</h2>
-      <p>Open the Shortcuts app and search for <strong>Vortyra</strong> to see every action.</p>
+      <p>Open the Shortcuts app and search for <strong>Vortyra</strong>. These are all 53 actions, with the names you'll see there.</p>
 
-      <h3>Agent actions</h3>
+      <h3>Browser agent</h3>
       <ul>
         <li><strong>Run Browser Task and Get Result</strong>: runs your instruction and returns the answer, sources and exported files to the next step.</li>
         <li><strong>Run Saved Browser Task and Get Result</strong>: the same for a saved task.</li>
-        <li><strong>Research a Topic</strong>: researches, optionally opens the sources in tabs and returns the report and PDF.</li>
-        <li><strong>Get Last Browser Task Result</strong>: the answer from the most recent finished run.</li>
-        <li><strong>Run Browser Task</strong> and <strong>Run Saved Browser Task</strong>: start a task without waiting.</li>
-        <li><strong>Check Watched Pages</strong> and <strong>Watch Page</strong>.</li>
+        <li><strong>Run Browser Task</strong> and <strong>Run Saved Browser Task</strong>: start a task without waiting for it.</li>
+        <li><strong>Open Saved Browser Task</strong>: runs a saved task (also what Spotlight uses).</li>
+        <li><strong>Research a Topic</strong>: researches, optionally opens the sources in tabs, and returns the report and PDF.</li>
+        <li><strong>Get Last Browser Task Result</strong>: the answer from the most recent finished task.</li>
+        <li><strong>Watch Page</strong> and <strong>Check Watched Pages</strong>.</li>
       </ul>
 
-      <h3>Browser actions</h3>
-      <p>Open URL, Search, Search Clipboard, New Tab, New Private Tab, Reopen Last Closed Tab, Close Tab, Switch to Tab Group, Move Tab to Group, Close Tabs in Group, Go Back, Go Forward, Reload, Reader Mode, Translate Page, Desktop Site, Open Websites Side by Side, End Split View, Find Text on Page, Bookmark Page, Save to Reading List, Export Page as PDF, Capture Screenshot, Copy Title and URL, Summarize Current Page, Ask On-Device AI, Send Page to Web AI, Download URL, Download Page Video, Open Last Matching History Page and Get Recorded Web Searches.</p>
+      <h3>AI on the page</h3>
+      <ul>
+        <li><strong>Summarize Current Page</strong>, <strong>Ask On-Device AI</strong> and <strong>Send Page to Web AI</strong> (ChatGPT or Gemini).</li>
+      </ul>
+
+      <h3>Open and search</h3>
+      <ul>
+        <li><strong>Open URL in Vortyra</strong>, <strong>Load URL in Vortyra Tab</strong> (in a chosen tab), <strong>Search in Vortyra</strong>, <strong>Search Web in Vortyra</strong> and <strong>Search Clipboard in Vortyra</strong>.</li>
+        <li><strong>Open Websites Side by Side</strong> and <strong>End Split View</strong>.</li>
+      </ul>
+
+      <h3>Tabs and groups</h3>
+      <ul>
+        <li><strong>New Vortyra Tab</strong>, <strong>Create Tab in Vortyra</strong>, <strong>New Private Vortyra Tab</strong> and <strong>Reopen Last Closed Tab</strong>.</li>
+        <li><strong>Switch to Vortyra Tab</strong>, <strong>Switch to Tab in Vortyra</strong> and <strong>Switch to Tab Group</strong>.</li>
+        <li><strong>Close Current Vortyra Tab</strong>, <strong>Close Tabs in Vortyra</strong> (asks first), <strong>Close Tabs in Group</strong> and <strong>Move Tab to Group</strong>.</li>
+      </ul>
+
+      <h3>Navigation and page modes</h3>
+      <ul>
+        <li><strong>Go Back in Vortyra</strong>, <strong>Go Forward in Vortyra</strong> and <strong>Reload Vortyra Page</strong>.</li>
+        <li><strong>Set Reader Mode</strong>, <strong>Set Desktop Site Mode</strong> and <strong>Translate Vortyra Page</strong>.</li>
+        <li><strong>Find Text on Page</strong> and <strong>Find Text on Vortyra Page</strong> (in a chosen tab).</li>
+      </ul>
+
+      <h3>Bookmarks, history and saving</h3>
+      <ul>
+        <li><strong>Bookmark Current Page</strong>, <strong>Bookmark Vortyra Tab</strong>, <strong>Open Bookmark in Vortyra</strong>, <strong>Open Bookmark in Vortyra Tab</strong> and <strong>Delete Vortyra Bookmarks</strong> (asks first).</li>
+        <li><strong>Save Page to Reading List</strong>.</li>
+        <li><strong>Open Last Matching History Page</strong>, <strong>Open History Page in Vortyra</strong>, <strong>Get Recorded Web Searches</strong> and <strong>Clear Vortyra History</strong> (asks first).</li>
+      </ul>
+
+      <h3>Export and download</h3>
+      <ul>
+        <li><strong>Export Page as PDF</strong>, <strong>Capture Page Screenshot</strong> and <strong>Copy Page Title and URL</strong>.</li>
+        <li><strong>Download URL in Vortyra</strong> and <strong>Download Direct Page Video</strong>.</li>
+      </ul>
 
       <h3>Ideas to build</h3>
       <ul class="guide-examples">
@@ -200,8 +281,9 @@
         <li><strong>Save and summarize:</strong> on the Action button, <em>Summarize Current Page</em> followed by <em>Save Page to Reading List</em>.</li>
         <li><strong>Daily page check:</strong> an automation runs <em>Check Watched Pages</em> every morning and shows which pages changed.</li>
         <li><strong>Weekend research:</strong> <em>Research a Topic</em> with “Ask Each Time”, then <em>Save File</em> to put the PDF in iCloud Drive.</li>
+        <li><strong>Find on page by voice:</strong> a shortcut named “Find on page” with <em>Find Text on Page</em> set to “Ask Each Time”.</li>
       </ul>
-      <p>Results show as a card in Shortcuts and Siri with <strong>Open in Vortyra</strong> and <strong>Copy Result</strong> buttons.</p>
+      <p>Results show as a card in Shortcuts and Siri with <strong>Open in Vortyra</strong> and <strong>Copy Result</strong> buttons. Most actions need Vortyra open with a regular (non-private) tab, and some ask you to unlock the device first.</p>
 
       <h2 id="siri">Siri</h2>
       <p>Say these phrases as written:</p>
