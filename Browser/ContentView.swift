@@ -71,6 +71,12 @@ enum BrowserExternalNavigationPolicy {
         guard let scheme = url?.scheme?.lowercased() else { return false }
         return scheme == "x" || scheme == "twitter"
     }
+
+    /// Widget and control links are for the system only. A web page that navigates to one is ignored.
+    static func shouldCancelWidgetControlLink(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return AgentControlURLParser.isControlURL(url)
+    }
 }
 
 enum AIPanelDismissalPolicy {
@@ -4104,6 +4110,9 @@ struct ContentView: View {
         .onReceive(agentTaskObserver.notifications) {
             checkForPendingAgentTasks()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .savedAgentTasksDidChange)) { _ in
+            AgentWidgetReloader.reloadAll()
+        }
         .onOpenURL { url in
             handleIncomingURL(url)
         }
@@ -5185,6 +5194,10 @@ struct ContentView: View {
             }
             return
         }
+        if AgentControlURLParser.isControlURL(url) {
+            handleControlURL(url)
+            return
+        }
         guard url.scheme?.lowercased() == shareAppURLScheme else {
             return
         }
@@ -5200,6 +5213,54 @@ struct ContentView: View {
         } else {
             checkForSharedURL()
         }
+    }
+
+    /// Widget and control links: a private tab, the clipboard search, or one saved task.
+    private func handleControlURL(_ url: URL) {
+        do {
+            guard let action = try AgentControlURLParser.parse(url) else { return }
+            switch action {
+            case .privateTab:
+                openIncognitoTab()
+            case .searchClipboard:
+                fillOmniboxFromClipboard()
+            case .savedTask(let taskID):
+                try queueSavedTaskFromControl(taskID)
+            }
+        } catch {
+            showPageStatus(error.localizedDescription, autoHide: false)
+        }
+    }
+
+    /// Puts the clipboard text into the address field and focuses it. The text is never submitted here.
+    private func fillOmniboxFromClipboard() {
+        guard let text = UIPasteboard.general.string?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else {
+            showPageStatus(AgentControlURLParser.emptyClipboardMessage)
+            return
+        }
+        guard BrowserIntentShareParser.isValidSearchText(text) else {
+            showPageStatus(AgentControlURLParser.unsearchableClipboardMessage, autoHide: false)
+            return
+        }
+        if !vm.tabs.contains(where: { $0.id == vm.selectedTabID }) {
+            vm.addTabBlank()
+        }
+        guard let tab = vm.tabs.first(where: { $0.id == vm.selectedTabID }) else { return }
+        tab.address = text
+        expandToolbar(focusOmnibox: true)
+    }
+
+    /// Queues one saved task through the same path as Run Saved Browser Task. Approvals still apply when it runs.
+    private func queueSavedTaskFromControl(_ taskID: UUID) throws {
+        guard let savedTask = try AgentTaskIntentRuntime.savedTask(id: taskID) else {
+            showPageStatus(AgentControlURLParser.missingSavedTaskMessage, autoHide: false)
+            return
+        }
+        try AgentTaskIntentRuntime.enqueue(AgentControlURLParser.pendingRequest(for: savedTask))
+        showPageStatus("Browser task queued.")
+        revealAgentTaskSidebar()
+        checkForPendingAgentTasks()
     }
 
     /// An exported bookmarks file opened with "Open in Vortex" from Files, AirDrop or Mail.
@@ -9842,6 +9903,11 @@ struct ContentView: View {
 
                     if BrowserExternalNavigationPolicy.shouldCancelXAppDeepLink(url) {
                         print("Blocked X app deep link: \(browserURLForLog(url))")
+                        decisionHandler(.cancel)
+                        return
+                    }
+
+                    if BrowserExternalNavigationPolicy.shouldCancelWidgetControlLink(url) {
                         decisionHandler(.cancel)
                         return
                     }

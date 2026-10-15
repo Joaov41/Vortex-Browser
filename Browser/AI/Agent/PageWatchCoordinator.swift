@@ -109,7 +109,7 @@ final class PageWatchCoordinator {
     func createWatch(_ watch: PageWatch) throws {
         let store = try storeProvider()
         try store.addWatch(watch)
-        scheduler(try? nextBackgroundRefreshDate())
+        watchesDidChange()
     }
 
     /// Changes the editable fields of a stored watch. Its baseline is kept unless the checked content changes
@@ -137,14 +137,20 @@ final class PageWatchCoordinator {
             watch.lastError = nil
         }
         try store.updateWatch(watch)
-        scheduler(try? nextBackgroundRefreshDate())
+        watchesDidChange()
         return watch
     }
 
     func deleteWatch(id: UUID) throws {
         let store = try storeProvider()
         try store.deleteWatch(id: id)
+        watchesDidChange()
+    }
+
+    /// Every watch-list change goes through here: it refreshes the background schedule and the widgets that show watches.
+    private func watchesDidChange() {
         scheduler(try? nextBackgroundRefreshDate())
+        AgentWidgetReloader.reloadAll()
     }
 
     /// Asks for notification permission the first time a watch with notifications on is saved.
@@ -189,7 +195,7 @@ final class PageWatchCoordinator {
                 break
             }
         }
-        scheduler(try? nextBackgroundRefreshDate())
+        watchesDidChange()
         return summary
     }
 
@@ -204,7 +210,9 @@ final class PageWatchCoordinator {
         try store.load()
         guard let watch = store.watches.first(where: { $0.id == id }) else { return .missing }
         guard !inFlight.contains(id) else { return .skipped("This page is already being checked.") }
-        return await check(watch: watch, mode: .foreground, timeout: PageWatchChecker.defaultTimeout, store: store)
+        let result = await check(watch: watch, mode: .foreground, timeout: PageWatchChecker.defaultTimeout, store: store)
+        AgentWidgetReloader.reloadAll()
+        return result
     }
 
     /// Foreground check of all due watches, at most once per 15 minutes. Pass `isIdle` false while an agent run is active.

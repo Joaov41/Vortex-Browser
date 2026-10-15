@@ -170,6 +170,82 @@ enum AgentRunURLParser {
     }
 }
 
+enum AgentControlURLParseError: Error, Equatable, LocalizedError {
+    case malformedControlURL
+    case missingSavedTaskID
+
+    var errorDescription: String? {
+        switch self {
+        case .malformedControlURL: return "The Vortyra control link is malformed."
+        case .missingSavedTaskID: return "This control has no saved task. Edit the control and choose one."
+        }
+    }
+}
+
+/// Parses the links that Home Screen widgets and Control Center controls open:
+/// `webmebrowser://private-tab` and `webmebrowser://search-clipboard` (no query), and
+/// `webmebrowser://saved-task?id=<UUID>` (exactly one UUID `id`). Any other shape on these hosts is rejected.
+enum AgentControlURLParser {
+    enum Action: Equatable, Sendable {
+        case privateTab
+        case searchClipboard
+        case savedTask(UUID)
+    }
+
+    static let privateTabHost = "private-tab"
+    static let searchClipboardHost = "search-clipboard"
+    static let savedTaskHost = "saved-task"
+    static let idParameter = "id"
+    static let missingSavedTaskMessage = "That saved task no longer exists."
+    static let emptyClipboardMessage = "The clipboard has no text to search."
+    static let unsearchableClipboardMessage = "The clipboard text is too long to search."
+
+    /// True for every URL on one of the three control hosts, well formed or not.
+    static func isControlURL(_ url: URL) -> Bool {
+        guard url.scheme?.lowercased() == AgentIncomingURLRouter.appScheme,
+              let host = url.host?.lowercased() else { return false }
+        return host == privateTabHost || host == searchClipboardHost || host == savedTaskHost
+    }
+
+    /// Returns nil for every URL outside the three control hosts. Throws for a control link with any other shape.
+    static func parse(_ url: URL) throws -> Action? {
+        guard isControlURL(url), let host = url.host?.lowercased() else { return nil }
+        guard url.path.isEmpty || url.path == "/",
+              url.user == nil, url.password == nil, url.port == nil,
+              url.fragment == nil,
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.user == nil, components.password == nil, components.port == nil,
+              components.fragment == nil else {
+            throw AgentControlURLParseError.malformedControlURL
+        }
+
+        switch host {
+        case privateTabHost:
+            guard components.percentEncodedQuery == nil else { throw AgentControlURLParseError.malformedControlURL }
+            return .privateTab
+        case searchClipboardHost:
+            guard components.percentEncodedQuery == nil else { throw AgentControlURLParseError.malformedControlURL }
+            return .searchClipboard
+        default:
+            guard components.percentEncodedQuery != nil else { throw AgentControlURLParseError.missingSavedTaskID }
+            guard (components.percentEncodedQuery ?? "").components(separatedBy: "&").count == 1,
+                  let items = components.queryItems,
+                  items.count == 1,
+                  items[0].name == idParameter,
+                  let value = items[0].value,
+                  let taskID = UUID(uuidString: value) else {
+                throw AgentControlURLParseError.malformedControlURL
+            }
+            return .savedTask(taskID)
+        }
+    }
+
+    /// The queued request for a saved task. It matches what Run Saved Browser Task enqueues.
+    static func pendingRequest(for task: SavedAgentTask) -> PendingAgentTask {
+        PendingAgentTask(task: task.task, startURL: task.startURL, savedTaskID: task.id)
+    }
+}
+
 /// A pure decision seam that preserves the app's existing URL-dispatch precedence.
 /// ContentView handles `.agentTask` and `.run` in its own URL handler; these cases are the testable decision for each URL.
 enum AgentIncomingURLRoute: Equatable {
@@ -179,6 +255,9 @@ enum AgentIncomingURLRoute: Equatable {
     case agentTask(PendingAgentTask)
     case run(UUID)
     case pageWatch(UUID)
+    case privateTab
+    case searchClipboard
+    case savedTask(UUID)
     case sharedText(String)
     case sharedPayload
     case unhandled
@@ -202,6 +281,13 @@ enum AgentIncomingURLRouter {
         }
         if let watchID = try PageWatchURLParser.parse(url) {
             return .pageWatch(watchID)
+        }
+        if let control = try AgentControlURLParser.parse(url) {
+            switch control {
+            case .privateTab: return .privateTab
+            case .searchClipboard: return .searchClipboard
+            case .savedTask(let id): return .savedTask(id)
+            }
         }
         let text = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
             .first(where: { $0.name == "text" })?.value
