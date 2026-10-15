@@ -26,6 +26,33 @@ final class AIResponseCanvasTests: XCTestCase {
         )
     }
 
+    func testAIConversationContextIsPreservedOnlyOutsidePrivateBrowsing() {
+        XCTAssertTrue(
+            AIConversationContextPolicy.preservesConversation(
+                previousContextWasPrivate: false,
+                nextContextIsPrivate: false
+            )
+        )
+        XCTAssertFalse(
+            AIConversationContextPolicy.preservesConversation(
+                previousContextWasPrivate: true,
+                nextContextIsPrivate: false
+            )
+        )
+        XCTAssertFalse(
+            AIConversationContextPolicy.preservesConversation(
+                previousContextWasPrivate: false,
+                nextContextIsPrivate: true
+            )
+        )
+        XCTAssertFalse(
+            AIConversationContextPolicy.preservesConversation(
+                previousContextWasPrivate: true,
+                nextContextIsPrivate: true
+            )
+        )
+    }
+
     func testParsesMarkdownTableWithAlignmentAndEscapedPipe() {
         let document = AIResponseDocumentParser.parse(
             """

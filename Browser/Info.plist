@@ -73,6 +73,8 @@
 	</dict>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Vortyra can connect to local websites you choose to open.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Vortyra uses Face ID or your device passcode to protect your autofill profile.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

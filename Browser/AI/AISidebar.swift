@@ -27,11 +27,31 @@ struct AISidebar: View {
     var contextStatusText: String? = nil
     /// Returns true when the parent has dispatched the resolved summary. A
     /// false result preserves the standalone sidebar enqueue behavior.
-    var onSummaryExtraction: ((PageContentExtractor.ExtractedPageContent, SummaryLength) -> Bool)? = nil
+    var onSummaryExtraction: ((String, SummaryLength, BrowserAgentPageContextBinding?, PageContentExtractor.ExtractedPageContent?) -> Bool)? = nil
     var onContextSelected: ((UUID) -> Void)? = nil
     var onClearConversation: (() -> Void)? = nil
     var onInputFocusChanged: ((Bool) -> Void)? = nil
     var isPinned: Binding<Bool>? = nil
+    /// Lets the browser agent open a new tab next to the one it is working in.
+    var onAgentOpenTab: BrowserAgentController.TabOpener? = nil
+    var onLookupOpenSource: ((BrowserLookupSource) -> Bool)? = nil
+    /// Lets the parent clear model-facing page context before the first saved-profile write.
+    var onAgentAutofillQuarantine: BrowserAgentController.AutofillQuarantineHandler? = nil
+    /// Optional additive adapter. If the starting context is unsupported, legacy tools still run.
+    var browserAgentAdapter: BrowserAgentBrowserAdapter? = nil
+    /// E2 task-library hooks are window-local; they never use the app-wide handoff queue.
+    var agentTaskStoreProvider: (@MainActor @Sendable () throws -> AgentTaskStore)? = nil
+    var onAgentTaskLaunch: ((AgentTaskLaunchRequest) -> Void)? = nil
+    var pendingAgentTask: PendingAgentTask? = nil
+    var onPendingAgentTaskStarted: ((UUID) -> Void)? = nil
+    var onPendingAgentTaskDispatchCheck: ((UUID, WKWebView) -> Bool)? = nil
+    var onPendingAgentTaskRejected: ((UUID) -> Void)? = nil
+    var agentTaskStatusMessage: String? = nil
+    var isAgentTaskSidebarVisible: Bool = true
+    var browserActionIsBusy: Bool = false
+    var onAgentReadinessChanged: ((Bool, Bool, Bool) -> Void)? = nil
+    var onAgentRunCompleted: ((BrowserAgentController.CompletionSnapshot, UUID) -> Void)? = nil
+    var onAgentNeedsAttention: (() -> Void)? = nil
 
     @State private var input: String = ""
     @AppStorage("customPrompts") private var customPromptsData: String = "[]"
@@ -40,6 +60,7 @@ struct AISidebar: View {
     @State private var newCustomPrompt: String = ""
     @FocusState private var isInputFocused: Bool
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
     @ScaledMetric(relativeTo: .body) private var scaledAssistantReplyFontSize: CGFloat = 16
     @ScaledMetric(relativeTo: .caption) private var scaledSectionLabelFontSize: CGFloat = 13
     @ScaledMetric(relativeTo: .body) private var scaledInputFontSize: CGFloat = 18
@@ -47,6 +68,31 @@ struct AISidebar: View {
     @State private var shouldAutoCollapseAfterNextReply = false
     @State private var showFullConversation = false
     @State private var presentedResponseCanvas: AIResponseCanvasPresentation?
+    @StateObject private var agent = BrowserAgentController()
+    @AppStorage("browserAgentMode") private var isAgentMode = false
+    @State private var agentTaskLibraryPresentation: AgentTaskLibraryPresentation?
+    @State private var latestAgentCompletion: AgentCompletionUI?
+    @State private var savedAgentReplyIDs: Set<UUID> = []
+    @State private var attemptedPendingAgentTaskID: UUID?
+    @State private var isSidebarVisible = false
+
+    private struct AgentCompletionUI: Identifiable {
+        let snapshot: BrowserAgentController.CompletionSnapshot
+        let replyID: UUID
+        var id: UUID { replyID }
+        var saveAssociation: AgentTaskReplySaveAssociation {
+            AgentTaskReplySaveAssociation(
+                replyID: replyID,
+                task: snapshot.task,
+                startURL: snapshot.startURL
+            )
+        }
+    }
+
+    /// Route actions through the chosen engine only for the three supported agent backends.
+    private var agentModeActive: Bool {
+        isAgentMode && agent.canOfferAgent(for: aiService.backend)
+    }
 
     private var mlxAvailable: Bool {
         MLXLocalService.isAvailable()
@@ -71,6 +117,14 @@ struct AISidebar: View {
         default:
             return backend.displayName
         }
+    }
+
+    static func canStartInteractiveAction(
+        browserActionIsBusy: Bool,
+        aiIsProcessing: Bool,
+        agentIsRunning: Bool
+    ) -> Bool {
+        !browserActionIsBusy && !aiIsProcessing && !agentIsRunning
     }
 
     private var isDark: Bool {
@@ -144,6 +198,10 @@ struct AISidebar: View {
         return aiService.backend.displayName
     }
 
+    private var hasConversationContent: Bool {
+        hasCompletedAssistantReply || agent.isRunning
+    }
+
     private var hasCompletedAssistantReply: Bool {
         aiService.messages.contains {
             $0.role == .assistant && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -154,14 +212,14 @@ struct AISidebar: View {
         if isIPadInputFocused {
             return false
         }
-        if !hasCompletedAssistantReply {
+        if !hasConversationContent {
             return true
         }
         return areControlsExpanded
     }
 
     private var canToggleControlsVisibility: Bool {
-        hasCompletedAssistantReply && !aiService.isProcessing
+        hasConversationContent && !aiService.isProcessing
     }
 
     private let panelCornerRadius: CGFloat = 22
@@ -171,6 +229,7 @@ struct AISidebar: View {
         let title: String
         let subtitle: String?
         let webView: WKWebView?
+        let isPrivate: Bool
     }
 
     private var currentContext: ContextOption? {
@@ -183,6 +242,13 @@ struct AISidebar: View {
 
     private var currentWebView: WKWebView? {
         currentContext?.webView
+    }
+
+    private var currentPageContextBinding: BrowserAgentPageContextBinding? {
+        guard let context = currentContext,
+              let webView = context.webView,
+              let url = webView.url else { return nil }
+        return BrowserAgentPageContextBinding(tabID: context.id, webView: webView, url: url)
     }
 
     private var contextOptionIDs: [UUID] {
@@ -215,7 +281,15 @@ struct AISidebar: View {
                     .background(Color.white.opacity(isDark ? 0.15 : 0.2))
             }
 
-            messagesSection
+            if agent.isRunning {
+                BrowserAgentSidebarSection(
+                    agent: agent,
+                    isDark: isDark,
+                    fontSize: assistantReplyFontSize
+                )
+            } else {
+                messagesSection
+            }
 
             Divider()
                 .background(Color.white.opacity(isDark ? 0.15 : 0.2))
@@ -238,8 +312,55 @@ struct AISidebar: View {
             y: 6
         )
         .onAppear {
+            isSidebarVisible = true
             syncContextSelection()
             loadCustomPrompts()
+            publishAgentReadiness(isReady: true)
+            startPendingAgentTaskIfPossible()
+        }
+        .onDisappear {
+            isSidebarVisible = false
+            publishAgentReadiness(isReady: false)
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                publishAgentReadiness(isReady: true)
+                startPendingAgentTaskIfPossible()
+            } else {
+                publishAgentReadiness(isReady: false)
+            }
+        }
+        .onChange(of: isAgentTaskSidebarVisible) { _, isVisible in
+            publishAgentReadiness(isReady: isVisible)
+            if isVisible { startPendingAgentTaskIfPossible() }
+            if !isVisible { isInputFocused = false }
+        }
+        .onChange(of: agent.isRunning) { _, _ in
+            publishAgentReadiness(isReady: true)
+            startPendingAgentTaskIfPossible()
+        }
+        .onChange(of: agent.pendingConfirmation?.id) { _, id in
+            if id != nil, !isAgentTaskSidebarVisible { onAgentNeedsAttention?() }
+        }
+        .onChange(of: agent.pendingQuestion?.id) { _, id in
+            if id != nil, !isAgentTaskSidebarVisible { onAgentNeedsAttention?() }
+        }
+        .onChange(of: aiService.isProcessing) { _, _ in
+            publishAgentReadiness(isReady: true)
+            startPendingAgentTaskIfPossible()
+        }
+        .onChange(of: aiService.backend) { _, _ in
+            cancelAppleInformationRunIfNeeded()
+            publishAgentReadiness(isReady: true)
+            startPendingAgentTaskIfPossible()
+        }
+        .onChange(of: currentContext?.isPrivate) { _, _ in
+            cancelAppleInformationRunIfNeeded()
+        }
+        .onChange(of: pendingAgentTask?.id) { _, _ in
+            attemptedPendingAgentTaskID = nil
+            publishAgentReadiness(isReady: true)
+            startPendingAgentTaskIfPossible()
         }
         .onChange(of: contextOptionIDs) { _, _ in
             syncContextSelection()
@@ -261,11 +382,25 @@ struct AISidebar: View {
                 messages: aiService.archiveMessages,
                 isDark: isDark,
                 assistantReplyFontSize: assistantReplyFontSize,
-                conversationLineSpacing: conversationLineSpacing
+                conversationLineSpacing: conversationLineSpacing,
+                onOpenLookupSource: openLookupSource
             )
         }
+        .sheet(item: $agentTaskLibraryPresentation) { presentation in
+            if let agentTaskStoreProvider {
+                let storeProvider: @MainActor @Sendable () throws -> AgentTaskStore = {
+                    try agentTaskStoreProvider()
+                }
+                AgentTaskLibrarySheet(
+                    storeProvider: storeProvider,
+                    initialDraft: presentation.initialDraft,
+                    onRun: { request in onAgentTaskLaunch?(request) },
+                    onSavedReply: { id in savedAgentReplyIDs.insert(id) }
+                )
+            }
+        }
         .fullScreenCover(item: $presentedResponseCanvas) { presentation in
-            AIResponseCanvas(presentation: presentation)
+            AIResponseCanvas(presentation: presentation, onOpenSource: openLookupSource)
         }
         .onReceive(aiService.$isProcessing.removeDuplicates()) { isProcessing in
             if isProcessing {
@@ -288,6 +423,9 @@ struct AISidebar: View {
                 Text(backendLabel)
                     .font(.caption2.weight(.semibold))
                     .foregroundColor(secondaryText)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .minimumScaleFactor(0.85)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(
@@ -328,6 +466,20 @@ struct AISidebar: View {
                     .frame(width: 44, height: 44)
                     .accessibilityLabel("View full conversation")
                 }
+                if agentTaskStoreProvider != nil {
+                    Button {
+                        agentTaskLibraryPresentation = .browse(UUID())
+                    } label: {
+                        Image(systemName: "checklist")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(secondaryText)
+                            .padding(6)
+                            .background(Circle().fill(iconBackground))
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel("Saved agent tasks and history")
+                }
                 if let isPinned {
                     Button {
                         isPinned.wrappedValue.toggle()
@@ -358,7 +510,7 @@ struct AISidebar: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 44, height: 44)
-                .accessibilityLabel(aiService.isProcessing ? "Cancel AI task and close" : "Close AI assistant")
+                .accessibilityLabel("Close AI assistant")
             }
         }
     }
@@ -366,6 +518,9 @@ struct AISidebar: View {
     private var controlsSection: some View {
         VStack(spacing: 12) {
             modelRow
+            if agent.canOfferAgent(for: aiService.backend) {
+                agentModeRow
+            }
             if contextOptions.count > 1 {
                 contextPickerRow
             }
@@ -440,6 +595,7 @@ struct AISidebar: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityLabel("Model")
                     .accessibilityValue(modelMenuTitle(for: aiService.backend))
+                    .disabled(agent.isRunning)
                 }
             } else {
                 HStack(spacing: 10) {
@@ -460,6 +616,7 @@ struct AISidebar: View {
                         }
                     }
                     .pickerStyle(.menu)
+                    .disabled(agent.isRunning)
                 }
             }
         }
@@ -469,9 +626,33 @@ struct AISidebar: View {
         backendRow
     }
 
+    private var agentModeRow: some View {
+        rowContainer {
+            Toggle(isOn: $isAgentMode) {
+                HStack(spacing: 10) {
+                    iconContainer {
+                        Image(systemName: "cursorarrow.click.2")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(primaryText)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Agent mode")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(primaryText)
+                        Text(agent.status(for: aiService.backend))
+                            .font(.caption2)
+                            .foregroundColor(secondaryText)
+                    }
+                }
+            }
+            .disabled(agent.isRunning)
+        }
+    }
+
     private var summarizeRow: some View {
         Menu {
             Button {
+                guard !browserActionIsBusy else { return }
                 if aiService.backend.isWebProvider {
                     sendSidebarPrompt(
                         "Provide a brief 2-paragraph summary of the following text. First paragraph: main topic. Second paragraph: key points. Be concise:",
@@ -481,10 +662,12 @@ struct AISidebar: View {
                 }
                 Task {
                     if let selection = trimmedSelectionText {
+                        let binding = currentPageContextBinding
                         await MainActor.run {
                             aiService.prepareForNewContext(currentWebView?.url)
                         }
-                        aiService.enqueueSummary(selection, length: .short)
+                        let handled = onSummaryExtraction?(selection, .short, binding, nil) ?? false
+                        if !handled { aiService.enqueueSummary(selection, length: .short) }
                         return
                     }
                     guard let webView = currentWebView else {
@@ -497,12 +680,13 @@ struct AISidebar: View {
                     await MainActor.run {
                         aiService.prepareForNewContext(webView.url)
                     }
+                    let binding = currentPageContextBinding
                     let extractedContent = await PageContentExtractor.extractContent(from: webView, url: webView.url)
                     if let extractedContent {
                         let content = extractedContent.formattedForAIContext
                         print("📄 Extracted content length: \(content.count) characters")
                         let handled = await MainActor.run {
-                            onSummaryExtraction?(extractedContent, .short) ?? false
+                            onSummaryExtraction?(content, .short, binding, extractedContent) ?? false
                         }
                         if !handled {
                             aiService.enqueueSummary(content, length: .short)
@@ -519,6 +703,7 @@ struct AISidebar: View {
             }
 
             Button {
+                guard !browserActionIsBusy else { return }
                 if aiService.backend.isWebProvider {
                     sendSidebarPrompt(
                         "Summarize the following text clearly, highlighting key themes and points. Provide a detailed analysis:",
@@ -528,10 +713,12 @@ struct AISidebar: View {
                 }
                 Task {
                     if let selection = trimmedSelectionText {
+                        let binding = currentPageContextBinding
                         await MainActor.run {
                             aiService.prepareForNewContext(currentWebView?.url)
                         }
-                        aiService.enqueueSummary(selection, length: .long)
+                        let handled = onSummaryExtraction?(selection, .long, binding, nil) ?? false
+                        if !handled { aiService.enqueueSummary(selection, length: .long) }
                         return
                     }
                     guard let webView = currentWebView else {
@@ -544,12 +731,13 @@ struct AISidebar: View {
                     await MainActor.run {
                         aiService.prepareForNewContext(webView.url)
                     }
+                    let binding = currentPageContextBinding
                     let extractedContent = await PageContentExtractor.extractContent(from: webView, url: webView.url)
                     if let extractedContent {
                         let content = extractedContent.formattedForAIContext
                         print("📄 Extracted content length: \(content.count) characters")
                         let handled = await MainActor.run {
-                            onSummaryExtraction?(extractedContent, .long) ?? false
+                            onSummaryExtraction?(content, .long, binding, extractedContent) ?? false
                         }
                         if !handled {
                             aiService.enqueueSummary(content, length: .long)
@@ -582,7 +770,7 @@ struct AISidebar: View {
                 }
             }
         }
-        .disabled(aiService.isProcessing)
+        .disabled(aiService.isProcessing || browserActionIsBusy)
     }
 
     @ViewBuilder
@@ -655,7 +843,7 @@ struct AISidebar: View {
                     .padding(.trailing, 28)
                 }
             }
-            .disabled(aiService.isProcessing)
+            .disabled(aiService.isProcessing || browserActionIsBusy)
             HStack {
                 Spacer()
                 Button {
@@ -762,24 +950,62 @@ struct AISidebar: View {
     }
 
     private var messagesSection: some View {
-        AISidebarMessagesSection(
-            messages: displayedMessages,
-            isProcessing: aiService.isProcessing,
-            queuedCount: aiService.queuedCount,
-            streamState: aiService.streamState,
-            isDark: isDark,
-            assistantReplyFontSize: assistantReplyFontSize,
-            conversationLineSpacing: conversationLineSpacing,
-            sectionLabelFontSize: sectionLabelFontSize,
-            trimmedSelectionText: trimmedSelectionText,
-            onClearConversation: {
-                onClearConversation?() ?? aiService.reset()
-            },
-            showsSlowRedditProcessingNotice: aiService.isSlowRedditProcessingNoticeVisible,
-            onOpenResponseCanvas: { presentation in
-                presentedResponseCanvas = presentation
+        VStack(spacing: 8) {
+            if let agentTaskStatusMessage {
+                rowContainer {
+                    Label(agentTaskStatusMessage, systemImage: "clock")
+                        .font(.caption.weight(.medium))
+                        .foregroundColor(secondaryText)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("agentTaskWaitingStatus")
+                }
             }
-        )
+            AISidebarMessagesSection(
+                messages: displayedMessages,
+                isProcessing: aiService.isProcessing,
+                queuedCount: aiService.queuedCount,
+                streamState: aiService.streamState,
+                isDark: isDark,
+                assistantReplyFontSize: assistantReplyFontSize,
+                conversationLineSpacing: conversationLineSpacing,
+                sectionLabelFontSize: sectionLabelFontSize,
+                trimmedSelectionText: trimmedSelectionText,
+                showsEmptyPrompt: !agentModeActive,
+                onClearConversation: {
+                    cancelAppleInformationRunIfNeeded()
+                    onClearConversation?() ?? aiService.reset()
+                },
+                saveAgentReplyID: agentTaskReplyEligible?.replyID,
+                savedAgentReplyIDs: savedAgentReplyIDs,
+                onSaveAgentReply: { replyID in
+                    guard let completion = agentTaskReplyEligible,
+                          completion.replyID == replyID else { return }
+                    beginSaveAgentTask(completion, displayedReplyID: replyID)
+                },
+                showsSlowRedditProcessingNotice: aiService.isSlowRedditProcessingNoticeVisible,
+                onOpenResponseCanvas: { presentation in
+                    presentedResponseCanvas = presentation
+                },
+                onOpenLookupSource: openLookupSource
+            )
+
+        }
+    }
+
+    private var agentTaskReplyEligible: AgentCompletionUI? {
+        guard let completion = latestAgentCompletion,
+              !completion.snapshot.isPrivate,
+              completion.snapshot.sources.isEmpty,
+              completion.snapshot.preset != "lookup",
+              completion.snapshot.preset != "automatic" || completion.snapshot.usedBrowserPath,
+              agentTaskStoreProvider != nil,
+              aiService.messages.contains(where: { $0.id == completion.replyID && $0.role == .assistant }) else { return nil }
+        return completion
+    }
+
+    private func beginSaveAgentTask(_ completion: AgentCompletionUI, displayedReplyID: UUID) {
+        guard let draft = completion.saveAssociation.draft(for: displayedReplyID) else { return }
+        agentTaskLibraryPresentation = .save(draft)
     }
 
     private var displayedMessages: [ChatMessage] {
@@ -798,6 +1024,19 @@ struct AISidebar: View {
     }
 
     private var inputRow: some View {
+        VStack(spacing: 6) {
+            if browserActionIsBusy {
+                Text("Finishing a Siri or Shortcuts action\u{2026}")
+                    .font(.caption)
+                    .foregroundColor(secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+            }
+            inputRowContent
+        }
+    }
+
+    private var inputRowContent: some View {
         HStack(spacing: 10) {
             Image(systemName: "sparkles")
                 .font(.footnote.weight(.semibold))
@@ -810,7 +1049,7 @@ struct AISidebar: View {
                     isInteractive: false
                 )
 
-            TextField("Ask anything...", text: $input)
+            TextField(agentModeActive ? "Ask, or tell it what to do…" : "Ask anything...", text: $input)
                 .textInputAutocapitalization(.never)
                 .disableAutocorrection(true)
                 .keyboardType(.asciiCapable)
@@ -819,7 +1058,7 @@ struct AISidebar: View {
                 .browserAskAIInputSafetyModifiers()
                 .focused($isInputFocused)
                 .onSubmit { send() }
-                .disabled(aiService.isProcessing)
+                .disabled(aiService.isProcessing || agent.isRunning || browserActionIsBusy)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .frame(maxWidth: .infinity)
@@ -829,7 +1068,23 @@ struct AISidebar: View {
                     strokeOpacity: isDark ? 0.16 : 0.35
                 )
 
-            if !input.isEmpty {
+            if agent.isRunning {
+                Button {
+                    agent.stop()
+                } label: {
+                    Image(systemName: "stop.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(primaryText)
+                        .frame(width: 44, height: 44)
+                        .glassEffectCompat(
+                            in: Circle(),
+                            material: .ultraThinMaterial,
+                            strokeOpacity: isDark ? 0.16 : 0.3
+                        )
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Stop agent")
+            } else if !input.isEmpty {
                 Button {
                     send()
                 } label: {
@@ -844,7 +1099,7 @@ struct AISidebar: View {
                         )
                 }
                 .buttonStyle(.plain)
-                .disabled(aiService.isProcessing)
+                .disabled(aiService.isProcessing || browserActionIsBusy)
                 .accessibilityLabel("Send message")
             }
         }
@@ -926,6 +1181,7 @@ struct AISidebar: View {
     }
 
     private func sendSidebarPrompt(_ prompt: String, hideFromVisibleConversation: Bool = false) {
+        guard !browserActionIsBusy else { return }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         if hideFromVisibleConversation {
@@ -935,12 +1191,37 @@ struct AISidebar: View {
     }
 
     private func send() {
+        guard !browserActionIsBusy else { return }
         guard !aiService.isProcessing else {
             browserAISidebarLog("send blocked isProcessing=true queued=\(aiService.queuedCount) storedMessages=\(aiService.messages.count)")
             return
         }
-        let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        if agentModeActive {
+            if let mode = BrowserAppleWebLookup.requestMode(text: text, backend: aiService.backend) {
+                switch mode {
+                case .webLookup(let task):
+                    startAgent(task: task, preset: .webLookup)
+                    return
+                case .automatic(let task):
+                    startAgent(task: task, preset: .automaticApple)
+                    return
+                case .legacyRouter:
+                    break
+                }
+            }
+            switch BrowserAgentRouter.route(text) {
+            case .agent(let task):
+                startAgent(task: task)
+                return
+            case .research(let task):
+                startAgent(task: task, preset: .research)
+                return
+            case .chat(let question):
+                text = question
+            }
+        }
         browserAISidebarLog("send start chars=\(text.count) storedMessages=\(aiService.messages.count) displayedMessages=\(displayedMessages.count) backend=\(aiService.backend.rawValue)")
         input = ""
         Task { @MainActor in
@@ -948,6 +1229,137 @@ struct AISidebar: View {
         }
     }
 
+    private func publishAgentReadiness(isReady: Bool) {
+        let visible = isReady
+            && isSidebarVisible
+            && isAgentTaskSidebarVisible
+            && scenePhase == .active
+        onAgentReadinessChanged?(
+            visible,
+            agent.isRunning || aiService.isProcessing,
+            agent.canOfferAgent(for: aiService.backend)
+        )
+    }
+
+    private func startPendingAgentTaskIfPossible() {
+        guard !browserActionIsBusy,
+              let request = pendingAgentTask,
+              attemptedPendingAgentTaskID != request.id,
+              scenePhase == .active,
+              isSidebarVisible,
+              isAgentTaskSidebarVisible,
+              !agent.isRunning,
+              !aiService.isProcessing,
+              agent.canOfferAgent(for: aiService.backend),
+              let webView = currentWebView,
+              !webView.isLoading else { return }
+        guard onPendingAgentTaskDispatchCheck?(request.id, webView) == true else {
+            attemptedPendingAgentTaskID = request.id
+            onPendingAgentTaskRejected?(request.id)
+            return
+        }
+        guard startAgent(task: request.task, savedTaskID: request.savedTaskID) else { return }
+        attemptedPendingAgentTaskID = request.id
+        onPendingAgentTaskStarted?(request.id)
+    }
+
+    @discardableResult
+    private func startAgent(
+        task: String,
+        preset: BrowserAgentController.Preset = .standard,
+        savedTaskID: UUID? = nil
+    ) -> Bool {
+        guard !browserActionIsBusy,
+              !agent.isRunning, !aiService.isProcessing,
+              agent.canOfferAgent(for: aiService.backend) else { return false }
+        guard let webView = currentWebView else {
+            aiService.appendAssistantMessage("No webpage loaded")
+            return false
+        }
+        input = ""
+        isInputFocused = false
+        withAnimation(.easeOut(duration: 0.2)) {
+            areControlsExpanded = false
+        }
+        let safeTask = BrowserAgentAutofillPrivacy.shared.redactPotentiallyTruncated(task, wasTruncated: true)
+        let service = aiService
+        var capturedSummary: String?
+        let quarantineHandler: BrowserAgentController.AutofillQuarantineHandler? = {
+            guard let parentHandler = onAgentAutofillQuarantine else { return nil }
+            let relay: BrowserAgentController.AutofillQuarantineHandler = { tabID, webView in
+                parentHandler(tabID, webView)
+            }
+            return relay
+        }()
+        agent.start(
+            task: safeTask,
+            preset: preset,
+            conversation: recentConversation.map { BrowserAgentAutofillPrivacy.shared.redactPotentiallyTruncated($0, wasTruncated: true) },
+            in: webView,
+            openTab: onAgentOpenTab,
+            browserAdapter: browserAgentAdapter,
+            backend: aiService.backend,
+            startingTabIsPrivate: currentContext?.isPrivate ?? false,
+            savedTaskID: savedTaskID,
+            onAutofillQuarantine: quarantineHandler,
+            onPageQuestion: { [onSend] question in
+                onSend(question)
+            },
+            onRunCompleted: { snapshot in
+                guard let summary = capturedSummary else { return }
+                let replyID = service.appendAgentExchange(
+                    task: safeTask,
+                    answer: BrowserAgentAutofillPrivacy.shared.redactPotentiallyTruncated(summary, wasTruncated: true),
+                    sources: snapshot.sources
+                )
+                latestAgentCompletion = AgentCompletionUI(snapshot: snapshot, replyID: replyID)
+                onAgentRunCompleted?(snapshot, replyID)
+                publishAgentReadiness(isReady: true)
+            }
+        ) { summary in
+            capturedSummary = summary
+        }
+        return true
+    }
+
+    static func lookupSourceOpenEligible(
+        _ source: BrowserLookupSource,
+        contextIsPrivate: Bool,
+        webViewDataStoreIsPersistent: Bool
+    ) -> Bool {
+        guard source.isPrivate == contextIsPrivate else { return false }
+        guard webViewDataStoreIsPersistent != contextIsPrivate else { return false }
+        return BrowserAppleWebLookup.isPublicLookupURL(source.url)
+    }
+
+    private func openLookupSource(_ source: BrowserLookupSource) {
+        guard !agent.isRunning,
+              !browserActionIsBusy,
+              !aiService.isProcessing,
+              onLookupOpenSource?(source) == true else {
+            aiService.appendAssistantMessage("That source can't be opened from this tab anymore. Return to a matching browser tab and try again.")
+            return
+        }
+    }
+
+    private func cancelAppleInformationRunIfNeeded() {
+        if agent.isAppleInformationRun {
+            agent.stop()
+        }
+    }
+
+    /// The last few visible turns, so the agent can follow up on them.
+    private var recentConversation: String? {
+        let turns = aiService.messages
+            .filter(\.showsInSidebar)
+            .suffix(6)
+            .map { message -> String in
+                let text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let clipped = text.count > 600 ? String(text.prefix(600)) + "…" : text
+                return (message.role == .user ? "User: " : "Assistant: ") + clipped
+            }
+        return turns.isEmpty ? nil : turns.joined(separator: "\n")
+    }
 }
 
 private struct AISidebarMessagesSection: View {
@@ -960,9 +1372,14 @@ private struct AISidebarMessagesSection: View {
     let conversationLineSpacing: CGFloat
     let sectionLabelFontSize: CGFloat
     let trimmedSelectionText: String?
+    let showsEmptyPrompt: Bool
     let onClearConversation: () -> Void
+    let saveAgentReplyID: UUID?
+    let savedAgentReplyIDs: Set<UUID>
+    let onSaveAgentReply: (UUID) -> Void
     let showsSlowRedditProcessingNotice: Bool
     let onOpenResponseCanvas: (AIResponseCanvasPresentation) -> Void
+    var onOpenLookupSource: ((BrowserLookupSource) -> Void)? = nil
 
     @State private var renderedStreamingResponse: String = ""
     @State private var pendingStreamingResponse: String = ""
@@ -1016,7 +1433,11 @@ private struct AISidebarMessagesSection: View {
                     isDark: isDark,
                     assistantReplyFontSize: assistantReplyFontSize,
                     conversationLineSpacing: conversationLineSpacing,
-                    onOpenResponseCanvas: onOpenResponseCanvas
+                    onOpenResponseCanvas: onOpenResponseCanvas,
+                    saveAgentReplyID: saveAgentReplyID,
+                    savedAgentReplyIDs: savedAgentReplyIDs,
+                    onSaveAgentReply: onSaveAgentReply,
+                    onOpenLookupSource: onOpenLookupSource
                 )
                 .equatable()
 
@@ -1065,7 +1486,7 @@ private struct AISidebarMessagesSection: View {
                     }
                 }
 
-                if messages.isEmpty && !isProcessing {
+                if showsEmptyPrompt && messages.isEmpty && !isProcessing {
                     Text(trimmedSelectionText == nil ? "Ask about this page..." : "Ask about this selection...")
                         .foregroundColor(secondaryText)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1216,8 +1637,21 @@ private struct AISidebarConversationArchiveSheet: View {
     let isDark: Bool
     let assistantReplyFontSize: CGFloat
     let conversationLineSpacing: CGFloat
+    var onOpenLookupSource: ((BrowserLookupSource) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var presentedResponseCanvas: AIResponseCanvasPresentation?
+
+    private var sourceOpener: ((BrowserLookupSource) -> Void)? {
+        guard onOpenLookupSource != nil else { return nil }
+        return { source in openSource(source) }
+    }
+
+    private func openSource(_ source: BrowserLookupSource) {
+        dismiss()
+        DispatchQueue.main.async {
+            onOpenLookupSource?(source)
+        }
+    }
 
     var body: some View {
         NavigationView {
@@ -1230,7 +1664,8 @@ private struct AISidebarConversationArchiveSheet: View {
                         conversationLineSpacing: conversationLineSpacing,
                         onOpenResponseCanvas: { presentation in
                             presentedResponseCanvas = presentation
-                        }
+                        },
+                        onOpenLookupSource: sourceOpener
                     )
                 }
                 .padding(16)
@@ -1246,7 +1681,7 @@ private struct AISidebarConversationArchiveSheet: View {
             }
         }
         .fullScreenCover(item: $presentedResponseCanvas) { presentation in
-            AIResponseCanvas(presentation: presentation)
+            AIResponseCanvas(presentation: presentation, onOpenSource: sourceOpener)
         }
     }
 }
@@ -1257,11 +1692,17 @@ private struct AISidebarConversationHistoryView: View, Equatable {
     let assistantReplyFontSize: CGFloat
     let conversationLineSpacing: CGFloat
     let onOpenResponseCanvas: (AIResponseCanvasPresentation) -> Void
+    var saveAgentReplyID: UUID? = nil
+    var savedAgentReplyIDs: Set<UUID> = []
+    var onSaveAgentReply: ((UUID) -> Void)? = nil
+    var onOpenLookupSource: ((BrowserLookupSource) -> Void)? = nil
 
     static func == (lhs: Self, rhs: Self) -> Bool {
         guard lhs.isDark == rhs.isDark,
               lhs.assistantReplyFontSize == rhs.assistantReplyFontSize,
-              lhs.conversationLineSpacing == rhs.conversationLineSpacing else {
+              lhs.conversationLineSpacing == rhs.conversationLineSpacing,
+              lhs.saveAgentReplyID == rhs.saveAgentReplyID,
+              lhs.savedAgentReplyIDs == rhs.savedAgentReplyIDs else {
             return false
         }
         guard lhs.messages.count == rhs.messages.count else { return false }
@@ -1315,6 +1756,7 @@ private struct AISidebarConversationHistoryView: View, Equatable {
                             color: primaryText
                         )
                             .fixedSize(horizontal: false, vertical: true)
+                        AIResponseSourceCards(sources: msg.sources, onOpenSource: onOpenLookupSource)
                         Button {
                             onOpenResponseCanvas(responseCanvas)
                         } label: {
@@ -1323,6 +1765,20 @@ private struct AISidebarConversationHistoryView: View, Equatable {
                         }
                         .browserResponseCanvasButtonStyle()
                         .accessibilityHint("Opens this model reply in the full-screen canvas")
+                        if saveAgentReplyID == msg.id {
+                            Button {
+                                onSaveAgentReply?(msg.id)
+                            } label: {
+                                Label(
+                                    savedAgentReplyIDs.contains(msg.id) ? "Saved as Task" : "Save Run as Task",
+                                    systemImage: savedAgentReplyIDs.contains(msg.id) ? "checkmark.circle.fill" : "bookmark"
+                                )
+                                .font(.footnote.weight(.semibold))
+                            }
+                            .browserResponseCanvasButtonStyle()
+                            .disabled(savedAgentReplyIDs.contains(msg.id))
+                            .accessibilityIdentifier("saveAgentRunAsTask")
+                        }
                     }
                 }
             }

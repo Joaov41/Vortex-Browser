@@ -192,7 +192,7 @@ struct ToolbarAddressButton: View {
                     if hugsContent {
                         Text(Self.shortened(host, maxCharacters: 30))
                             .lineLimit(1)
-                            .fixedSize()
+                            .truncationMode(.middle)
                     } else {
                         Text(host)
                             .lineLimit(1)

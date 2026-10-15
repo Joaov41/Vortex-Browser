@@ -68,6 +68,16 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		C251112B2F1E8D4900451BC6 /* Membership exceptions for "BrowserShare" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = C151111F2F1E8D4900451BC5 /* Sources */;
+			membershipExceptions = (
+				Intents/BrowserIntentShare.swift,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000002 /* BrowserTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -78,6 +88,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				C14615F92E46FDA5003058C2 /* Exceptions for "Browser" folder in "Browser" target */,
+				C251112B2F1E8D4900451BC6 /* Membership exceptions for "BrowserShare" target */,
 			);
 			path = Browser;
 			sourceTree = "<group>";

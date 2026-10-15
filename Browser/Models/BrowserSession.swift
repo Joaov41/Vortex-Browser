@@ -55,7 +55,7 @@ final class BrowserTab: ObservableObject, Identifiable {
     private var isLoadingObserver: NSKeyValueObservation?
     private var estimatedProgressObserver: NSKeyValueObservation?
     private var pendingForwardNavigationTask: Task<Void, Never>?
-    private var useDesktopUserAgent: Bool
+    private(set) var useDesktopUserAgent: Bool
     private var pendingScrollRestoration = false
 
     init(
@@ -983,6 +983,99 @@ final class BrowserViewModel: ObservableObject {
         }
         fetchFavicon(for: tab)
         enforceWebViewBudget()
+    }
+
+    /// Starts an explicitly requested task URL with a cancellation check before
+    /// the deferred ad-block load and returns the exact WebKit navigation chain
+    /// to the caller for redirect/failure settlement. Normal browser navigation
+    /// continues to use `navigate(to:in:)` unchanged.
+    @MainActor
+    func navigateForAgentTask(
+        to url: URL,
+        in tab: BrowserTab,
+        shouldProceed: @escaping @MainActor () -> Bool,
+        onNavigationStarted: @escaping @MainActor (WKWebView, WKNavigation, URL) -> Void,
+        onFailure: @escaping @MainActor (String) -> Void
+    ) {
+        guard shouldProceed(),
+              AgentTaskURLParser.isAllowedStartURL(url),
+              tabs.contains(where: { $0 === tab }),
+              tab.webAIProvider == nil else {
+            onFailure("The browser changed before the requested starting page could load.")
+            return
+        }
+        if !tab.isIncognito && handleAuthIfNeeded(for: url) {
+            onFailure("The requested starting page requires an authentication handoff and was not opened for the task.")
+            return
+        }
+
+        let previousURL = tab.url
+        let previousAddress = tab.address
+        let wasProtected = protectedTabIDs.contains(tab.id)
+        tab.url = url
+        tab.address = url.absoluteString
+        protectedTabIDs.insert(tab.id)
+        let webView = tab.activateWebView()
+        saveSession()
+        var didStartLoad = false
+
+        let restoreUnstartedMetadata: @MainActor () -> Void = {
+            guard !didStartLoad,
+                  tab.url == url,
+                  tab.liveWebView === webView else { return }
+            tab.url = previousURL
+            tab.address = previousAddress
+            if wasProtected {
+                self.protectedTabIDs.insert(tab.id)
+            } else {
+                self.protectedTabIDs.remove(tab.id)
+            }
+            self.saveSession()
+        }
+
+        let beginLoad: @MainActor () -> Void = { [weak self, weak tab, weak webView] in
+            guard let self, let tab, let webView else { return }
+            guard shouldProceed(),
+                  self.tabs.contains(where: { $0 === tab }),
+                  tab.liveWebView === webView,
+                  tab.url == url else {
+                restoreUnstartedMetadata()
+                onFailure("The browser changed before the requested starting page could load.")
+                return
+            }
+            guard let navigation = webView.load(URLRequest(url: url)) else {
+                restoreUnstartedMetadata()
+                onFailure("The requested starting page could not be started.")
+                return
+            }
+            didStartLoad = true
+            onNavigationStarted(webView, navigation, url)
+            self.fetchFavicon(for: tab)
+            self.enforceWebViewBudget()
+        }
+
+        if !AdBlockService.shared.isReady {
+            Task { @MainActor [weak self, weak tab, weak webView] in
+                for _ in 0..<30 {
+                    guard !Task.isCancelled,
+                          let self, let tab, let webView else { return }
+                    guard shouldProceed(),
+                          self.tabs.contains(where: { $0 === tab }),
+                          tab.liveWebView === webView,
+                          tab.url == url else {
+                        restoreUnstartedMetadata()
+                        onFailure("The browser changed before the requested starting page could load.")
+                        return
+                    }
+                    if AdBlockService.shared.isReady { break }
+                    try? await Task.sleep(nanoseconds: 100_000_000)
+                }
+                guard !Task.isCancelled else { return }
+                beginLoad()
+            }
+        } else {
+            beginLoad()
+        }
     }
 
     func fetchFavicon(for tab: BrowserTab) {

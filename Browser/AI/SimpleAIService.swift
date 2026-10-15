@@ -700,6 +700,23 @@ struct AIThroughputState: Equatable {
     let isFinal: Bool
 }
 
+/// Final model-boundary preparation shared by every service/window. A window
+/// may install its own callback when it observes a fill, but the process-wide
+/// native ledger remains authoritative for requests queued before that event
+/// or dispatched by a different window.
+@MainActor
+enum SimpleAIModelEgress {
+    static func prepare(
+        _ text: String,
+        installedRedactor: ((String) -> String)?,
+        privacy: BrowserAgentAutofillPrivacy
+    ) -> String {
+        let locallyPrepared = installedRedactor?(text) ?? text
+        guard privacy.hasKnownValues else { return locallyPrepared }
+        return privacy.redactPotentiallyTruncated(locallyPrepared, wasTruncated: true)
+    }
+}
+
 @MainActor
 final class AIStreamState: ObservableObject {
     private(set) var text: String = ""
@@ -911,6 +928,10 @@ class SimpleAIService: ObservableObject {
     private let cloudService = CloudModelService()
     private var lastContextURL: String? = nil
     private var sourcePageContext: String? = nil
+    /// Installed only after native saved-profile autofill establishes a privacy
+    /// boundary. It scrubs queued prompts, page context, and model history at
+    /// the final service egress without changing the displayed conversation.
+    private var modelEgressRedactor: ((String) -> String)?
     private var requestQueue: [QueuedRequest] = []
     private var activeRequestID: UUID? = nil
     private var activeMessageChannel: MessageChannel = .appBackend
@@ -1002,6 +1023,36 @@ class SimpleAIService: ObservableObject {
         guard let sourcePageContext else { return nil }
         let trimmed = sourcePageContext.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : sourcePageContext
+    }
+
+    /// Drops only reusable page context when a native privacy boundary changes.
+    /// This prevents a later nil-context follow-up from reusing data captured
+    /// before saved-profile values entered a page, without resetting chat state.
+    @MainActor
+    func discardSourcePageContextForPrivacy() {
+        sourcePageContext = nil
+    }
+
+    @MainActor
+    func replaceSourcePageContextForPrivacy(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        sourcePageContext = trimmed.isEmpty ? nil : trimmed
+    }
+
+    @MainActor
+    func installModelEgressRedactor(_ redactor: @escaping (String) -> String) {
+        modelEgressRedactor = redactor
+        if let sourcePageContext {
+            self.sourcePageContext = redactor(sourcePageContext)
+        }
+    }
+
+    private func redactedForModelEgress(_ text: String) -> String {
+        SimpleAIModelEgress.prepare(
+            text,
+            installedRedactor: modelEgressRedactor,
+            privacy: BrowserAgentAutofillPrivacy.shared
+        )
     }
 
     @MainActor
@@ -1249,7 +1300,12 @@ class SimpleAIService: ObservableObject {
         browserAIServiceLog("execute request=\(request.debugLabel) backend=\(selectedBackend.rawValue) requestID=\(requestID.uuidString.prefix(8)) queuedRemaining=\(requestQueue.count)")
         print("🔵 [execute] Starting \(request.debugLabel) on \(selectedBackend.rawValue), requestID: \(requestID.uuidString.prefix(8))")
         switch request {
-        case .query(let prompt, let pageContent):
+        case .query(let rawPrompt, let rawPageContent):
+            let prompt = redactedForModelEgress(rawPrompt)
+            if let sourcePageContext {
+                self.sourcePageContext = redactedForModelEgress(sourcePageContext)
+            }
+            let pageContent = rawPageContent.map(redactedForModelEgress)
             let providedPageContent: String? = {
                 guard let pageContent else { return nil }
                 let trimmed = pageContent.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1333,7 +1389,8 @@ class SimpleAIService: ObservableObject {
                 browserAIServiceLog("runQuery task END requestID=\(requestID.uuidString.prefix(8)) backend=\(selectedBackend.rawValue)")
                 print("🔵 [query] runQuery returned")
             }
-        case .summary(let content, let length):
+        case .summary(let rawContent, let length):
+            let content = redactedForModelEgress(rawContent)
             let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmedContent.isEmpty,
                sourcePageContext == nil || Self.shouldPromoteToSourceContext(trimmedContent) {
@@ -3380,7 +3437,7 @@ class SimpleAIService: ObservableObject {
     /// Read before the new question is added. The history clears when the page changes.
     private func previousExchanges(maxExchanges: Int, maxQuestionChars: Int, maxAnswerChars: Int) -> String? {
         func clipped(_ text: String, _ limit: Int) -> String {
-            let normalized = normalizePrompt(text)
+            let normalized = normalizePrompt(redactedForModelEgress(text))
             return normalized.count > limit ? String(normalized.prefix(limit)) + "…" : normalized
         }
         var exchanges: [String] = []
@@ -3407,7 +3464,7 @@ class SimpleAIService: ObservableObject {
         maxMessages: Int = 2,
         maxCharsPerMessage: Int = 220
     ) -> String? {
-        let normalizedPrompt = normalizePrompt(prompt)
+        let normalizedPrompt = normalizePrompt(redactedForModelEgress(prompt))
         var collected: [ChatMessage] = []
 
         for message in messages.reversed() {
@@ -3427,7 +3484,7 @@ class SimpleAIService: ObservableObject {
         guard !ordered.isEmpty else { return nil }
 
         let lines: [String] = ordered.map { message in
-            var text = normalizePrompt(message.text)
+            var text = normalizePrompt(redactedForModelEgress(message.text))
             if text.count > maxCharsPerMessage {
                 text = String(text.prefix(maxCharsPerMessage)) + "..."
             }
@@ -3745,6 +3802,17 @@ class SimpleAIService: ObservableObject {
         """)
     }
 
+    /// Records a finished browser-agent run as a normal exchange so it stays in
+    /// the conversation alongside regular answers.
+    @MainActor
+    @discardableResult
+    func appendAgentExchange(task: String, answer: String, sources: [BrowserLookupSource] = []) -> UUID {
+        appendRetainedMessage(.init(role: .user, text: task), channel: .appBackend)
+        let reply = ChatMessage(role: .assistant, text: answer, sources: sources)
+        appendRetainedMessage(reply, channel: .appBackend)
+        return reply.id
+    }
+
     @MainActor
     func appendAssistantMessage(_ text: String) {
         streamState.resetText()
@@ -3898,7 +3966,7 @@ class SimpleAIService: ObservableObject {
         if showsInSidebar == message.showsInSidebar {
             return message
         }
-        return ChatMessage(id: message.id, role: message.role, text: message.text, showsInSidebar: showsInSidebar)
+        return ChatMessage(id: message.id, role: message.role, text: message.text, showsInSidebar: showsInSidebar, sources: message.sources)
     }
 
     @MainActor
@@ -3982,6 +4050,17 @@ class SimpleAIService: ObservableObject {
     }
 
     @MainActor
+    func updateContextPreservingConversation(_ url: URL?) {
+        let next = Self.normalizedContextKey(url)
+        guard lastContextURL != next else { return }
+        browserAIServiceLog("updateContextPreservingConversation old=\(lastContextURL ?? "nil") new=\(next)")
+        lastContextURL = next
+        sourcePageContext = nil
+        shouldResetAppleLocalAfterSummaryWhenIdle = false
+        pendingAppleLocalPostSummaryFollowUp = false
+    }
+
+    @MainActor
     private func appendStreamChunk(_ chunk: String) {
         let cleaned = Self.sanitizeAssistantChunk(chunk)
         guard !cleaned.isEmpty else { return }
@@ -4006,11 +4085,13 @@ struct ChatMessage: Identifiable, Equatable {
     let role: Role
     let text: String
     let showsInSidebar: Bool
+    let sources: [BrowserLookupSource]
 
-    init(id: UUID = UUID(), role: Role, text: String, showsInSidebar: Bool = true) {
+    init(id: UUID = UUID(), role: Role, text: String, showsInSidebar: Bool = true, sources: [BrowserLookupSource] = []) {
         self.id = id
         self.role = role
         self.text = text
         self.showsInSidebar = showsInSidebar
+        self.sources = sources
     }
 }

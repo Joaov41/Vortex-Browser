@@ -37,13 +37,17 @@ enum PageTranslator {
         Locale.Language(identifier: Locale.preferredLanguages.first ?? "en")
     }
 
+    static func resolvedTargetLanguage(_ requested: Locale.Language?) -> Locale.Language {
+        requested ?? targetLanguage
+    }
+
     static func displayName(for language: Locale.Language) -> String {
         let code = language.languageCode?.identifier ?? language.minimalIdentifier
         return Locale.current.localizedString(forLanguageCode: code) ?? code
     }
 
     /// Collects the page's text and works out which language to translate from.
-    static func prepare(in webView: WKWebView) async throws -> Plan {
+    static func prepare(in webView: WKWebView, targetLanguage requestedTarget: Locale.Language? = nil) async throws -> Plan {
         let segments = await collectSegments(in: webView, onlyNew: false)
         guard !segments.isEmpty else { throw PreparationError.noText }
 
@@ -53,7 +57,7 @@ enum PageTranslator {
         guard let dominant = recognizer.dominantLanguage else { throw PreparationError.noText }
 
         let source = Locale.Language(identifier: dominant.rawValue)
-        var target = targetLanguage
+        var target = resolvedTargetLanguage(requestedTarget)
         let sourceName = displayName(for: source)
         if source.languageCode == target.languageCode {
             throw PreparationError.alreadyInTargetLanguage(displayName(for: target))

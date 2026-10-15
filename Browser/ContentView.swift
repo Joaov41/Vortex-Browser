@@ -79,6 +79,12 @@ enum AIPanelDismissalPolicy {
     }
 }
 
+enum AIConversationContextPolicy {
+    static func preservesConversation(previousContextWasPrivate: Bool, nextContextIsPrivate: Bool) -> Bool {
+        !previousContextWasPrivate && !nextContextIsPrivate
+    }
+}
+
 // MARK: - Darwin Notification Observer (for Share Extension IPC)
 @MainActor
 final class DarwinNotificationObserver: ObservableObject {
@@ -345,6 +351,7 @@ private struct BrowserWebAIRequest: Identifiable, Equatable {
     let prompt: String
     let shouldAutoCapture: Bool
     let shouldStartMinimized: Bool
+    let sourceBinding: BrowserAgentPageContextBinding?
 }
 
 @MainActor
@@ -555,6 +562,7 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
     @Binding var fallbackMessage: String?
     let onResponseCaptured: (String) -> Void
     let onCaptureFailed: (String) -> Void
+    let canTransmitPageContext: (BrowserAgentPageContextBinding?) -> Bool
 
     func makeCoordinator() -> Coordinator {
         Coordinator(parent: self)
@@ -683,6 +691,18 @@ private struct BrowserWebAIRepresentable: UIViewRepresentable {
                 DispatchQueue.main.async {
                     self.parent.didInject = true
                     self.parent.fallbackMessage = nil
+                }
+                return
+            }
+
+            guard parent.canTransmitPageContext(parent.request.sourceBinding) else {
+                hasInjectedCurrentRequest = true
+                let message = "Page-derived content from a tab that received autofill stays out of agent context. Switch to an unfilled tab to continue."
+                DispatchQueue.main.async {
+                    self.parent.isLoading = false
+                    self.parent.didInject = true
+                    self.parent.fallbackMessage = message
+                    self.parent.onCaptureFailed(message)
                 }
                 return
             }
@@ -1542,6 +1562,7 @@ struct ContentView: View {
     @State private var lastInteractedSplitTabID: UUID?
     @State private var showWebProviderSheet = false
     @State private var aiContextTabID: UUID?
+    @State private var aiContextWasPrivate = false
     @State private var lastSelectedTabID: UUID?
     @State private var isSidebarCollapsed: Bool = false
     @State private var sidebarDrag: CGFloat = 0
@@ -1616,6 +1637,8 @@ struct ContentView: View {
     @State private var pageMenuRevision: Int = 0
     @State private var translationConfiguration: TranslationSession.Configuration?
     @State private var pendingTranslation: PendingPageTranslation?
+    @State private var pageTranslationAgentOwners: [UUID: UUID] = [:]
+    @State private var pageTranslationAgentStates: [UUID: String] = [:]
     /// The tab whose per-site protection panel is open.
     @State private var sitePrivacyTabID: UUID?
     /// The tab whose page is in "tap items to hide" mode.
@@ -1683,12 +1706,30 @@ struct ContentView: View {
 
     private struct AICachedPageContent {
         let urlKey: String
+        let binding: BrowserAgentPageContextBinding
         let content: PageContentExtractor.ExtractedPageContent
     }
 
     // Share Extension handling
     @StateObject private var darwinObserver = DarwinNotificationObserver()
+    @StateObject private var agentTaskObserver = AgentTaskDarwinNotificationObserver()
     @State private var sharedURLRetryCount = 0
+    @State private var isAgentSidebarReady = false
+    @State private var isAgentSidebarBusy = false
+    @State private var isAgentBackendSupported = false
+    @State private var windowAgentTaskQueue: [PendingAgentTask] = []
+    @State private var stagedAgentTask: PendingAgentTask?
+    @State private var stagedAgentTaskContext: AgentTaskPreparedContext?
+    @State private var agentTaskStartup: AgentTaskNavigationAttempt?
+    @State private var agentTaskStartupTimeout: Task<Void, Never>?
+    @State private var agentTaskStartupGeneration = UUID()
+    @State private var agentTaskDocumentRevisions: [ObjectIdentifier: Int] = [:]
+    @State private var agentTaskLastFinishedNavigationIDs: [ObjectIdentifier: ObjectIdentifier] = [:]
+    @State private var agentTaskReadyWebViews: Set<ObjectIdentifier> = []
+    @State private var agentTaskQueueStatusMessage: String?
+    @State private var lastAgentBackendStatusShown: String?
+    @StateObject private var browserIntentRuntime = BrowserIntentRuntime.shared
+    @State private var browserIntentWindowID = UUID()
     @Environment(\.scenePhase) private var scenePhase
 
     private var isMacRuntimeForIPadBuild: Bool {
@@ -1705,6 +1746,13 @@ struct ContentView: View {
 #else
         return false
 #endif
+    }
+
+    private var agentTaskSidebarForegroundReady: Bool {
+        scenePhase == .active
+            && showAIPanel
+            && isAgentSidebarReady
+            && (!isPhone || (phoneSecondaryPanel == .ai && !phonePanelHiddenForTabDrag))
     }
 
     private var isNativeIPadDevice: Bool {
@@ -2230,23 +2278,76 @@ struct ContentView: View {
     private struct PendingPageTranslation {
         let tabID: UUID
         let plan: PageTranslator.Plan
+        let agentOwnerID: UUID?
+        let shouldContinue: (() -> Bool)?
+    }
+
+    private enum PageTranslationActionError: LocalizedError {
+        case alreadyRunning
+        case noActivePage
+
+        var errorDescription: String? {
+            switch self {
+            case .alreadyRunning: return "A translation is already in progress for this tab."
+            case .noActivePage: return "This tab has no active webpage to translate."
+            }
+        }
     }
 
     private func browserTab(withID id: UUID) -> BrowserTab? {
         vm.tabs.first { $0.id == id }
     }
 
-    private func startPageTranslation(for tab: BrowserTab) {
-        guard !tab.isTranslating, let webView = tab.liveWebView else { return }
+    private func startPageTranslation(
+        for tab: BrowserTab,
+        targetLanguage: Locale.Language? = nil,
+        agentRunIsCurrent: (() -> Bool)? = nil,
+        onPrepared: ((Result<Void, Error>) -> Void)? = nil
+    ) {
+        guard !tab.isTranslating, let webView = tab.liveWebView else {
+            if let onPrepared {
+                onPrepared(.failure(tab.isTranslating ? PageTranslationActionError.alreadyRunning : PageTranslationActionError.noActivePage))
+            }
+            return
+        }
+        let agentOwnerID = agentRunIsCurrent == nil ? nil : UUID()
+        if let agentOwnerID {
+            pageTranslationAgentOwners[tab.id] = agentOwnerID
+            pageTranslationAgentStates[tab.id] = "preparing"
+        }
         collapseToolbar()
         tab.isTranslating = true
         pageMenuRevision &+= 1
         showPageStatus("Translating…", autoHide: false)
         Task {
             do {
-                let plan = try await PageTranslator.prepare(in: webView)
-                guard tab.isTranslating else { return }
-                pendingTranslation = PendingPageTranslation(tabID: tab.id, plan: plan)
+                let plan = try await PageTranslator.prepare(in: webView, targetLanguage: targetLanguage)
+                guard tab.isTranslating else {
+                    if let agentOwnerID, pageTranslationAgentOwners[tab.id] == agentOwnerID {
+                        pageTranslationAgentStates[tab.id] = "cancelled"
+                        pageTranslationAgentOwners.removeValue(forKey: tab.id)
+                    }
+                    onPrepared?(.failure(CancellationError()))
+                    return
+                }
+                if let agentOwnerID,
+                   pageTranslationAgentOwners[tab.id] != agentOwnerID || agentRunIsCurrent?() == false {
+                    cancelOwnedAgentTranslation(tab: tab, ownerID: agentOwnerID)
+                    onPrepared?(.failure(CancellationError()))
+                    return
+                }
+                if let agentOwnerID, browserTab(withID: tab.id) !== tab {
+                    cancelOwnedAgentTranslation(tab: tab, ownerID: agentOwnerID)
+                    onPrepared?(.failure(CancellationError()))
+                    return
+                }
+                pendingTranslation = PendingPageTranslation(
+                    tabID: tab.id,
+                    plan: plan,
+                    agentOwnerID: agentOwnerID,
+                    shouldContinue: agentRunIsCurrent
+                )
+                if agentOwnerID != nil { pageTranslationAgentStates[tab.id] = "waiting for the system language download or approval" }
                 var configuration = TranslationSession.Configuration(
                     source: plan.source,
                     target: plan.target
@@ -2266,7 +2367,18 @@ struct ContentView: View {
                 } else {
                     translationConfiguration = configuration
                 }
+                onPrepared?(.success(()))
             } catch {
+                if let agentOwnerID {
+                    guard pageTranslationAgentOwners[tab.id] == agentOwnerID,
+                          agentRunIsCurrent?() != false else {
+                        cancelOwnedAgentTranslation(tab: tab, ownerID: agentOwnerID)
+                        onPrepared?(.failure(CancellationError()))
+                        return
+                    }
+                    pageTranslationAgentStates[tab.id] = "failed: \(agentTranslationError(error))"
+                    pageTranslationAgentOwners.removeValue(forKey: tab.id)
+                }
                 tab.isTranslating = false
                 pageMenuRevision &+= 1
                 switch error {
@@ -2277,7 +2389,34 @@ struct ContentView: View {
                 default:
                     showPageStatus("There's no text to translate")
                 }
+                let message = agentOwnerID == nil ? error.localizedDescription : agentTranslationError(error)
+                onPrepared?(.failure(NSError(domain: "BrowserAgentTranslation", code: 1, userInfo: [NSLocalizedDescriptionKey: message])))
             }
+        }
+    }
+
+    private func cancelOwnedAgentTranslation(tab: BrowserTab, ownerID: UUID) {
+        guard pageTranslationAgentOwners[tab.id] == ownerID else { return }
+        if pendingTranslation?.agentOwnerID == ownerID { pendingTranslation = nil }
+        pageTranslationAgentOwners.removeValue(forKey: tab.id)
+        pageTranslationAgentStates[tab.id] = "cancelled"
+        if tab.translatedFrom == nil { tab.isTranslating = false }
+        pageMenuRevision &+= 1
+    }
+
+    private func agentTranslationError(_ error: Error) -> String {
+        guard let error = error as? PageTranslator.PreparationError else {
+            return error.localizedDescription
+        }
+        switch error {
+        case PageTranslator.PreparationError.noText:
+            return "There is no readable text to translate."
+        case PageTranslator.PreparationError.alreadyInTargetLanguage(let name):
+            return "The page is already in \(name)."
+        case PageTranslator.PreparationError.unsupported(let from, let to):
+            return "Translation from \(from) to \(to) is unavailable."
+        default:
+            return error.localizedDescription
         }
     }
 
@@ -2288,14 +2427,29 @@ struct ContentView: View {
               let tab = browserTab(withID: pending.tabID),
               let webView = tab.liveWebView else { return }
         pendingTranslation = nil
+        if let ownerID = pending.agentOwnerID,
+           pageTranslationAgentOwners[tab.id] != ownerID || pending.shouldContinue?() == false {
+            cancelOwnedAgentTranslation(tab: tab, ownerID: ownerID)
+            return
+        }
         do {
             // Languages that aren't on the device yet: iOS asks before downloading.
             if !(await session.isReady) {
+                if let ownerID = pending.agentOwnerID, pending.shouldContinue?() == false {
+                    cancelOwnedAgentTranslation(tab: tab, ownerID: ownerID)
+                    return
+                }
                 showPageStatus("Waiting for \(pending.plan.sourceName) to download…", autoHide: false)
                 try await session.prepareTranslation()
+                if let ownerID = pending.agentOwnerID,
+                   pageTranslationAgentOwners[tab.id] != ownerID || pending.shouldContinue?() == false {
+                    cancelOwnedAgentTranslation(tab: tab, ownerID: ownerID)
+                    return
+                }
                 guard tab.isTranslating else { return }
                 showPageStatus("Translating…", autoHide: false)
             }
+            if pending.agentOwnerID != nil { pageTranslationAgentStates[tab.id] = "translating" }
             let finished = try await PageTranslator.translate(
                 pending.plan.segments,
                 with: session,
@@ -2310,35 +2464,54 @@ struct ContentView: View {
                     guard tab.isTranslating else { return }
                     tab.isTranslating = false
                     tab.translatedFrom = pending.plan.sourceName
+                    if pending.agentOwnerID != nil { pageTranslationAgentStates[tab.id] = "translated from \(pending.plan.sourceName)" }
                     pageMenuRevision &+= 1
                     showPageStatus("Translated from \(pending.plan.sourceName)")
                 },
-                shouldContinue: { tab.isTranslating || tab.translatedFrom != nil }
+                shouldContinue: {
+                    (pending.shouldContinue?() ?? true) && (tab.isTranslating || tab.translatedFrom != nil)
+                }
             )
-            guard finished else { return }
+            guard finished else {
+                if let ownerID = pending.agentOwnerID, pending.shouldContinue?() == false {
+                    cancelOwnedAgentTranslation(tab: tab, ownerID: ownerID)
+                }
+                return
+            }
 
             // Keep up with text the page adds later, until the page changes or
             // someone asks for the original.
             while tab.translatedFrom != nil {
                 try await Task.sleep(for: .seconds(1.5))
                 guard tab.translatedFrom != nil else { break }
+                guard pending.shouldContinue?() ?? true else { break }
                 let fresh = await PageTranslator.collectNewSegments(in: webView)
                 if !fresh.isEmpty {
                     _ = try await PageTranslator.translate(
                         fresh,
                         with: session,
                         in: webView,
-                        shouldContinue: { tab.translatedFrom != nil }
+                        shouldContinue: { (pending.shouldContinue?() ?? true) && tab.translatedFrom != nil }
                     )
                 }
             }
+            if let ownerID = pending.agentOwnerID, pageTranslationAgentOwners[tab.id] == ownerID {
+                pageTranslationAgentOwners.removeValue(forKey: tab.id)
+            }
         } catch is CancellationError {
+            if let ownerID = pending.agentOwnerID {
+                cancelOwnedAgentTranslation(tab: tab, ownerID: ownerID)
+            }
             if tab.isTranslating {
                 tab.isTranslating = false
                 pageMenuRevision &+= 1
                 dismissPageStatus()
             }
         } catch {
+            if pending.agentOwnerID != nil {
+                pageTranslationAgentStates[tab.id] = "failed: \(agentTranslationError(error))"
+                pageTranslationAgentOwners.removeValue(forKey: tab.id)
+            }
             guard tab.isTranslating else { return }
             tab.isTranslating = false
             pageMenuRevision &+= 1
@@ -2348,6 +2521,8 @@ struct ContentView: View {
 
     private func showOriginalPage(for tab: BrowserTab) {
         collapseToolbar()
+        pageTranslationAgentOwners.removeValue(forKey: tab.id)
+        pageTranslationAgentStates[tab.id] = "idle"
         tab.translatedFrom = nil
         tab.isTranslating = false
         if let webView = tab.liveWebView {
@@ -2734,7 +2909,9 @@ struct ContentView: View {
     }
 
     private var activeAISelectionText: String? {
-        selectionContextText(for: aiContextTabID)
+        guard let tab = activeAIContextTab,
+              pageContextIsAllowed(for: tab) else { return nil }
+        return selectionContextText(for: tab.id).map { BrowserAgentAutofillPrivacy.shared.redactKnownValues($0) }
     }
 
     private var activeAIContextStatusText: String? {
@@ -2758,7 +2935,7 @@ struct ContentView: View {
               let context = aiSelectionContext,
               context.tabID == tabID else { return nil }
         let trimmed = context.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? nil : trimmed
+        return trimmed.isEmpty ? nil : BrowserAgentAutofillPrivacy.shared.redactKnownValues(trimmed)
     }
 
     private var mlxAvailable: Bool {
@@ -2847,14 +3024,23 @@ struct ContentView: View {
     }
 
     private enum PendingRedditTask {
-        case summary(content: String, length: SummaryLength, sourceTab: BrowserTab)
-        case query(prompt: String, content: String, sourceTab: BrowserTab)
+        case summary(content: String, length: SummaryLength, sourceTab: BrowserTab, sourceBinding: BrowserAgentPageContextBinding?)
+        case query(prompt: String, content: String, sourceTab: BrowserTab, sourceBinding: BrowserAgentPageContextBinding?)
+
+        var sourceTabID: UUID {
+            switch self {
+            case .summary(_, _, let sourceTab, _), .query(_, _, let sourceTab, _):
+                return sourceTab.id
+            }
+        }
     }
 
     private struct PendingRedditPreflightTask: Identifiable {
         let id = UUID()
         let task: PendingRedditTask
         let chunkCount: Int
+
+        var sourceTabID: UUID { task.sourceTabID }
     }
 
     private enum RedditPreflightChoice: CaseIterable, Hashable {
@@ -3262,9 +3448,9 @@ struct ContentView: View {
 
         let content: String
         switch task {
-        case .summary(let summaryContent, _, _):
+        case .summary(let summaryContent, _, _, _):
             content = summaryContent
-        case .query(_, let queryContent, _):
+        case .query(_, let queryContent, _, _):
             content = queryContent
         }
 
@@ -3287,14 +3473,24 @@ struct ContentView: View {
     private func dispatchResolvedSummary(
         content: String,
         length: SummaryLength,
-        sourceTab: BrowserTab
+        sourceTab: BrowserTab,
+        sourceBinding: BrowserAgentPageContextBinding? = nil
     ) -> Bool {
-        let task = PendingRedditTask.summary(content: content, length: length, sourceTab: sourceTab)
+        guard let safeContent = safePageText(content, for: sourceTab, capturedBinding: sourceBinding) else {
+            reportBlockedPageContext()
+            return true
+        }
+        let task = PendingRedditTask.summary(
+            content: safeContent,
+            length: length,
+            sourceTab: sourceTab,
+            sourceBinding: sourceBinding ?? pageContextBinding(for: sourceTab)
+        )
         if let pending = makeRedditPreflightTask(task) {
             pendingRedditPreflight = pending
             return true
         }
-        aiService.enqueueSummary(content, length: length)
+        aiService.enqueueSummary(safeContent, length: length)
         return true
     }
 
@@ -3303,24 +3499,49 @@ struct ContentView: View {
         prompt: String,
         content: String?,
         sourceTab: BrowserTab,
-        reusingStoredSourceContext: Bool = false
+        reusingStoredSourceContext: Bool = false,
+        sourceBinding: BrowserAgentPageContextBinding? = nil
     ) {
+        guard pageContextIsAllowed(for: sourceTab, capturedBinding: sourceBinding) else {
+            reportBlockedPageContext()
+            return
+        }
         if let content {
+            guard let safeContent = safePageText(content, for: sourceTab, capturedBinding: sourceBinding) else {
+                reportBlockedPageContext()
+                return
+            }
             if reusingStoredSourceContext && !RedditSummaryPlanner.isRedditContext(content) {
+                aiService.replaceSourcePageContextForPrivacy(
+                    BrowserAgentAutofillPrivacy.shared.redactPotentiallyTruncated(
+                        aiService.sourcePageContextText ?? safeContent,
+                        wasTruncated: true
+                    )
+                )
                 aiService.enqueueQuery(prompt, pageContent: nil)
                 return
             }
-            let task = PendingRedditTask.query(prompt: prompt, content: content, sourceTab: sourceTab)
+            let task = PendingRedditTask.query(
+                prompt: prompt,
+                content: safeContent,
+                sourceTab: sourceTab,
+                sourceBinding: sourceBinding ?? pageContextBinding(for: sourceTab)
+            )
             if let pending = makeRedditPreflightTask(task) {
                 pendingRedditPreflight = pending
                 return
             }
-            aiService.enqueueQuery(prompt, pageContent: content)
+            aiService.enqueueQuery(prompt, pageContent: safeContent)
             return
         }
 
         // A nil context intentionally preserves the existing follow-up path,
         // where SimpleAIService reuses its stored source context.
+        if let stored = aiService.sourcePageContextText {
+            aiService.replaceSourcePageContextForPrivacy(
+                BrowserAgentAutofillPrivacy.shared.redactPotentiallyTruncated(stored, wasTruncated: true)
+            )
+        }
         aiService.enqueueQuery(prompt, pageContent: nil)
     }
 
@@ -3338,7 +3559,12 @@ struct ContentView: View {
         backend: AIModelBackend
     ) {
         switch pending.task {
-        case .summary(let content, let length, let sourceTab):
+        case .summary(let rawContent, let length, let sourceTab, let sourceBinding):
+            guard pageContextIsAllowed(for: sourceTab, capturedBinding: sourceBinding) else {
+                reportBlockedPageContext()
+                return
+            }
+            let content = BrowserAgentAutofillPrivacy.shared.redactPotentiallyTruncated(rawContent, wasTruncated: true)
             guard backend == .webChatGPT || backend == .webGemini else {
                 aiService.enqueueSummary(content, length: length)
                 return
@@ -3355,10 +3581,18 @@ struct ContentView: View {
                 provider: backend == .webChatGPT ? .chatgpt : .gemini,
                 userPrompt: prompt,
                 composedPrompt: composedPrompt,
-                sourceTab: sourceTab
+                sourceTab: sourceTab,
+                sourceBinding: sourceBinding
             )
 
-        case .query(let prompt, let content, let sourceTab):
+        case .query(let rawPrompt, let rawContent, let sourceTab, let sourceBinding):
+            guard pageContextIsAllowed(for: sourceTab, capturedBinding: sourceBinding) else {
+                reportBlockedPageContext()
+                return
+            }
+            let privacy = BrowserAgentAutofillPrivacy.shared
+            let prompt = privacy.redactPotentiallyTruncated(rawPrompt, wasTruncated: true)
+            let content = privacy.redactPotentiallyTruncated(rawContent, wasTruncated: true)
             guard backend == .webChatGPT || backend == .webGemini else {
                 aiService.enqueueQuery(prompt, pageContent: content)
                 return
@@ -3372,7 +3606,8 @@ struct ContentView: View {
                 provider: backend == .webChatGPT ? .chatgpt : .gemini,
                 userPrompt: prompt,
                 composedPrompt: composedPrompt,
-                sourceTab: sourceTab
+                sourceTab: sourceTab,
+                sourceBinding: sourceBinding
             )
         }
     }
@@ -3544,21 +3779,22 @@ struct ContentView: View {
                         // Right AI sidebar
                         HStack {
                             Spacer()
-                            if showAIPanel {
-                                aiSidebarPanel
-                                    .frame(
-                                        height: proxy.size.height
-                                            - verticalInset
-                                            - panelBottomInset
-                                            - aiSidebarKeyboardOverlap,
-                                        alignment: .top
-                                    )
-                                    .padding(.trailing, horizontalInset)
-                                    .padding(.top, verticalInset)
-                                    .padding(.bottom, panelBottomInset)
-                                    .padding(.bottom, aiSidebarKeyboardOverlap)
-                                    .transition(.move(edge: .trailing).combined(with: .opacity))
-                            }
+                            aiSidebarPanel
+                                .frame(
+                                    height: proxy.size.height
+                                        - verticalInset
+                                        - panelBottomInset
+                                        - aiSidebarKeyboardOverlap,
+                                    alignment: .top
+                                )
+                                .padding(.trailing, horizontalInset)
+                                .padding(.top, verticalInset)
+                                .padding(.bottom, panelBottomInset)
+                                .padding(.bottom, aiSidebarKeyboardOverlap)
+                                .offset(x: showAIPanel ? 0 : aiSidebarBaseWidth + horizontalInset * 2)
+                                .opacity(showAIPanel ? 1 : 0)
+                                .allowsHitTesting(showAIPanel)
+                                .accessibilityHidden(!showAIPanel)
                         }
                     }
 
@@ -3766,6 +4002,8 @@ struct ContentView: View {
         }
         .onChange(of: aiService.backend) { _, newValue in
             handleBackendSelection(newValue)
+            drainPendingAgentTaskQueue()
+            drainWindowAgentTasks()
         }
         .onChange(of: mlxModelID) { _, newValue in
             mlxWarmupTask?.cancel()
@@ -3787,6 +4025,8 @@ struct ContentView: View {
             restoreSplitPairIfNeeded()
             applyUserAgentPreference()
             setupSharedURLHandling()
+            setupAgentTaskHandling()
+            registerBrowserIntentEndpoint()
             checkForSharedURL()
             mlxMaxOutputTokens = min(max(64, mlxMaxOutputTokens), 512)
             mlxMaxContextTokens = min(max(0, mlxMaxContextTokens), 8192)
@@ -3801,12 +4041,28 @@ struct ContentView: View {
         .onDisappear {
             mlxWarmupTask?.cancel()
             darwinObserver.stopObserving()
+            agentTaskObserver.stopObserving()
+            cancelAgentTaskStartup(returnToWindowQueue: true)
+            browserIntentRuntime.unregister(windowID: browserIntentWindowID)
         }
         .onChange(of: scenePhase) { _, newPhase in
+            browserIntentRuntime.setActive(
+                newPhase == .active,
+                windowID: browserIntentWindowID,
+                invalidateRequest: newPhase == .background
+            )
             if newPhase == .active {
                 // Check when becoming active (in case Darwin notification was missed)
                 checkForSharedURL()
+                checkForPendingAgentTasks()
+                drainWindowAgentTasks()
             } else {
+            }
+        }
+        .onChange(of: browserIntentRuntime.isBusy) { _, busy in
+            if !busy {
+                checkForPendingAgentTasks()
+                drainWindowAgentTasks()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("OpenSharedURL"))) { notification in
@@ -3816,6 +4072,9 @@ struct ContentView: View {
         }
         .onReceive(darwinObserver.notifications) {
             checkForSharedURL()
+        }
+        .onReceive(agentTaskObserver.notifications) {
+            checkForPendingAgentTasks()
         }
         .onOpenURL { url in
             handleIncomingURL(url)
@@ -3892,6 +4151,9 @@ struct ContentView: View {
                         },
                         onCaptureFailed: { message in
                             handleWebAICaptureFailure(message)
+                        },
+                        canTransmitPageContext: { binding in
+                            browserAgentPageContextCanTransmit(binding)
                         }
                     )
                     .overlay {
@@ -3981,17 +4243,24 @@ struct ContentView: View {
         provider: WebAIProvider,
         userPrompt: String,
         composedPrompt: String,
-        sourceTab: BrowserTab? = nil
+        sourceTab: BrowserTab? = nil,
+        sourceBinding: BrowserAgentPageContextBinding? = nil
     ) {
         let contextSourceTab = sourceTab ?? webProviderContextSourceTab()
+        let binding = sourceBinding ?? contextSourceTab.flatMap { pageContextBinding(for: $0) }
+        guard browserAgentPageContextCanTransmit(binding),
+              contextSourceTab.map({ pageContextIsAllowed(for: $0, capturedBinding: binding) }) ?? true else { return }
+        let privacy = BrowserAgentAutofillPrivacy.shared
+        let safeUserPrompt = privacy.redactPotentiallyTruncated(userPrompt, wasTruncated: true)
+        let safeComposedPrompt = privacy.redactPotentiallyTruncated(composedPrompt, wasTruncated: true)
         if let sourceTab {
             webProviderContextTabID = sourceTab.id
             webProviderContextURLString = sourceTab.currentURL.map { normalizedContextURL($0) }
         }
         aiService.prepareForNewContext(contextSourceTab?.currentURL)
-        browserAIWebLog("startCapturedWebAIRequest prepare userChars=\(userPrompt.count) promptChars=\(composedPrompt.count) sourceContextChars=\(aiService.sourcePageContextText?.count ?? 0)")
-        guard let requestID = aiService.beginExternalWebRequest(userMessage: userPrompt) else { return }
-        browserAIWebLog("startCaptured request=\(requestID.uuidString.prefix(8)) provider=\(provider.displayName) userChars=\(userPrompt.count) promptChars=\(composedPrompt.count)")
+        browserAIWebLog("startCapturedWebAIRequest prepare userChars=\(safeUserPrompt.count) promptChars=\(safeComposedPrompt.count) sourceContextChars=\(aiService.sourcePageContextText?.count ?? 0)")
+        guard let requestID = aiService.beginExternalWebRequest(userMessage: safeUserPrompt) else { return }
+        browserAIWebLog("startCaptured request=\(requestID.uuidString.prefix(8)) provider=\(provider.displayName) userChars=\(safeUserPrompt.count) promptChars=\(safeComposedPrompt.count)")
         activeWebAIServiceRequestID = requestID
         webAIIsLoading = true
         webAIDidInject = false
@@ -3999,9 +4268,10 @@ struct ContentView: View {
         activeWebAIRequest = BrowserWebAIRequest(
             provider: provider,
             title: provider.displayName,
-            prompt: composedPrompt,
+            prompt: safeComposedPrompt,
             shouldAutoCapture: true,
-            shouldStartMinimized: true
+            shouldStartMinimized: true,
+            sourceBinding: binding
         )
         isWebAIOverlayExpanded = false
         isWebAIOverlayMinimized = true
@@ -4012,12 +4282,18 @@ struct ContentView: View {
         prompt: String,
         contextOverride: String? = nil
     ) {
-        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPrompt = BrowserAgentAutofillPrivacy.shared
+            .redactPotentiallyTruncated(prompt.trimmingCharacters(in: .whitespacesAndNewlines), wasTruncated: true)
         guard !trimmedPrompt.isEmpty else { return }
         let trimmedOverride = contextOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
         browserAIWebLog("sendCapturedWebProviderPrompt start provider=\(provider.displayName) promptChars=\(trimmedPrompt.count) overrideChars=\(trimmedOverride?.count ?? 0) sourceContextChars=\(aiService.sourcePageContextText?.count ?? 0)")
 
         let sourceTab = webProviderContextSourceTab()
+        let sourceBinding = sourceTab.flatMap { pageContextBinding(for: $0) }
+        if let sourceTab, !pageContextIsAllowed(for: sourceTab, capturedBinding: sourceBinding) {
+            reportBlockedPageContext()
+            return
+        }
         if let sourceTab {
             let contextURL = sourceTab.currentURL
             webProviderContextTabID = sourceTab.id
@@ -4028,8 +4304,18 @@ struct ContentView: View {
         }
 
         if let trimmedOverride, !trimmedOverride.isEmpty {
-            let composed = "Selected text:\n\(trimmedOverride)\n\nUser prompt:\n\(trimmedPrompt)"
-            startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed)
+            let safeOverride: String
+            if let sourceTab {
+                guard let safe = safePageText(trimmedOverride, for: sourceTab, capturedBinding: sourceBinding) else {
+                    reportBlockedPageContext()
+                    return
+                }
+                safeOverride = safe
+            } else {
+                safeOverride = BrowserAgentAutofillPrivacy.shared.redactKnownValues(trimmedOverride)
+            }
+            let composed = "Selected text:\n\(safeOverride)\n\nUser prompt:\n\(trimmedPrompt)"
+            startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed, sourceTab: sourceTab, sourceBinding: sourceBinding)
             return
         }
 
@@ -4046,7 +4332,7 @@ struct ContentView: View {
                 )
                 : cached
             let composed = "\(context)\n\nUser prompt:\n\(trimmedPrompt)"
-            startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed)
+            startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed, sourceTab: sourceTab, sourceBinding: sourceBinding)
             return
         }
 
@@ -4059,34 +4345,42 @@ struct ContentView: View {
                 : Self.condenseText(sourceContext, maxChars: webProviderContextMaxChars)
             let composed = condensed.isEmpty ? trimmedPrompt : "\(condensed)\n\nUser prompt:\n\(trimmedPrompt)"
             browserAIWebLog("sendCaptured reusing sourcePageContext chars=\(sourceContext.count)")
-            startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed)
+            startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed, sourceTab: sourceTab, sourceBinding: sourceBinding)
             return
         }
 
         let sourceWebView = sourceTab.activateWebView()
-        let contextURL = sourceTab.currentURL
+        let contextURL = sourceWebView.url ?? sourceTab.currentURL
         let sourceTabID = sourceTab.id
         let contextURLString = contextURL.map { normalizedContextURL($0) }
+        guard let contextURL else {
+            reportBlockedPageContext()
+            return
+        }
+        let capturedBinding = BrowserAgentPageContextBinding(tabID: sourceTab.id, webView: sourceWebView, url: contextURL)
         Task {
             let extracted = await PageContentExtractor.extractContent(from: sourceWebView, url: contextURL, preferFast: true)
-            let pageText = extracted?.formattedForAIContext ?? ""
-            let condensed = RedditSummaryPlanner.isRedditContext(pageText)
-                ? RedditSummaryPlanner.webSafeContext(
-                    content: pageText,
-                    maxCharacters: redditWebProviderContextMaxChars
-                )
-                : Self.condenseText(pageText, maxChars: webProviderContextMaxChars)
-            let composed = condensed.isEmpty ? trimmedPrompt : "\(condensed)\n\nUser prompt:\n\(trimmedPrompt)"
             await MainActor.run {
                 guard webProviderContextTabID == sourceTabID,
-                      webProviderContextURLString == contextURLString else {
+                      webProviderContextURLString == contextURLString,
+                      pageContextIsAllowed(for: sourceTab, capturedBinding: capturedBinding) else {
                     browserAIWebLog("sendCaptured abort stale extraction start provider=\(provider.displayName)")
+                    if !pageContextIsAllowed(for: sourceTab, capturedBinding: capturedBinding) { reportBlockedPageContext() }
                     return
                 }
+                let safeExtracted = extracted.map { BrowserAgentAutofillPrivacy.shared.sanitized($0) }
+                let pageText = safeExtracted?.formattedForAIContext ?? ""
+                let condensed = RedditSummaryPlanner.isRedditContext(pageText)
+                    ? RedditSummaryPlanner.webSafeContext(
+                        content: pageText,
+                        maxCharacters: redditWebProviderContextMaxChars
+                    )
+                    : Self.condenseText(pageText, maxChars: webProviderContextMaxChars)
+                let composed = condensed.isEmpty ? trimmedPrompt : "\(condensed)\n\nUser prompt:\n\(trimmedPrompt)"
                 if let extracted {
-                    storeAIPageContent(extracted, for: sourceTab)
+                    storeAIPageContent(safeExtracted ?? extracted, for: sourceTab, capturedBinding: capturedBinding)
                 }
-                startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed)
+                startCapturedWebAIRequest(provider: provider, userPrompt: trimmedPrompt, composedPrompt: composed, sourceTab: sourceTab, sourceBinding: capturedBinding)
             }
         }
     }
@@ -4203,7 +4497,8 @@ struct ContentView: View {
                 title: "\(provider.displayName) Login",
                 prompt: "",
                 shouldAutoCapture: false,
-                shouldStartMinimized: false
+                shouldStartMinimized: false,
+                sourceBinding: nil
             )
             isWebAIOverlayExpanded = true
             isWebAIOverlayMinimized = false
@@ -4251,11 +4546,507 @@ struct ContentView: View {
         darwinObserver.startObserving()
     }
 
+    private func setupAgentTaskHandling() {
+        agentTaskObserver.startObserving()
+        checkForPendingAgentTasks()
+    }
+
+    @MainActor
+    private func makePendingAgentTaskQueue() throws -> PendingAgentTaskQueue {
+        guard let defaults = UserDefaults(suiteName: AgentTaskStoreLocation.appGroupIdentifier),
+              let bundleIdentifier = Bundle.main.bundleIdentifier else {
+            throw AgentTaskStoreError.appGroupUnavailable
+        }
+        return PendingAgentTaskQueue(
+            defaults: defaults,
+            storageKey: try AgentTaskStoreLocation.defaultsKey(bundleIdentifier: bundleIdentifier)
+        )
+    }
+
+    private func checkForPendingAgentTasks() {
+        guard scenePhase == .active else { return }
+        do {
+            let tasks = try makePendingAgentTaskQueue().pendingTasks()
+            guard !tasks.isEmpty else { return }
+            revealAgentTaskSidebar()
+            drainPendingAgentTaskQueue()
+        } catch {
+            agentTaskQueueStatusMessage = error.localizedDescription
+            showPageStatus(error.localizedDescription, autoHide: false)
+        }
+    }
+
+    private func revealAgentTaskSidebar() {
+        let wasAlreadyVisible = showAIPanel
+        showAIPanel = true
+        if !wasAlreadyVisible,
+           !aiService.isProcessing,
+           !isAgentSidebarBusy,
+           agentTaskStartup == nil,
+           stagedAgentTask == nil {
+            syncAIContextSelection(forceVisibleTab: true)
+        }
+        if isPhone {
+            withAnimation(.easeOut(duration: 0.22)) {
+                phoneSecondaryPanel = .ai
+                phoneAIPanelExpanded = true
+                phonePanelDragOffset = 0
+                phonePanelHiddenForTabDrag = false
+            }
+        }
+    }
+
+    private func handleAgentSidebarReadiness(isReady: Bool, isBusy: Bool, supportsAgent: Bool) {
+        isAgentSidebarReady = isReady
+        isAgentSidebarBusy = isBusy
+        isAgentBackendSupported = supportsAgent
+        if supportsAgent { lastAgentBackendStatusShown = nil }
+        if isReady {
+            drainPendingAgentTaskQueue()
+            drainWindowAgentTasks()
+        }
+    }
+
+    private func drainPendingAgentTaskQueue() {
+        guard agentTaskSidebarForegroundReady,
+              !aiService.isProcessing,
+              !isAgentSidebarBusy,
+              !browserIntentRuntime.isBusy,
+              agentTaskStartup == nil,
+              stagedAgentTask == nil,
+              windowAgentTaskQueue.isEmpty,
+              let tab = activeAIContextTab,
+              tab.webAIProvider == nil else { return }
+        guard isAgentBackendSupported else {
+            showAgentBackendUnavailableIfNeeded()
+            return
+        }
+        do {
+            let queue = try makePendingAgentTaskQueue()
+            guard let first = try queue.pendingTasks().first else { return }
+            if first.startURL == nil {
+                guard let webView = tab.liveWebView,
+                      !webView.isLoading,
+                      let pageURL = webView.url,
+                      AgentTaskURLParser.isAllowedStartURL(pageURL) else {
+                    agentTaskQueueStatusMessage = "A browser task is waiting. Open an HTTP(S) webpage in this window, then it will start."
+                    showPageStatus("Open a webpage before running a browser task without a starting address.", autoHide: false)
+                    return
+                }
+            } else if tab.liveWebView?.isLoading == true {
+                return
+            }
+            guard let request = try queue.consumeNextIfReady(
+                isForeground: true,
+                hasBrowserView: first.startURL != nil || tab.liveWebView != nil,
+                aiBusy: false,
+                agentBusy: false,
+                startupBusy: false
+            ) else { return }
+            agentTaskQueueStatusMessage = nil
+            windowAgentTaskQueue.append(request)
+            drainWindowAgentTasks()
+        } catch {
+            agentTaskQueueStatusMessage = error.localizedDescription
+            showPageStatus(error.localizedDescription, autoHide: false)
+        }
+    }
+
+    private func enqueueWindowAgentTask(_ request: AgentTaskLaunchRequest) {
+        guard !request.task.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              request.task.utf8.count <= AgentTaskURLParser.maximumTaskUTF8Bytes else {
+            let message = "The saved browser task is invalid and was not started."
+            agentTaskQueueStatusMessage = message
+            showPageStatus(message, autoHide: false)
+            return
+        }
+        if let startURL = request.startURL,
+           !AgentTaskURLParser.isAllowedStartURL(startURL) {
+            let message = "The saved browser task is invalid and was not started."
+            agentTaskQueueStatusMessage = message
+            showPageStatus(message, autoHide: false)
+            return
+        }
+        guard windowAgentTaskQueue.count < PendingAgentTaskQueue.maximumPendingTasks else {
+            let message = "This window already has 8 browser tasks waiting. Finish one before adding another."
+            agentTaskQueueStatusMessage = message
+            showPageStatus(message, autoHide: false)
+            return
+        }
+        windowAgentTaskQueue.append(PendingAgentTask(
+            task: request.task,
+            startURL: request.startURL,
+            savedTaskID: request.savedTaskID
+        ))
+        revealAgentTaskSidebar()
+        drainWindowAgentTasks()
+    }
+
+    private func drainWindowAgentTasks() {
+        guard agentTaskSidebarForegroundReady,
+              !aiService.isProcessing,
+              !isAgentSidebarBusy,
+              !browserIntentRuntime.isBusy,
+              agentTaskStartup == nil,
+              stagedAgentTask == nil,
+              let request = windowAgentTaskQueue.first,
+              let tab = activeAIContextTab,
+              tab.webAIProvider == nil else { return }
+        guard isAgentBackendSupported else {
+            showAgentBackendUnavailableIfNeeded()
+            return
+        }
+
+        if request.startURL != nil {
+            beginAgentTaskStartingNavigation(request, in: tab)
+            return
+        }
+        guard let webView = tab.liveWebView,
+              !webView.isLoading,
+              let pageURL = webView.url,
+              AgentTaskURLParser.isAllowedStartURL(pageURL) else {
+            if request.startURL == nil {
+                agentTaskQueueStatusMessage = "A browser task is waiting. Open an HTTP(S) webpage in this window, then it will start."
+            }
+            return
+        }
+        stagedAgentTask = request
+        stagedAgentTaskContext = AgentTaskPreparedContext(
+            requestID: request.id,
+            tabID: tab.id,
+            webView: webView,
+            finalURL: pageURL,
+            documentRevision: agentTaskDocumentRevisions[ObjectIdentifier(webView), default: 0],
+            navigationID: agentTaskLastFinishedNavigationIDs[ObjectIdentifier(webView)]
+        )
+        agentTaskQueueStatusMessage = nil
+    }
+
+    private func showAgentBackendUnavailableIfNeeded() {
+        let status = BrowserAgentEngineFactory.status(for: aiService.backend)
+        agentTaskQueueStatusMessage = "A browser task is waiting. \(status) Choose a supported model to continue."
+        guard lastAgentBackendStatusShown != status else { return }
+        lastAgentBackendStatusShown = status
+        showPageStatus("A browser task is waiting. \(status)", autoHide: false)
+    }
+
+    private func beginAgentTaskStartingNavigation(_ request: PendingAgentTask, in tab: BrowserTab) {
+        guard agentTaskStartup == nil,
+              let url = request.startURL,
+              AgentTaskURLParser.isAllowedStartURL(url) else { return }
+        let webView = tab.liveWebView ?? tab.activateWebView()
+        aiContextTabID = tab.id
+        vm.selectedTabID = tab.id
+        do {
+            let attempt = try AgentTaskNavigationAttempt(request: request, tab: tab, webView: webView)
+            agentTaskStartupGeneration = UUID()
+            let generation = agentTaskStartupGeneration
+            agentTaskStartup = attempt
+            agentTaskStartupTimeout?.cancel()
+            agentTaskStartupTimeout = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(25))
+                guard !Task.isCancelled,
+                      self.agentTaskStartupGeneration == generation,
+                      self.agentTaskStartup === attempt else { return }
+                self.finishAgentTaskStartup(attempt, with: .failed("The starting page took too long to load."))
+            }
+            // A task URL is not started until the exact visible host has
+            // installed the WKNavigationDelegate that will report its chain.
+            if agentTaskReadyWebViews.contains(ObjectIdentifier(webView)) {
+                startAgentTaskNavigation(attempt, generation: generation)
+            }
+        } catch {
+            let message = "The saved starting address is invalid."
+            agentTaskQueueStatusMessage = message
+            showPageStatus(message, autoHide: false)
+            windowAgentTaskQueue.removeAll { $0.id == request.id }
+        }
+    }
+
+    private func startAgentTaskNavigation(_ attempt: AgentTaskNavigationAttempt, generation: UUID) {
+        guard agentTaskStartupGeneration == generation,
+              agentTaskStartup === attempt,
+              attempt.isCurrent(in: vm, selectedContextID: aiContextTabID),
+              attempt.markNavigationRequested() else { return }
+        launchAgentTaskNavigation(attempt, generation: generation)
+    }
+
+    private func launchAgentTaskNavigation(_ attempt: AgentTaskNavigationAttempt, generation: UUID) {
+        guard agentTaskStartupGeneration == generation,
+              agentTaskStartup === attempt,
+              attempt.isCurrent(in: vm, selectedContextID: aiContextTabID),
+              let tab = attempt.tab,
+              let url = attempt.request.startURL else { return }
+
+        vm.navigateForAgentTask(
+            to: url,
+            in: tab,
+            shouldProceed: {
+                self.agentTaskSidebarForegroundReady
+                    && self.agentTaskStartupGeneration == generation
+                    && self.agentTaskStartup === attempt
+                    && attempt.isCurrent(in: self.vm, selectedContextID: self.aiContextTabID)
+            },
+            onNavigationStarted: { startedWebView, navigation, _ in
+                guard self.agentTaskStartupGeneration == generation,
+                      self.agentTaskStartup === attempt,
+                      attempt.bind(webView: startedWebView, navigation: navigation) else {
+                    self.finishAgentTaskStartup(attempt, with: .failed("The requested starting page was superseded."))
+                    return
+                }
+            },
+            onFailure: { message in
+                guard self.agentTaskStartupGeneration == generation,
+                      self.agentTaskStartup === attempt else { return }
+                if !self.agentTaskSidebarForegroundReady {
+                    self.cancelAgentTaskStartup(returnToWindowQueue: true)
+                    return
+                }
+                self.finishAgentTaskStartup(attempt, with: .failed(message))
+            }
+        )
+    }
+
+    private func handleAgentTaskWebViewReadiness(tab: BrowserTab, webView: WKWebView, isReady: Bool) -> Bool {
+        let webViewID = ObjectIdentifier(webView)
+        if isReady {
+            let wasReady = agentTaskReadyWebViews.contains(webViewID)
+            agentTaskReadyWebViews.insert(webViewID)
+            if let attempt = agentTaskStartup,
+               attempt.tab === tab,
+               attempt.webView === webView {
+                let generation = agentTaskStartupGeneration
+                if attempt.markNavigationRequested() {
+                    Task { @MainActor in
+                        self.launchAgentTaskNavigation(attempt, generation: generation)
+                    }
+                }
+                // While this attempt owns the tab, suppress WebViewHost's normal
+                // restoration load so it cannot race the requested URL.
+                return true
+            }
+            if !wasReady {
+                Task { @MainActor in
+                    self.drainPendingAgentTaskQueue()
+                    self.drainWindowAgentTasks()
+                }
+            }
+            return false
+        }
+        agentTaskReadyWebViews.remove(webViewID)
+        return false
+    }
+
+    private func handleAgentTaskNavigationEvent(
+        tab: BrowserTab,
+        webView: WKWebView,
+        navigation: WKNavigation,
+        kind: AgentTaskNavigationEventKind
+    ) {
+        let webViewID = ObjectIdentifier(webView)
+        if kind == .finished {
+            agentTaskLastFinishedNavigationIDs[webViewID] = ObjectIdentifier(navigation)
+        }
+        if kind == .committed {
+            let isPreparedNavigation = stagedAgentTaskContext?.tabID == tab.id
+                && stagedAgentTaskContext?.webViewID == webViewID
+                && stagedAgentTaskContext?.navigationID == ObjectIdentifier(navigation)
+            if !isPreparedNavigation {
+                agentTaskDocumentRevisions[webViewID, default: 0] += 1
+                if stagedAgentTaskContext?.tabID == tab.id,
+                   stagedAgentTaskContext?.webViewID == webViewID {
+                    rejectStagedAgentTask("The page changed before the browser task could start. Run it again on the current page.")
+                }
+            }
+        }
+
+        guard let attempt = agentTaskStartup else {
+            if kind == .started,
+               stagedAgentTaskContext?.tabID == tab.id,
+               stagedAgentTaskContext?.webViewID == webViewID,
+               stagedAgentTaskContext?.navigationID != ObjectIdentifier(navigation) {
+                rejectStagedAgentTask("A new page navigation started before the browser task could begin. Run it again when the page is ready.")
+            } else if kind == .finished || kind == .failed {
+                // Keep external tasks queued while the window has no usable
+                // page; retry when any ordinary navigation becomes ready.
+                drainPendingAgentTaskQueue()
+                drainWindowAgentTasks()
+            }
+            return
+        }
+        guard attempt.isCurrent(in: vm, selectedContextID: aiContextTabID) else {
+            finishAgentTaskStartup(attempt, with: .failed("The browser tab changed before the starting page finished loading."))
+            return
+        }
+        let result = attempt.receive(
+            kind,
+            tab: tab,
+            webView: webView,
+            navigation: navigation,
+            finalURL: webView.url,
+            isLoading: webView.isLoading
+        )
+        switch result {
+        case .waiting:
+            break
+        case .completed, .failed:
+            finishAgentTaskStartup(attempt, with: result)
+        }
+    }
+
+    private func finishAgentTaskStartup(
+        _ attempt: AgentTaskNavigationAttempt,
+        with result: AgentTaskNavigationResolution
+    ) {
+        guard agentTaskStartup === attempt else { return }
+        if case .waiting = result { return }
+        agentTaskStartupTimeout?.cancel()
+        agentTaskStartupTimeout = nil
+        agentTaskStartup = nil
+        agentTaskStartupGeneration = UUID()
+        switch result {
+        case .completed:
+            if windowAgentTaskQueue.first?.id == attempt.request.id {
+                windowAgentTaskQueue.removeFirst()
+            }
+            stagedAgentTask = attempt.request
+            guard let tab = attempt.tab,
+                  let webView = attempt.webView,
+                  let finalURL = webView.url,
+                  AgentTaskURLParser.isAllowedStartURL(finalURL),
+                  !webView.isLoading else {
+                rejectStagedAgentTask("The starting page changed before the browser task could start. Run it again.")
+                drainWindowAgentTasks()
+                return
+            }
+            stagedAgentTaskContext = AgentTaskPreparedContext(
+                requestID: attempt.request.id,
+                tabID: tab.id,
+                webView: webView,
+                finalURL: finalURL,
+                documentRevision: agentTaskDocumentRevisions[ObjectIdentifier(webView), default: 0],
+                navigation: attempt.expectedNavigation
+            )
+            agentTaskQueueStatusMessage = nil
+        case .failed(let message):
+            windowAgentTaskQueue.removeAll { $0.id == attempt.request.id }
+            agentTaskQueueStatusMessage = message
+            showPageStatus(message, autoHide: false)
+            drainPendingAgentTaskQueue()
+            drainWindowAgentTasks()
+        case .waiting:
+            break
+        }
+    }
+
+    private func validateAgentTaskDispatch(requestID: UUID, webView: WKWebView) -> Bool {
+        guard agentTaskSidebarForegroundReady,
+              !aiService.isProcessing,
+              !isAgentSidebarBusy,
+              !browserIntentRuntime.isBusy,
+              agentTaskStartup == nil,
+              isAgentBackendSupported,
+              let request = stagedAgentTask,
+              request.id == requestID,
+              let context = stagedAgentTaskContext,
+              let tab = activeAIContextTab,
+              tab.webAIProvider == nil,
+              tab.id == context.tabID,
+              tab.liveWebView === webView,
+              context.matches(
+                requestID: requestID,
+                tabID: tab.id,
+                webView: webView,
+                currentURL: webView.url,
+                documentRevision: agentTaskDocumentRevisions[ObjectIdentifier(webView), default: 0],
+                isLoading: webView.isLoading,
+                isForegroundReady: agentTaskSidebarForegroundReady
+                    && !aiService.isProcessing
+                    && !isAgentSidebarBusy
+              ) else {
+            rejectStagedAgentTask("The browser page or navigation changed before the task could start. Review the current page and run it again.")
+            return false
+        }
+        if request.startURL != nil, vm.selectedTabID != tab.id {
+            rejectStagedAgentTask("The browser tab changed before its starting page could be used. Run the task again from the current tab.")
+            return false
+        }
+        return true
+    }
+
+    private func rejectStagedAgentTask(_ message: String) {
+        guard let request = stagedAgentTask else { return }
+        stagedAgentTask = nil
+        stagedAgentTaskContext = nil
+        windowAgentTaskQueue.removeAll { $0.id == request.id }
+        agentTaskQueueStatusMessage = message
+        showPageStatus(message, autoHide: false)
+    }
+
+    private func handlePendingAgentTaskStarted(_ requestID: UUID) {
+        var pending = windowAgentTaskQueue
+        var staged = stagedAgentTask
+        var isBusy = isAgentSidebarBusy
+        guard AgentTaskWindowQueuePolicy.acknowledgeStarted(
+            requestID: requestID,
+            pending: &pending,
+            staged: &staged,
+            isBusy: &isBusy
+        ) else { return }
+        windowAgentTaskQueue = pending
+        stagedAgentTask = staged
+        isAgentSidebarBusy = isBusy
+        stagedAgentTaskContext = nil
+        agentTaskQueueStatusMessage = nil
+    }
+
+    private func cancelAgentTaskStartup(returnToWindowQueue: Bool) {
+        guard let attempt = agentTaskStartup else { return }
+        agentTaskStartupTimeout?.cancel()
+        agentTaskStartupTimeout = nil
+        agentTaskStartupGeneration = UUID()
+        agentTaskStartup = nil
+        if returnToWindowQueue,
+           !windowAgentTaskQueue.contains(where: { $0.id == attempt.request.id }) {
+            windowAgentTaskQueue.insert(attempt.request, at: 0)
+        }
+    }
+
+    private func handleAgentTaskCompletion(
+        _ snapshot: BrowserAgentController.CompletionSnapshot,
+        replyID: UUID
+    ) {
+        // The reply ID is captured by the exact String completion callback in the
+        // sidebar. Private runs return before even constructing the store provider.
+        guard !snapshot.isPrivate else { return }
+        do {
+            let store = try AgentTaskStoreLocation.makeDefaultStore(bundleIdentifier: Bundle.main.bundleIdentifier)
+            try AgentTaskHistoryRecorder.record(snapshot.historyRecord, isPrivate: false, storeProvider: { store })
+            if let savedTaskID = snapshot.savedTaskID,
+               var saved = try store.savedTask(id: savedTaskID) {
+                saved.lastRunAt = snapshot.date
+                try store.updateTask(saved)
+            }
+            AgentTaskShortcutMetadata.refresh()
+        } catch {
+            showPageStatus(error.localizedDescription, autoHide: false)
+        }
+        _ = replyID // Exact reply association remains in AISidebar for Save as Task.
+    }
+
     private func checkForSharedURL() {
         print("DEBUG: checkForSharedURL called")
 
         guard let sharedDefaults = UserDefaults(suiteName: DarwinNotificationObserver.appGroupID) else {
             print("DEBUG: Failed to access App Group: \(DarwinNotificationObserver.appGroupID)")
+            return
+        }
+
+        if let sharedSearchText = sharedDefaults.string(forKey: BrowserSharePayload.sharedSearchTextKey) {
+            sharedURLRetryCount = 0
+            sharedDefaults.removeObject(forKey: BrowserSharePayload.sharedSearchTextKey)
+            sharedDefaults.synchronize()
+            openSharedSearch(sharedSearchText)
             return
         }
 
@@ -4293,7 +5084,26 @@ struct ContentView: View {
         if aiService.handleCloudShortcutCallback(url) {
             return
         }
+        if url.scheme?.lowercased() == AgentIncomingURLRouter.appScheme,
+           url.host?.lowercased() == "agent" {
+            do {
+                guard let request = try AgentTaskURLParser.parse(url) else {
+                    throw AgentTaskURLParseError.malformedAgentURL
+                }
+                try AgentTaskHandoffCoordinator(queue: makePendingAgentTaskQueue()).enqueue(request)
+                showPageStatus("Browser task queued.")
+                revealAgentTaskSidebar()
+                checkForPendingAgentTasks()
+            } catch {
+                showPageStatus(error.localizedDescription, autoHide: false)
+            }
+            return
+        }
         guard url.scheme?.lowercased() == shareAppURLScheme else {
+            return
+        }
+
+        if handleSharedSearchURL(url) {
             return
         }
 
@@ -4336,6 +5146,121 @@ struct ContentView: View {
         vm.navigate(to: url, in: newTab)
     }
 
+    private func handleSharedSearchURL(_ url: URL) -> Bool {
+        guard url.host?.lowercased() == BrowserIntentShareParser.searchHost else {
+            return false
+        }
+        do {
+            if let text = try BrowserIntentShareParser.parseSearchText(from: url) {
+                openSharedSearch(text)
+            }
+        } catch {
+            showPageStatus(error.localizedDescription, autoHide: false)
+        }
+        return true
+    }
+
+    private func openSharedSearch(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard BrowserIntentShareParser.isValidSearchText(trimmed),
+              let url = vm.defaultSearchEngine.searchURL(for: trimmed) else { return }
+        let newTab = BrowserTab(title: "Loading...", url: url, isIncognito: false)
+        vm.tabs.append(newTab)
+        vm.selectedTabID = newTab.id
+        vm.navigate(to: url, in: newTab)
+    }
+
+    private func registerBrowserIntentEndpoint() {
+        browserIntentRuntime.register(
+            windowID: browserIntentWindowID,
+            isActive: scenePhase == .active,
+            isReady: {
+                !aiService.isProcessing
+                    && !isAgentSidebarBusy
+                    && agentTaskStartup == nil
+                    && stagedAgentTask == nil
+                    && windowAgentTaskQueue.isEmpty
+            },
+            execute: { command, confirm, isCurrent in
+                try await makeBrowserIntentExecutor(isCurrent: isCurrent).execute(command, confirm: confirm)
+            }
+        )
+    }
+
+    private func makeBrowserIntentExecutor(
+        isCurrent: @escaping @MainActor @Sendable () -> Bool
+    ) -> BrowserIntentExecutor {
+        BrowserIntentExecutor(
+            viewModel: vm,
+            downloadManager: downloadManager,
+            isCurrent: isCurrent,
+            backendProvider: { aiService.backend },
+            callbacks: makeBrowserIntentCallbacks()
+        )
+    }
+
+    private func makeBrowserIntentCallbacks() -> BrowserIntentExecutor.Callbacks {
+        var callbacks = BrowserIntentExecutor.Callbacks()
+        callbacks.translatePage = { tab, tag, shouldContinue in
+            guard tab.webAIProvider == nil else {
+                throw BrowserIntentError.noEligiblePage
+            }
+            let language = Locale.Language(identifier: tag)
+            try await withCheckedThrowingContinuation { continuation in
+                startPageTranslation(
+                    for: tab,
+                    targetLanguage: language,
+                    agentRunIsCurrent: shouldContinue
+                ) { result in
+                    continuation.resume(with: result)
+                }
+            }
+        }
+        callbacks.openSplit = { primaryID, secondaryID in
+            splitPrimaryID = primaryID
+            splitSecondaryID = secondaryID
+            splitSecondaryExternalTab = nil
+            splitMode = .vertical
+            vm.isSplitViewActive = true
+            refreshHibernationProtection()
+            syncAIContextSelection()
+        }
+        callbacks.endSplit = {
+            clearSplitView()
+        }
+        callbacks.sendToWebAI = { provider, userPrompt, composedPrompt, sourceTab, binding in
+            let previousRequestID = activeWebAIRequest?.id
+            aiContextTabID = sourceTab.id
+            startCapturedWebAIRequest(
+                provider: provider,
+                userPrompt: userPrompt,
+                composedPrompt: composedPrompt,
+                sourceTab: sourceTab,
+                sourceBinding: binding
+            )
+            return activeWebAIRequest != nil && activeWebAIRequest?.id != previousRequestID
+        }
+        callbacks.onTabSelected = { id in
+            aiContextTabID = id
+            refreshHibernationProtection()
+        }
+        callbacks.translationPageIsCurrent = { tab, webView, url in
+            let windowID = browserIntentWindowID
+            let viewModel = vm
+            let runtime = browserIntentRuntime
+            let revision = agentTaskDocumentRevisions[ObjectIdentifier(webView), default: 0]
+            return { [weak tab, weak webView] in
+                guard let tab, let webView else { return false }
+                return runtime.isWindowRegisteredAndActive(windowID: windowID)
+                    && viewModel.tabs.first(where: { $0.id == tab.id }) === tab
+                    && tab.liveWebView === webView
+                    && webView.url == url
+                    && agentTaskDocumentRevisions[ObjectIdentifier(webView), default: 0] == revision
+            }
+        }
+        return callbacks
+    }
+
     private func dismissAIPanel(isExplicitCancellation: Bool = false) {
         guard AIPanelDismissalPolicy.allowsDismissal(
             isProcessing: aiService.isProcessing,
@@ -4365,6 +5290,10 @@ struct ContentView: View {
         AISidebar(
             aiService: aiService,
             onSend: { text in
+                guard !browserIntentRuntime.isBusy else {
+                    showPageStatus("Finishing a Siri or Shortcuts action\u{2026}")
+                    return
+                }
                 aiQuery = text
                 if let tab = activeAIContextTab {
                     sendAIQuery(for: tab, selection: pendingAISelection)
@@ -4377,16 +5306,24 @@ struct ContentView: View {
             selectedContextID: $aiContextTabID,
             selectionText: activeAISelectionText,
             contextStatusText: activeAIContextStatusText,
-            onSummaryExtraction: { extractedContent, length in
-                if let tab = activeAIContextTab {
-                    storeAIPageContent(extractedContent, for: tab)
+            onSummaryExtraction: { content, length, capturedBinding, extractedContent in
+                if browserIntentRuntime.isBusy {
+                    showPageStatus("Finishing a Siri or Shortcuts action\u{2026}")
+                    return true
+                }
+                if let tab = capturedBinding.flatMap({ browserTab(withID: $0.tabID) }) ?? activeAIContextTab {
+                    if let extractedContent {
+                        storeAIPageContent(extractedContent, for: tab, capturedBinding: capturedBinding)
+                    }
                     return dispatchResolvedSummary(
-                        content: extractedContent.formattedForAIContext,
+                        content: content,
                         length: length,
-                        sourceTab: tab
+                        sourceTab: tab,
+                        sourceBinding: capturedBinding
                     )
                 }
-                return false
+                reportBlockedPageContext()
+                return true
             },
             onContextSelected: { id in
                 if let tab = vm.tabs.first(where: { $0.id == id }) {
@@ -4411,8 +5348,170 @@ struct ContentView: View {
                     phonePanelHiddenForTabDrag = false
                 }
             },
-            isPinned: isPhone ? nil : $pinAISidebar
+            isPinned: isPhone ? nil : $pinAISidebar,
+            onAgentOpenTab: { url, sourceWebView in
+                openAgentTab(url: url, after: sourceWebView)
+            },
+            onLookupOpenSource: { source in
+                guard !browserIntentRuntime.isBusy, !aiService.isProcessing,
+                      let tab = activeAIContextTab,
+                      vm.tabs.contains(where: { $0.id == tab.id }),
+                      tab.webAIProvider == nil,
+                      tab.isIncognito == source.isPrivate else { return false }
+                let webView = tab.liveWebView ?? tab.activateWebView()
+                guard AISidebar.lookupSourceOpenEligible(
+                    source,
+                    contextIsPrivate: tab.isIncognito,
+                    webViewDataStoreIsPersistent: webView.configuration.websiteDataStore.isPersistent
+                ) else { return false }
+                return openAgentTab(url: source.url, after: webView) != nil
+            },
+            onAgentAutofillQuarantine: { tabID, webView in
+                handleAgentAutofillQuarantine(tabID: tabID, webView: webView)
+            },
+            browserAgentAdapter: BrowserAgentBrowserAdapter(
+                viewModel: vm,
+                downloadManager: downloadManager,
+                onTabSelected: { id in
+                    aiContextTabID = id
+                    refreshHibernationProtection()
+                },
+                onSplitPairOpened: { primaryID, secondaryID, isHorizontal in
+                    splitPrimaryID = primaryID
+                    splitSecondaryID = secondaryID
+                    splitSecondaryExternalTab = nil
+                    splitMode = isHorizontal ? .horizontal : .vertical
+                    vm.isSplitViewActive = true
+                    aiContextTabID = secondaryID
+                    refreshHibernationProtection()
+                    syncAIContextSelection()
+                },
+                readerModeAction: { id, enabled in
+                    guard let tab = browserTab(withID: id), tab.webAIProvider == nil,
+                          let scheme = tab.currentURL?.scheme?.lowercased(), scheme == "http" || scheme == "https" else {
+                        throw NSError(domain: "BrowserAgent", code: 1, userInfo: [NSLocalizedDescriptionKey: "Reader mode requires a regular HTTP(S) browser tab."])
+                    }
+                    if tab.isReaderMode == enabled { return }
+                    let webView = tab.liveWebView ?? tab.activateWebView()
+                    let value: Any? = try await withCheckedThrowingContinuation { continuation in
+                        webView.evaluateJavaScript(ReaderModeService.toggleScript) { result, error in
+                            if let error { continuation.resume(throwing: error) }
+                            else { continuation.resume(returning: result) }
+                        }
+                    }
+                    guard (value as? Bool) == enabled else {
+                        throw NSError(domain: "BrowserAgent", code: 2, userInfo: [NSLocalizedDescriptionKey: "The page could not change reader mode."])
+                    }
+                    tab.isReaderMode = enabled
+                },
+                translationAction: { id, target, shouldContinue in
+                    guard let tab = browserTab(withID: id), tab.webAIProvider == nil else {
+                        throw NSError(domain: "BrowserAgent", code: 3, userInfo: [NSLocalizedDescriptionKey: "The page tab is no longer available."])
+                    }
+                    let language = target.map { Locale.Language(identifier: $0) }
+                    if let language, language.languageCode == nil {
+                        throw NSError(domain: "BrowserAgent", code: 4, userInfo: [NSLocalizedDescriptionKey: "Use a valid BCP-47 language tag such as pt or pt-BR."])
+                    }
+                    let preparation: Result<Void, Error> = await withCheckedContinuation { continuation in
+                        startPageTranslation(
+                            for: tab,
+                            targetLanguage: language,
+                            agentRunIsCurrent: shouldContinue
+                        ) { result in
+                            continuation.resume(returning: result)
+                        }
+                    }
+                    switch preparation {
+                    case .failure(let error): throw error
+                    case .success: break
+                    }
+
+                    let deadline = Date().addingTimeInterval(15)
+                    while Date() < deadline {
+                        guard shouldContinue() else { throw CancellationError() }
+                        if let sourceLanguage = tab.translatedFrom {
+                            return "Translation is applied on screen from \(sourceLanguage). Remaining below-screen text may continue translating."
+                        }
+                        if let status = pageTranslationAgentStates[id], status.hasPrefix("failed:") {
+                            throw NSError(domain: "BrowserAgent", code: 6, userInfo: [NSLocalizedDescriptionKey: String(status.dropFirst("failed: ".count))])
+                        }
+                        if !tab.isTranslating {
+                            throw NSError(domain: "BrowserAgent", code: 7, userInfo: [NSLocalizedDescriptionKey: pageTranslationAgentStates[id] ?? "Translation stopped before any page text was translated."])
+                        }
+                        try await Task.sleep(for: .milliseconds(250))
+                    }
+                    guard shouldContinue() else { throw CancellationError() }
+                    if let sourceLanguage = tab.translatedFrom {
+                        return "Translation is applied on screen from \(sourceLanguage). Remaining below-screen text may continue translating."
+                    }
+                    return "Translation is prepared and waiting for the system language download or user approval. Use page_translation_status to check again."
+                },
+                translationStatusAction: { id in
+                    pageTranslationAgentStates[id]
+                        ?? (browserTab(withID: id)?.translatedFrom.map { "translated from \($0)" }
+                            ?? (browserTab(withID: id)?.isTranslating == true ? "in progress" : "idle"))
+                },
+                originalPageAction: { id in
+                    guard let tab = browserTab(withID: id), tab.webAIProvider == nil else {
+                        throw NSError(domain: "BrowserAgent", code: 5, userInfo: [NSLocalizedDescriptionKey: "The page tab is no longer available."])
+                    }
+                    showOriginalPage(for: tab)
+                }
+            ),
+            agentTaskStoreProvider: {
+                try AgentTaskStoreLocation.makeDefaultStore(bundleIdentifier: Bundle.main.bundleIdentifier)
+            },
+            onAgentTaskLaunch: { request in
+                enqueueWindowAgentTask(request)
+            },
+            pendingAgentTask: stagedAgentTask,
+            onPendingAgentTaskStarted: { requestID in
+                handlePendingAgentTaskStarted(requestID)
+            },
+            onPendingAgentTaskDispatchCheck: { requestID, webView in
+                validateAgentTaskDispatch(requestID: requestID, webView: webView)
+            },
+            onPendingAgentTaskRejected: { requestID in
+                guard stagedAgentTask?.id == requestID else { return }
+                rejectStagedAgentTask("The browser page or navigation changed before the task could start. Review the current page and run it again.")
+            },
+            agentTaskStatusMessage: agentTaskQueueStatusMessage,
+            isAgentTaskSidebarVisible: showAIPanel && (!isPhone || (phoneSecondaryPanel == .ai && !phonePanelHiddenForTabDrag)),
+            browserActionIsBusy: browserIntentRuntime.isBusy,
+            onAgentReadinessChanged: { ready, busy, supported in
+                handleAgentSidebarReadiness(isReady: ready, isBusy: busy, supportsAgent: supported)
+            },
+            onAgentRunCompleted: { snapshot, replyID in
+                handleAgentTaskCompletion(snapshot, replyID: replyID)
+            },
+            onAgentNeedsAttention: {
+                revealAgentTaskSidebar()
+            }
         )
+    }
+
+    /// Opens a tab for the browser agent right after the tab it is working in,
+    /// keeping that tab's private-browsing mode and group, and selects it.
+    private func openAgentTab(url: URL, after sourceWebView: WKWebView) -> WKWebView? {
+        let sourceIndex = vm.tabs.firstIndex { $0.liveWebView === sourceWebView }
+        let sourceTab = sourceIndex.map { vm.tabs[$0] }
+        let tab = BrowserTab(
+            title: url.host ?? "New Tab",
+            url: url,
+            isIncognito: sourceTab?.isIncognito ?? false,
+            useDesktopUserAgent: requestDesktopSite,
+            groupID: sourceTab?.groupID
+        )
+        if let sourceIndex {
+            vm.tabs.insert(tab, at: sourceIndex + 1)
+        } else {
+            vm.tabs.append(tab)
+        }
+        vm.selectedTabID = tab.id
+        aiContextTabID = tab.id
+        vm.navigate(to: url, in: tab)
+        refreshHibernationProtection()
+        return tab.activateWebView()
     }
 
     private var aiSidebarPanel: some View {
@@ -5027,6 +6126,19 @@ struct ContentView: View {
         providerTab.activateWebView().load(URLRequest(url: provider.url))
     }
 
+    @MainActor
+    private func handleAutofillPrivacyNavigation(_ tab: BrowserTab, webView: WKWebView, url: URL) {
+        guard tab.liveWebView === webView else { return }
+        BrowserAgentAutofillPrivacy.shared.reconcileNavigation(
+            tabID: tab.id,
+            webView: webView,
+            navigationURL: url
+        ) { [weak tab] in
+            guard let tab, tab.liveWebView === webView else { return false }
+            return self.browserTab(withID: tab.id) === tab || self.splitSecondaryExternalTab === tab
+        }
+    }
+
     /// Shows a saved split pair again when one of its tabs is selected.
     private func restoreSplitPairIfNeeded() {
         guard splitMode == nil,
@@ -5107,7 +6219,8 @@ struct ContentView: View {
             id: tab.id,
             title: title,
             subtitle: subtitle,
-            webView: tab.liveWebView as WKWebView?
+            webView: tab.liveWebView as WKWebView?,
+            isPrivate: tab.isIncognito
         )
     }
 
@@ -5169,8 +6282,121 @@ struct ContentView: View {
 
     @MainActor
     private func prepareAIContext() {
-        let contextURL = activeAIContextTab?.currentURL
-        aiService.prepareForNewContext(contextURL)
+        let tab = activeAIContextTab
+        let contextURL = tab?.currentURL
+        let isPrivate = tab?.isIncognito ?? false
+        if AIConversationContextPolicy.preservesConversation(
+            previousContextWasPrivate: aiContextWasPrivate,
+            nextContextIsPrivate: isPrivate
+        ) {
+            aiService.updateContextPreservingConversation(contextURL)
+        } else {
+            aiService.prepareForNewContext(contextURL)
+        }
+        aiContextWasPrivate = isPrivate
+    }
+
+    @MainActor
+    private func pageContextBinding(for tab: BrowserTab) -> BrowserAgentPageContextBinding? {
+        guard let webView = tab.liveWebView,
+              let url = webView.url ?? tab.currentURL else { return nil }
+        return BrowserAgentPageContextBinding(tabID: tab.id, webView: webView, url: url)
+    }
+
+    @MainActor
+    private func pageContextIsAllowed(
+        for tab: BrowserTab,
+        capturedBinding: BrowserAgentPageContextBinding? = nil
+    ) -> Bool {
+        let privacy = BrowserAgentAutofillPrivacy.shared
+        guard !privacy.withholdsPageData(tabID: tab.id) else { return false }
+        guard let capturedBinding else { return true }
+        guard let currentBinding = pageContextBinding(for: tab) else { return false }
+        if case .blocked = BrowserAgentModelEgress.evaluate(
+            nil,
+            captured: capturedBinding,
+            current: currentBinding,
+            privacy: privacy
+        ) {
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private func safePageText(
+        _ text: String,
+        for tab: BrowserTab,
+        capturedBinding: BrowserAgentPageContextBinding? = nil
+    ) -> String? {
+        let privacy = BrowserAgentAutofillPrivacy.shared
+        guard let currentBinding = pageContextBinding(for: tab) else { return nil }
+        switch BrowserAgentModelEgress.evaluate(
+            text,
+            captured: capturedBinding ?? currentBinding,
+            current: currentBinding,
+            privacy: privacy
+        ) {
+        case .allowed(let safeText):
+            return safeText.map { privacy.redactPotentiallyTruncated($0, wasTruncated: true) }
+        case .blocked:
+            return nil
+        }
+    }
+
+    @MainActor
+    private func reportBlockedPageContext() {
+        aiService.discardSourcePageContextForPrivacy()
+        aiService.appendAssistantMessage("Page-derived content from a tab that received autofill stays out of agent context. Switch to an unfilled tab to continue.")
+    }
+
+    @MainActor
+    private func handleAgentAutofillQuarantine(tabID: UUID, webView: WKWebView) {
+        aiPageContentCache.removeValue(forKey: tabID)
+        if pendingAISelection?.tabID == tabID {
+            if let selection = pendingAISelection { clearAISelectionHighlight(selection) }
+            pendingAISelection = nil
+            pendingAIReplacement = nil
+        }
+        if aiSelectionContext?.tabID == tabID {
+            clearAISelectionContext()
+        }
+        pendingAIQueryTask?.cancel()
+        pendingAIQueryTask = nil
+        pendingAIQueryToken = UUID()
+        aiService.installModelEgressRedactor { text in
+            BrowserAgentAutofillPrivacy.shared.redactPotentiallyTruncated(text, wasTruncated: true)
+        }
+        if let pendingRedditPreflight,
+           pendingRedditPreflight.sourceTabID == tabID {
+            self.pendingRedditPreflight = nil
+        }
+        aiService.discardSourcePageContextForPrivacy()
+
+        if webProviderContextTabID == tabID {
+            pendingWebProviderPrompt = nil
+            pendingWebProviderProvider = nil
+            pendingWebProviderTargetID = nil
+            pendingWebProviderContextOverride = nil
+            webProviderContextTabID = nil
+            webProviderContextURLString = nil
+        }
+        if activeWebAIRequest?.sourceBinding?.tabID == tabID {
+            dismissWebAIOverlay(userCancelled: true)
+        }
+        _ = webView
+    }
+
+    @MainActor
+    private func browserAgentPageContextCanTransmit(_ binding: BrowserAgentPageContextBinding?) -> Bool {
+        guard let binding else { return true }
+        guard let tab = browserTab(withID: binding.tabID) ?? splitSecondaryExternalTab,
+              tab.id == binding.tabID else { return false }
+        guard pageContextIsAllowed(for: tab, capturedBinding: binding) else {
+            reportBlockedPageContext()
+            return false
+        }
+        return true
     }
 
     private func webProviderContextSourceTab() -> BrowserTab? {
@@ -5191,6 +6417,13 @@ struct ContentView: View {
     }
 
     private func handleAskAISelection(in tab: BrowserTab) {
+        guard pageContextIsAllowed(for: tab) else {
+            reportBlockedPageContext()
+            return
+        }
+        let webView = tab.liveWebView ?? tab.activateWebView()
+        guard let selectionURL = webView.url ?? tab.currentURL else { return }
+        let capturedBinding = BrowserAgentPageContextBinding(tabID: tab.id, webView: webView, url: selectionURL)
         if let existing = pendingAISelection {
             clearAISelectionHighlight(existing)
             pendingAISelection = nil
@@ -5216,8 +6449,14 @@ struct ContentView: View {
         })();
         """
 
-        tab.activateWebView().evaluateJavaScript(script) { result, _ in
-            let selectedText = (result as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        webView.evaluateJavaScript(script) { result, _ in
+            guard tab.liveWebView === webView,
+                  self.pageContextIsAllowed(for: tab, capturedBinding: capturedBinding) else {
+                self.reportBlockedPageContext()
+                return
+            }
+            let rawSelectedText = (result as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let selectedText = BrowserAgentAutofillPrivacy.shared.redactKnownValues(rawSelectedText)
             guard !selectedText.isEmpty else { return }
             pendingAISelection = AISelection(tabID: tab.id, markerID: markerID, text: selectedText)
             aiSelectionContext = AISelectionContext(tabID: tab.id, text: selectedText)
@@ -6622,7 +7861,6 @@ struct ContentView: View {
                 pendingAIQueryTask = nil
                 pendingAIQueryToken = UUID()
                 if activeWebAIServiceRequestID == nil {
-                    aiService.reset()
                     if let selection = pendingAISelection, pendingAIReplacement == nil {
                         clearAISelectionHighlight(selection)
                         pendingAISelection = nil
@@ -6746,7 +7984,7 @@ struct ContentView: View {
     private func activeTabView(_ tab: BrowserTab) -> some View {
         ZStack(alignment: .top) {
             Group {
-                if tab.isBlank {
+                if tab.isBlank && !agentTaskNeedsNavigationHost(for: tab) {
                     Color(UIColor.systemBackground)
                 } else {
                     GeometryReader { proxy in
@@ -6779,13 +8017,23 @@ struct ContentView: View {
                             onWebProviderReady: { tab in
                                 handleWebProviderReady(tab)
                             },
-                            onNavigate: { tab, url in
+                            onNavigate: { tab, webView, url in
+                                handleAutofillPrivacyNavigation(tab, webView: webView, url: url)
                                 handlePrimaryNavigation(tab, url: url)
                                 // Late layout (fonts, images) can move text under the toolbar.
                                 refreshToolbarBackdrop()
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                                     refreshToolbarBackdrop()
                                 }
+                            },
+                            onAgentTaskNavigationEvent: { tab, webView, navigation, kind in
+                                handleAgentTaskNavigationEvent(tab: tab, webView: webView, navigation: navigation, kind: kind)
+                            },
+                            onAgentTaskWebViewReadiness: { tab, webView, ready in
+                                handleAgentTaskWebViewReadiness(tab: tab, webView: webView, isReady: ready)
+                            },
+                            isAgentTaskLoadOwned: { tab, webView in
+                                agentTaskStartup?.tab === tab && agentTaskStartup?.webView === webView
                             },
                             bottomChromeHeight: activeTabBottomChromeHeight,
                             bottomStripHeight: activeTabBottomStripHeight,
@@ -6942,7 +8190,7 @@ struct ContentView: View {
     /// `touchesBottom`: the pane reaches the bottom edge, where the toolbar floats over it.
     private func splitPane(for tab: BrowserTab, touchesBottom: Bool = false) -> some View {
         Group {
-            if tab.isBlank {
+            if tab.isBlank && !agentTaskNeedsNavigationHost(for: tab) {
                 Color(UIColor.systemBackground)
             } else {
                 GeometryReader { proxy in
@@ -6975,8 +8223,18 @@ struct ContentView: View {
                         onWebProviderReady: { tab in
                             handleWebProviderReady(tab)
                         },
-                        onNavigate: { tab, url in
+                        onNavigate: { tab, webView, url in
+                            handleAutofillPrivacyNavigation(tab, webView: webView, url: url)
                             handlePrimaryNavigation(tab, url: url)
+                        },
+                        onAgentTaskNavigationEvent: { tab, webView, navigation, kind in
+                            handleAgentTaskNavigationEvent(tab: tab, webView: webView, navigation: navigation, kind: kind)
+                        },
+                        onAgentTaskWebViewReadiness: { tab, webView, ready in
+                            handleAgentTaskWebViewReadiness(tab: tab, webView: webView, isReady: ready)
+                        },
+                        isAgentTaskLoadOwned: { tab, webView in
+                            agentTaskStartup?.tab === tab && agentTaskStartup?.webView === webView
                         },
                         bottomChromeHeight: touchesBottom ? activeTabBottomChromeHeight : 0,
                         bottomStripHeight: touchesBottom ? activeTabBottomStripHeight : 0,
@@ -7021,6 +8279,11 @@ struct ContentView: View {
                 .accessibilityLabel("Close AI pane")
             }
         }
+    }
+
+    private func agentTaskNeedsNavigationHost(for tab: BrowserTab) -> Bool {
+        guard let attempt = agentTaskStartup else { return false }
+        return attempt.tab === tab
     }
 
     @ViewBuilder
@@ -7337,8 +8600,17 @@ struct ContentView: View {
     // MARK: - AI Helpers
     @MainActor
     private func sendAIQuery(for tab: BrowserTab, selection: AISelection? = nil) {
-        let query = aiQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let query = BrowserAgentAutofillPrivacy.shared.redactPotentiallyTruncated(
+            aiQuery.trimmingCharacters(in: .whitespacesAndNewlines),
+            wasTruncated: true
+        )
         guard !query.isEmpty else { return }
+        let sourceBinding = pageContextBinding(for: tab)
+        guard pageContextIsAllowed(for: tab, capturedBinding: sourceBinding) else {
+            aiQuery = ""
+            reportBlockedPageContext()
+            return
+        }
         browserAIFlowLog("sendAIQuery START backend=\(aiService.backend.rawValue) tab=\(tab.id.uuidString.prefix(8)) queryChars=\(query.count) hasSelection=\(selection != nil)")
         aiQuery = ""
 
@@ -7349,7 +8621,8 @@ struct ContentView: View {
         pendingAIQueryTask = nil
         pendingAIQueryToken = UUID()
 
-        let selectionText = selectionContextText(for: tab.id)
+        let rawSelectionText = selectionContextText(for: tab.id)
+        let selectionText = rawSelectionText.flatMap { safePageText($0, for: tab, capturedBinding: sourceBinding) }
 
         if aiService.backend.isWebProvider {
             let provider: WebAIProvider
@@ -7398,12 +8671,12 @@ struct ContentView: View {
         // already have usable context. This runs for all backends.
         if let selectionText {
             browserAIFlowLog("sendAIQuery fast-path selection context chars=\(selectionText.count)")
-            dispatchResolvedQuery(prompt: query, content: selectionText, sourceTab: tab)
+            dispatchResolvedQuery(prompt: query, content: selectionText, sourceTab: tab, sourceBinding: sourceBinding)
             return
         }
         if let cached = cachedAIPageContent(for: tab) {
             browserAIFlowLog("sendAIQuery fast-path cached page context chars=\(cached.count)")
-            dispatchResolvedQuery(prompt: query, content: cached, sourceTab: tab)
+            dispatchResolvedQuery(prompt: query, content: cached, sourceTab: tab, sourceBinding: sourceBinding)
             return
         }
         if canReuseSourcePageContext {
@@ -7412,7 +8685,8 @@ struct ContentView: View {
                 prompt: query,
                 content: aiService.sourcePageContextText,
                 sourceTab: tab,
-                reusingStoredSourceContext: true
+                reusingStoredSourceContext: true,
+                sourceBinding: sourceBinding
             )
             return
         }
@@ -7437,17 +8711,27 @@ struct ContentView: View {
             } else {
                 browserAIFlowLog("sendAIQuery extracting page context from webView")
                 let webView = tab.activateWebView()
+                let extractionBinding = webView.url.map {
+                    BrowserAgentPageContextBinding(tabID: tab.id, webView: webView, url: $0)
+                } ?? sourceBinding
                 let extracted = await PageContentExtractor.extractContent(
                     from: webView,
                     url: tab.currentURL,
                     preferFast: true
                 )
                 if let extracted {
-                    await MainActor.run {
-                        self.storeAIPageContent(extracted, for: tab)
+                    let currentAndSafe = await MainActor.run { () -> (Bool, String) in
+                        guard self.pageContextIsAllowed(for: tab, capturedBinding: extractionBinding) else {
+                            self.reportBlockedPageContext()
+                            return (false, "")
+                        }
+                        let safe = BrowserAgentAutofillPrivacy.shared.sanitized(extracted)
+                        self.storeAIPageContent(safe, for: tab, capturedBinding: extractionBinding)
+                        return (true, safe.formattedForAIContext)
                     }
-                    browserAIFlowLog("sendAIQuery extracted page context bodyChars=\(extracted.body.count)")
-                    contentText = extracted.formattedForAIContext
+                    guard currentAndSafe.0 else { return }
+                    browserAIFlowLog("sendAIQuery extracted page context bodyChars=\(currentAndSafe.1.count)")
+                    contentText = currentAndSafe.1
                 } else {
                     browserAIFlowLog("sendAIQuery extraction returned nil")
                     contentText = nil
@@ -7457,9 +8741,15 @@ struct ContentView: View {
                 browserAIFlowLog("sendAIQuery task ABORT token=\(queryToken.uuidString.prefix(8)) cancelledOrStale=true")
                 return
             }
+            guard let safeContentText = await MainActor.run(body: {
+                self.safePageText(contentText ?? "", for: tab, capturedBinding: sourceBinding)
+            }) else {
+                await MainActor.run { self.reportBlockedPageContext() }
+                return
+            }
             browserAIFlowLog("sendAIQuery enqueue token=\(queryToken.uuidString.prefix(8)) pageContentChars=\(contentText?.count ?? 0)")
             await MainActor.run {
-                self.dispatchResolvedQuery(prompt: query, content: contentText, sourceTab: tab)
+                self.dispatchResolvedQuery(prompt: query, content: safeContentText.isEmpty ? nil : safeContentText, sourceTab: tab, sourceBinding: sourceBinding)
             }
             if pendingAIQueryToken == queryToken {
                 pendingAIQueryTask = nil
@@ -7474,13 +8764,19 @@ struct ContentView: View {
         from webView: WKWebView,
         contextOverride: String? = nil
     ) {
-        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPrompt = BrowserAgentAutofillPrivacy.shared
+            .redactPotentiallyTruncated(prompt.trimmingCharacters(in: .whitespacesAndNewlines), wasTruncated: true)
         guard !trimmedPrompt.isEmpty,
               provider.matches(webView.url) else { return }
         let trimmedOverride = contextOverride?.trimmingCharacters(in: .whitespacesAndNewlines)
         let hasOverride = !(trimmedOverride?.isEmpty ?? true)
 
         let sourceTab = webProviderContextSourceTab()
+        let sourceBinding = sourceTab.flatMap { pageContextBinding(for: $0) }
+        if let sourceTab, !pageContextIsAllowed(for: sourceTab, capturedBinding: sourceBinding) {
+            reportBlockedPageContext()
+            return
+        }
         if let sourceTab {
             let contextURL = sourceTab.currentURL
             webProviderContextTabID = sourceTab.id
@@ -7491,8 +8787,18 @@ struct ContentView: View {
         }
 
         if hasOverride, let trimmedOverride {
-            let composed = "Selected text:\n\(trimmedOverride)\n\nUser prompt:\n\(trimmedPrompt)"
-            sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: webProviderTabID(for: webView))
+            let safeOverride: String
+            if let sourceTab {
+                guard let safe = safePageText(trimmedOverride, for: sourceTab, capturedBinding: sourceBinding) else {
+                    reportBlockedPageContext()
+                    return
+                }
+                safeOverride = safe
+            } else {
+                safeOverride = BrowserAgentAutofillPrivacy.shared.redactKnownValues(trimmedOverride)
+            }
+            let composed = "Selected text:\n\(safeOverride)\n\nUser prompt:\n\(trimmedPrompt)"
+            sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: webProviderTabID(for: webView), sourceBinding: sourceBinding)
             return
         }
 
@@ -7509,7 +8815,7 @@ struct ContentView: View {
                 )
                 : cached
             let composed = "\(context)\n\nUser prompt:\n\(trimmedPrompt)"
-            sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: webProviderTabID(for: webView))
+            sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: webProviderTabID(for: webView), sourceBinding: sourceBinding)
             return
         }
 
@@ -7522,32 +8828,34 @@ struct ContentView: View {
                 : Self.condenseText(sourceContext, maxChars: webProviderContextMaxChars)
             let composed = condensed.isEmpty ? trimmedPrompt : "\(condensed)\n\nUser prompt:\n\(trimmedPrompt)"
             browserAIWebLog("handleWebProviderPrompt reusing sourcePageContext chars=\(sourceContext.count)")
-            sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: webProviderTabID(for: webView))
+            sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: webProviderTabID(for: webView), sourceBinding: sourceBinding)
             return
         }
 
         let sourceWebView = sourceTab.activateWebView()
-        let contextURL = sourceTab.currentURL
+        let contextURL = sourceWebView.url ?? sourceTab.currentURL
+        guard let contextURL else { return }
+        let capturedBinding = BrowserAgentPageContextBinding(tabID: sourceTab.id, webView: sourceWebView, url: contextURL)
         Task {
             let extracted = await PageContentExtractor.extractContent(from: sourceWebView, url: contextURL, preferFast: true)
-            let pageText = extracted?.formattedForAIContext ?? ""
-            let condensed = RedditSummaryPlanner.isRedditContext(pageText)
-                ? RedditSummaryPlanner.webSafeContext(
-                    content: pageText,
-                    maxCharacters: redditWebProviderContextMaxChars
-                )
-                : Self.condenseText(pageText, maxChars: webProviderContextMaxChars)
-            let composed: String
-            if condensed.isEmpty {
-                composed = trimmedPrompt
-            } else {
-                composed = "\(condensed)\n\nUser prompt:\n\(trimmedPrompt)"
-            }
             await MainActor.run {
-                if let extracted {
-                    storeAIPageContent(extracted, for: sourceTab)
+                guard self.pageContextIsAllowed(for: sourceTab, capturedBinding: capturedBinding) else {
+                    self.reportBlockedPageContext()
+                    return
                 }
-                self.sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: self.webProviderTabID(for: webView))
+                let safeExtracted = extracted.map { BrowserAgentAutofillPrivacy.shared.sanitized($0) }
+                let pageText = safeExtracted?.formattedForAIContext ?? ""
+                let condensed = RedditSummaryPlanner.isRedditContext(pageText)
+                    ? RedditSummaryPlanner.webSafeContext(
+                        content: pageText,
+                        maxCharacters: redditWebProviderContextMaxChars
+                    )
+                    : Self.condenseText(pageText, maxChars: webProviderContextMaxChars)
+                let composed = condensed.isEmpty ? trimmedPrompt : "\(condensed)\n\nUser prompt:\n\(trimmedPrompt)"
+                if let extracted {
+                    storeAIPageContent(safeExtracted ?? extracted, for: sourceTab, capturedBinding: capturedBinding)
+                }
+                self.sendWebProviderPrompt(composed, to: webView, provider: provider, targetID: self.webProviderTabID(for: webView), sourceBinding: capturedBinding)
             }
         }
     }
@@ -7557,10 +8865,19 @@ struct ContentView: View {
         to webView: WKWebView,
         provider: WebAIProvider,
         targetID: UUID?,
+        sourceBinding: BrowserAgentPageContextBinding? = nil,
         attempt: Int = 0
     ) {
+        guard browserAgentPageContextCanTransmit(sourceBinding) else {
+            pendingWebProviderPrompt = nil
+            pendingWebProviderProvider = nil
+            pendingWebProviderTargetID = nil
+            pendingWebProviderContextOverride = nil
+            return
+        }
+        let safeText = BrowserAgentAutofillPrivacy.shared.redactPotentiallyTruncated(text, wasTruncated: true)
         guard provider.matches(webView.url) else {
-            if pendingWebProviderPrompt == text && pendingWebProviderProvider == provider {
+            if pendingWebProviderPrompt == safeText && pendingWebProviderProvider == provider {
                 pendingWebProviderPrompt = nil
                 pendingWebProviderProvider = nil
                 pendingWebProviderTargetID = nil
@@ -7568,7 +8885,7 @@ struct ContentView: View {
             }
             return
         }
-        guard let payloadData = try? JSONSerialization.data(withJSONObject: ["text": text], options: []),
+        guard let payloadData = try? JSONSerialization.data(withJSONObject: ["text": safeText], options: []),
               var payloadString = String(data: payloadData, encoding: .utf8) else { return }
 
         // Escape Unicode characters that are valid in JSON but break JavaScript
@@ -7579,7 +8896,7 @@ struct ContentView: View {
         let script = "(function(){ return window.__webProviderReceiveFromNative ? window.__webProviderReceiveFromNative(\(payloadString)) : false; })();"
         webView.evaluateJavaScript(script) { result, error in
             guard provider.matches(webView.url) else {
-                if self.pendingWebProviderPrompt == text && self.pendingWebProviderProvider == provider {
+                if self.pendingWebProviderPrompt == safeText && self.pendingWebProviderProvider == provider {
                     self.pendingWebProviderPrompt = nil
                     self.pendingWebProviderProvider = nil
                     self.pendingWebProviderTargetID = nil
@@ -7589,24 +8906,25 @@ struct ContentView: View {
             }
             let success = (result as? Bool) ?? false
             if error != nil || !success {
-                self.pendingWebProviderPrompt = text
+                self.pendingWebProviderPrompt = safeText
                 self.pendingWebProviderProvider = provider
                 self.pendingWebProviderTargetID = targetID
                 guard attempt < 20 else { return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                     guard let pending = self.pendingWebProviderPrompt,
                           let pendingProvider = self.pendingWebProviderProvider else { return }
-                    if pending == text && pendingProvider == provider {
+                    if pending == safeText && pendingProvider == provider {
                         self.sendWebProviderPrompt(
                             pending,
                             to: webView,
                             provider: provider,
                             targetID: targetID,
+                            sourceBinding: sourceBinding,
                             attempt: attempt + 1
                         )
                     }
                 }
-            } else if self.pendingWebProviderPrompt == text && self.pendingWebProviderProvider == provider {
+                } else if self.pendingWebProviderPrompt == safeText && self.pendingWebProviderProvider == provider {
                 self.pendingWebProviderPrompt = nil
                 self.pendingWebProviderProvider = nil
                 self.pendingWebProviderTargetID = nil
@@ -7649,7 +8967,12 @@ struct ContentView: View {
 
     private func cachedAIPageContent(for tab: BrowserTab) -> String? {
         guard let entry = cachedAIPageContentEntry(for: tab) else { return nil }
-        let trimmed = entry.content.formattedForAIContext.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard pageContextIsAllowed(for: tab, capturedBinding: entry.binding) else {
+            aiPageContentCache.removeValue(forKey: tab.id)
+            return nil
+        }
+        let safe = BrowserAgentAutofillPrivacy.shared.sanitized(entry.content).formattedForAIContext
+        let trimmed = safe.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
     }
 
@@ -7657,17 +8980,33 @@ struct ContentView: View {
         guard let url = tab.currentURL else { return nil }
         let key = normalizedContextURL(url)
         guard let entry = aiPageContentCache[tab.id] else { return nil }
-        guard entry.urlKey == key else { return nil }
+        guard entry.urlKey == key,
+              let currentBinding = pageContextBinding(for: tab),
+              entry.binding == currentBinding else {
+            aiPageContentCache.removeValue(forKey: tab.id)
+            return nil
+        }
         return entry
     }
 
-    private func storeAIPageContent(_ content: PageContentExtractor.ExtractedPageContent, for tab: BrowserTab) {
-        guard let url = tab.currentURL else { return }
-        let trimmed = content.formattedForAIContext.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func storeAIPageContent(
+        _ content: PageContentExtractor.ExtractedPageContent,
+        for tab: BrowserTab,
+        capturedBinding: BrowserAgentPageContextBinding? = nil
+    ) {
+        guard let url = tab.currentURL,
+              let binding = capturedBinding ?? pageContextBinding(for: tab),
+              pageContextIsAllowed(for: tab, capturedBinding: binding) else {
+            aiPageContentCache.removeValue(forKey: tab.id)
+            return
+        }
+        let safeContent = BrowserAgentAutofillPrivacy.shared.sanitized(content)
+        let trimmed = safeContent.formattedForAIContext.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         aiPageContentCache[tab.id] = AICachedPageContent(
             urlKey: normalizedContextURL(url),
-            content: content
+            binding: binding,
+            content: safeContent
         )
     }
 
@@ -7711,7 +9050,10 @@ struct ContentView: View {
         var onAskAI: (() -> Void)?
         var onWebProviderPrompt: ((WKWebView, WebAIProvider, String) -> Void)?
         var onWebProviderReady: ((BrowserTab) -> Void)?
-        var onNavigate: ((BrowserTab, URL) -> Void)?
+        var onNavigate: ((BrowserTab, WKWebView, URL) -> Void)?
+        var onAgentTaskNavigationEvent: (@MainActor (BrowserTab, WKWebView, WKNavigation, AgentTaskNavigationEventKind) -> Void)?
+        var onAgentTaskWebViewReadiness: (@MainActor (BrowserTab, WKWebView, Bool) -> Bool)?
+        var isAgentTaskLoadOwned: (@MainActor (BrowserTab, WKWebView) -> Bool)?
         /// Space the floating bottom controls cover, above the bottom safe area.
         var bottomChromeHeight: CGFloat = 0
         var bottomStripHeight: CGFloat = 0
@@ -7729,6 +9071,8 @@ struct ContentView: View {
                 onWebProviderPrompt: onWebProviderPrompt,
                 onWebProviderReady: onWebProviderReady,
                 onNavigate: onNavigate,
+                onAgentTaskNavigationEvent: onAgentTaskNavigationEvent,
+                onAgentTaskWebViewReadiness: onAgentTaskWebViewReadiness,
                 onToolbarScrollEvent: onToolbarScrollEvent
             )
         }
@@ -7745,9 +9089,10 @@ struct ContentView: View {
             ThirdPartyCookieBlocker.shared.register(webView: webView)
             context.coordinator.installWebProviderMessageHandler(on: webView)
             context.coordinator.installGestures(on: webView)
-            if webView.url == nil, let url = tab.url, !webView.isLoading {
+            let agentOwnsInitialLoad = onAgentTaskWebViewReadiness?(tab, webView, true) ?? false
+            if !agentOwnsInitialLoad, webView.url == nil, let url = tab.url, !webView.isLoading {
                 // Wait for ad block rules before loading (prevents race condition)
-                loadWhenReady(webView: webView, url: url)
+                loadWhenReady(webView: webView, url: url, tab: tab)
             }
             let container = BrowserWebViewContainer(webView: webView)
             container.bottomScrollInset = bottomScrollInset
@@ -7767,9 +9112,10 @@ struct ContentView: View {
             Self.applySiteSpecificTopInset(to: webView, url: webView.url ?? tab.url)
             context.coordinator.installWebProviderMessageHandler(on: webView)
             context.coordinator.installGestures(on: webView)
-            if webView.url == nil, let url = tab.url, !webView.isLoading {
+            let agentOwnsInitialLoad = onAgentTaskWebViewReadiness?(tab, webView, true) ?? false
+            if !agentOwnsInitialLoad, webView.url == nil, let url = tab.url, !webView.isLoading {
                 // Wait for ad block rules before loading (prevents race condition)
-                loadWhenReady(webView: webView, url: url)
+                loadWhenReady(webView: webView, url: url, tab: tab)
             }
 
             if webView.scrollView.refreshControl !== context.coordinator.refreshControl {
@@ -7847,6 +9193,7 @@ struct ContentView: View {
 
         static func dismantleUIView(_ uiView: BrowserWebViewContainer, coordinator: Coordinator) {
             let webView = uiView.webView
+            coordinator.notifyWebViewHostUnavailable(webView)
             webView.configuration.userContentController.removeScriptMessageHandler(forName: "webProviderPrompt")
             webView.navigationDelegate = nil
             webView.uiDelegate = nil
@@ -7855,20 +9202,29 @@ struct ContentView: View {
         }
 
         /// Wait for ad block rules to be ready before loading URL (prevents race condition on fast devices)
-        private func loadWhenReady(webView: WKWebView, url: URL) {
+        private func loadWhenReady(webView: WKWebView, url: URL, tab: BrowserTab) {
+            let canStartLoad: @MainActor () -> Bool = {
+                AgentTaskWebViewLoadPolicy.shouldStartRestorationLoad(
+                    requestedURL: url,
+                    currentTabURL: tab.url,
+                    isLoading: webView.isLoading,
+                    agentOwnsLoad: isAgentTaskLoadOwned?(tab, webView) ?? false
+                )
+            }
+            guard canStartLoad() else { return }
             if !AdBlockService.shared.isEnabled || AdBlockService.shared.isReady {
                 webView.load(URLRequest(url: url))
-            } else {
-                Task {
+                return
+            }
+            Task { @MainActor in
                     // Wait up to 3 seconds for rules to compile
                     for _ in 0..<30 {
+                        guard canStartLoad() else { return }
                         if !AdBlockService.shared.isEnabled || AdBlockService.shared.isReady { break }
                         try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 second
                     }
-                    _ = await MainActor.run {
-                        webView.load(URLRequest(url: url))
-                    }
-                }
+                    guard canStartLoad() else { return }
+                    webView.load(URLRequest(url: url))
             }
         }
 
@@ -7882,7 +9238,9 @@ struct ContentView: View {
             private let onUserInteraction: (() -> Void)?
             private let onWebProviderPrompt: ((WKWebView, WebAIProvider, String) -> Void)?
             private let onWebProviderReady: ((BrowserTab) -> Void)?
-            private let onNavigate: ((BrowserTab, URL) -> Void)?
+            private let onNavigate: ((BrowserTab, WKWebView, URL) -> Void)?
+            private let onAgentTaskNavigationEvent: (@MainActor (BrowserTab, WKWebView, WKNavigation, AgentTaskNavigationEventKind) -> Void)?
+            private let onAgentTaskWebViewReadiness: (@MainActor (BrowserTab, WKWebView, Bool) -> Bool)?
             private let onToolbarScrollEvent: ((ToolbarScrollEvent) -> Void)?
             let refreshControl = UIRefreshControl()
             private var didNotifyScrollStart = false
@@ -7901,7 +9259,9 @@ struct ContentView: View {
                 onUserInteraction: (() -> Void)?,
                 onWebProviderPrompt: ((WKWebView, WebAIProvider, String) -> Void)?,
                 onWebProviderReady: ((BrowserTab) -> Void)?,
-                onNavigate: ((BrowserTab, URL) -> Void)?,
+                onNavigate: ((BrowserTab, WKWebView, URL) -> Void)?,
+                onAgentTaskNavigationEvent: (@MainActor (BrowserTab, WKWebView, WKNavigation, AgentTaskNavigationEventKind) -> Void)?,
+                onAgentTaskWebViewReadiness: (@MainActor (BrowserTab, WKWebView, Bool) -> Bool)?,
                 onToolbarScrollEvent: ((ToolbarScrollEvent) -> Void)?
             ) {
                 self.tab = tab
@@ -7913,12 +9273,19 @@ struct ContentView: View {
                 self.onWebProviderPrompt = onWebProviderPrompt
                 self.onWebProviderReady = onWebProviderReady
                 self.onNavigate = onNavigate
+                self.onAgentTaskNavigationEvent = onAgentTaskNavigationEvent
+                self.onAgentTaskWebViewReadiness = onAgentTaskWebViewReadiness
                 self.onToolbarScrollEvent = onToolbarScrollEvent
                 super.init()
                 if UIDevice.current.userInterfaceIdiom == .phone {
                     navigationFeedbackGenerator = UIImpactFeedbackGenerator(style: .medium)
                 }
                 refreshControl.addTarget(self, action: #selector(handlePullToRefresh(_:)), for: .valueChanged)
+            }
+
+            @MainActor
+            func notifyWebViewHostUnavailable(_ webView: WKWebView) {
+                _ = onAgentTaskWebViewReadiness?(tab, webView, false)
             }
 
             func installWebProviderMessageHandler(on webView: WKWebView) {
@@ -8435,6 +9802,9 @@ struct ContentView: View {
                 Task { @MainActor in
                     self.tab.isReaderMode = false
                     WebViewHost.applySiteSpecificTopInset(to: webView, url: webView.url ?? self.tab.url)
+                    if let navigation {
+                        self.onAgentTaskNavigationEvent?(self.tab, webView, navigation, .started)
+                    }
                 }
             }
 
@@ -8489,6 +9859,9 @@ struct ContentView: View {
             func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
                 onToolbarScrollEvent?(.pin)
                 Task { @MainActor in
+                    if let navigation {
+                        self.onAgentTaskNavigationEvent?(self.tab, webView, navigation, .committed)
+                    }
                     // A new document starts untranslated.
                     self.tab.translatedFrom = nil
                     self.tab.isTranslating = false
@@ -8582,7 +9955,10 @@ struct ContentView: View {
                         }
                     }
                     if let u = self.tab.url {
-                        self.onNavigate?(self.tab, u)
+                        self.onNavigate?(self.tab, webView, u)
+                    }
+                    if let navigation {
+                        self.onAgentTaskNavigationEvent?(self.tab, webView, navigation, .finished)
                     }
                     self.viewModel.fetchFavicon(for: self.tab)
                     self.viewModel.saveSession()
@@ -8600,10 +9976,20 @@ struct ContentView: View {
             }
 
             func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+                if let navigation {
+                    Task { @MainActor in
+                        self.onAgentTaskNavigationEvent?(self.tab, webView, navigation, .failed)
+                    }
+                }
                 refreshControl.endRefreshing()
             }
 
             func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+                if let navigation {
+                    Task { @MainActor in
+                        self.onAgentTaskNavigationEvent?(self.tab, webView, navigation, .failed)
+                    }
+                }
                 refreshControl.endRefreshing()
             }
 

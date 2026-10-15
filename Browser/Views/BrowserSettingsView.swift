@@ -180,6 +180,16 @@ struct BrowserSettingsView: View {
         Section {
             webAIAccountRow(for: .chatgpt, isSignedIn: isChatGPTSignedIn)
             webAIAccountRow(for: .gemini, isSignedIn: isGeminiSignedIn)
+            NavigationLink {
+                AgentSitePermissionsView()
+            } label: {
+                Label("Agent Site Permissions", systemImage: "hand.raised")
+            }
+            NavigationLink {
+                AutofillProfileSettingsView(service: .shared)
+            } label: {
+                Label("Autofill Profile", systemImage: "person.text.rectangle")
+            }
         } header: {
             Text("AI Accounts")
         } footer: {
