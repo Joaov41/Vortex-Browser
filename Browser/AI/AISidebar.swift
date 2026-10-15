@@ -77,7 +77,7 @@ struct AISidebar: View {
     @State private var shouldAutoCollapseAfterNextReply = false
     @State private var showFullConversation = false
     @State private var presentedResponseCanvas: AIResponseCanvasPresentation?
-    @StateObject private var agent = BrowserAgentController()
+    @StateObject private var agent = BrowserAgentController(runObserver: AgentRunLiveActivitySettings.appObserver)
     @AppStorage("browserAgentMode") private var isAgentMode = false
     @State private var agentTaskLibraryPresentation: AgentTaskLibraryPresentation?
     @State private var latestAgentCompletion: AgentCompletionUI?

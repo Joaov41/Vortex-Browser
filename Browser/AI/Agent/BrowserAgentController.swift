@@ -133,8 +133,12 @@ final class BrowserAgentController: ObservableObject {
 
     @Published private(set) var steps: [Step] = []
     @Published private(set) var isRunning = false
-    @Published private(set) var pendingConfirmation: Confirmation?
-    @Published private(set) var pendingQuestion: UserQuestion?
+    @Published private(set) var pendingConfirmation: Confirmation? {
+        didSet { reportRunProgress() }
+    }
+    @Published private(set) var pendingQuestion: UserQuestion? {
+        didSet { reportRunProgress() }
+    }
     /// Handoffs prepared by the current run's prepare_* tools. The sidebar shows them one at a time after the run ends.
     @Published private(set) var handoffRequests: [AgentHandoffRequest] = []
 
@@ -181,6 +185,10 @@ final class BrowserAgentController: ObservableObject {
     private var runEndStatus: AgentRunStatus?
     /// Watches this run's tool calls for repeats. Each run starts with a fresh one.
     var toolLoopDetector = BrowserAgentToolLoopDetector()
+    /// Tool calls the model has made in this run, shown as the step count outside the app.
+    var runToolCallCount = 0
+    /// Receives run progress for the Live Activity. Tests leave it nil.
+    let runObserver: (any BrowserAgentRunObserver)?
     private let engineFactory: EngineFactory
     private let appleLookup: BrowserAppleWebLookup
     let screenshotCapture: ScreenshotCapture
@@ -195,9 +203,11 @@ final class BrowserAgentController: ObservableObject {
         trustStoreProvider: (@MainActor () -> AgentTrustStore?)? = nil,
         autofillProfileService: AutofillProfileService? = nil,
         autofillPrivacy: BrowserAgentAutofillPrivacy? = nil,
-        appleLookup: BrowserAppleWebLookup? = nil
+        appleLookup: BrowserAppleWebLookup? = nil,
+        runObserver: (any BrowserAgentRunObserver)? = nil
     ) {
         self.engineFactory = engineFactory ?? { BrowserAgentEngineFactory.make(for: $0) }
+        self.runObserver = runObserver
         self.appleLookup = appleLookup ?? BrowserAppleWebLookup()
         self.screenshotCapture = screenshotCapture ?? { try await BrowserAgentScreenshotEncoder.capture($0) }
         self.autofillProfileService = autofillProfileService ?? AutofillProfileService.shared
@@ -289,6 +299,7 @@ final class BrowserAgentController: ObservableObject {
         runExports = []
         runEndStatus = nil
         toolLoopDetector = BrowserAgentToolLoopDetector()
+        runToolCallCount = 0
         handoffRequests = []
         self.onComplete = onComplete
         self.onRunCompleted = onRunCompleted
@@ -323,6 +334,7 @@ final class BrowserAgentController: ObservableObject {
                 self.finishRun(for: id)
             }
         }
+        reportRunStarted()
     }
 
     func stop() {
@@ -340,6 +352,7 @@ final class BrowserAgentController: ObservableObject {
     private func finishRun(for expectedRunID: UUID) {
         guard let context = runContext, context.id == expectedRunID else { return }
         let completion = completionSnapshot(context: context, steps: steps, date: Date())
+        let endProgress = currentRunProgress
         let summary = Self.summary(of: steps)
         let handler = onComplete
         let completionHandler = onRunCompleted
@@ -367,12 +380,14 @@ final class BrowserAgentController: ObservableObject {
         runExports = []
         runEndStatus = nil
         toolLoopDetector = BrowserAgentToolLoopDetector()
+        runToolCallCount = 0
         runContext = nil
         onComplete = nil
         onRunCompleted = nil
         onPageQuestion = nil
         onAutofillQuarantine = nil
         steps = []
+        reportRunEnded(endProgress, completion: completion)
         handler?(summary)
         completionHandler?(completion)
     }
@@ -503,6 +518,7 @@ final class BrowserAgentController: ObservableObject {
 
     func append(_ kind: Step.Kind, _ text: String) {
         steps.append(Step(kind: kind, text: autofillPrivacy.redactKnownValues(text)))
+        reportRunProgress()
     }
 
     /// Ends the current run as failed from inside a tool call. Cancelling the run task makes the engine return.
@@ -598,6 +614,8 @@ final class BrowserAgentController: ObservableObject {
                       self.isCurrentRun(token) else {
                     return BrowserAgentToolOutput(text: "Cancelled.")
                 }
+                self.runToolCallCount += 1
+                self.reportRunProgress()
                 return await self.executeCheckingForLoops(
                     name: name,
                     argumentsJSON: argumentsJSON,

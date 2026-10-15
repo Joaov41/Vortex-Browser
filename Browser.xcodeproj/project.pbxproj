@@ -14,9 +14,12 @@
 		5D6C9AD86E85ED6FFF7E00D9 /* SavedTaskControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222FF3C345FC483A28FA9DCF /* SavedTaskControl.swift */; };
 		604AC870F6EAAB8DCCD5C378 /* VortyraWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D23C3191B3789898FDB098 /* VortyraWidgetsBundle.swift */; };
 		8DBD88C18A37EAD09F23CA05 /* SharedReaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87BDEF7F3DA04341925B920F /* SharedReaders.swift */; };
+		AED7C9B2D8AC6360A28746A6 /* AgentRunLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37864195823A2E94E7450CB /* AgentRunLiveActivity.swift */; };
 		B28745AD843249FAFC882FDB /* VortyraWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DD24F85D0B6C28E0E9C52633 /* VortyraWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C151112D2F1E8D4900451BC5 /* BrowserShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C15111232F1E8D4900451BC5 /* BrowserShare.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CDE8898CB2D5EB28BF046249 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02ECFAEE2F98E1F0F197E45C /* AgentRunActivityAttributes.swift */; };
 		D1F3A7B9C2468E13579BDF01 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = D1F3A7B9C2468E13579BDF02 /* MLXVLM */; };
+		D338174915C3D82C25121F4E /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02ECFAEE2F98E1F0F197E45C /* AgentRunActivityAttributes.swift */; };
 		E836848BCC3B2333531D7907 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 781A079F6687ACA52FCFC8A5 /* MLXLLM */; };
 		F38E9F504536A49B1EB0EE19 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 675F7F4EBED3CF113A9851C3 /* MLXLMCommon */; };
 /* End PBXBuildFile section */
@@ -61,6 +64,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		02ECFAEE2F98E1F0F197E45C /* AgentRunActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentRunActivityAttributes.swift; sourceTree = "<group>"; };
 		18D23C3191B3789898FDB098 /* VortyraWidgetsBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VortyraWidgetsBundle.swift; sourceTree = "<group>"; };
 		222FF3C345FC483A28FA9DCF /* SavedTaskControl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SavedTaskControl.swift; sourceTree = "<group>"; };
 		2542864BE01145AC8DADB9B1 /* VortyraWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = VortyraWidgets.entitlements; sourceTree = "<group>"; };
@@ -70,6 +74,7 @@
 		87BDEF7F3DA04341925B920F /* SharedReaders.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedReaders.swift; sourceTree = "<group>"; };
 		A10000000000000000000001 /* BrowserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BrowserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A34D211AA7DD817FBAB83093 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A37864195823A2E94E7450CB /* AgentRunLiveActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentRunLiveActivity.swift; sourceTree = "<group>"; };
 		C14615EF2E45FDA5003058C1 /* Browser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Browser.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C15111232F1E8D4900451BC5 /* BrowserShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BrowserShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		DD24F85D0B6C28E0E9C52633 /* VortyraWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VortyraWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -196,6 +201,8 @@
 				4B7ABD22CC8D4D754EA031B1 /* PageWatchesWidget.swift */,
 				A34D211AA7DD817FBAB83093 /* Info.plist */,
 				2542864BE01145AC8DADB9B1 /* VortyraWidgets.entitlements */,
+				02ECFAEE2F98E1F0F197E45C /* AgentRunActivityAttributes.swift */,
+				A37864195823A2E94E7450CB /* AgentRunLiveActivity.swift */,
 			);
 			name = VortyraWidgets;
 			path = VortyraWidgets;
@@ -385,6 +392,8 @@
 				5D6C9AD86E85ED6FFF7E00D9 /* SavedTaskControl.swift in Sources */,
 				3BFFBC6FC0FE7FBBE04A2613 /* SavedTasksWidget.swift in Sources */,
 				0EC401B33F6BAAA51123DB32 /* PageWatchesWidget.swift in Sources */,
+				CDE8898CB2D5EB28BF046249 /* AgentRunActivityAttributes.swift in Sources */,
+				AED7C9B2D8AC6360A28746A6 /* AgentRunLiveActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -399,6 +408,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D338174915C3D82C25121F4E /* AgentRunActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

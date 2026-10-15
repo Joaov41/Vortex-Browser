@@ -9,5 +9,6 @@ struct VortyraWidgetsBundle: WidgetBundle {
         RunSavedTaskControl()
         SavedTasksWidget()
         PageWatchesWidget()
+        AgentRunLiveActivity()
     }
 }

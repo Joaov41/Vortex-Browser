@@ -10494,6 +10494,7 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
         center.delegate = self
         Task { @MainActor in
             PageWatchBackgroundScheduler.refreshSchedule()
+            AgentRunLiveActivitySettings.endActivitiesFromEarlierLaunches()
         }
         return true
     }
