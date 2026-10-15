@@ -360,4 +360,15 @@ final class SpotlightEntityTests: XCTestCase {
         XCTAssertEqual(entities.map(\.id), [regular.id.uuidString])
         XCTAssertEqual(entities.map(\.title), ["Regular"])
     }
+
+    func testCurrentTabIsListedFirstForSiri() {
+        let a = BrowserTab(title: "A", url: URL(string: "https://a.example/"))
+        let b = BrowserTab(title: "B", url: URL(string: "https://b.example/"))
+        let c = BrowserTab(title: "C", url: URL(string: "https://c.example/"))
+        let ordered = BrowserIntentRuntime.currentTabFirst([a, b, c], selectedID: c.id)
+        XCTAssertEqual(ordered.map(\.id), [c.id, a.id, b.id])
+        XCTAssertEqual(BrowserIntentRuntime.currentTabFirst([a, b], selectedID: nil).map(\.id), [a.id, b.id])
+        XCTAssertEqual(BrowserIntentRuntime.currentTabFirst([a, b], selectedID: UUID()).map(\.id), [a.id, b.id])
+    }
+
 }

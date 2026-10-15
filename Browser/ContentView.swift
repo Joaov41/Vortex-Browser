@@ -5396,7 +5396,8 @@ struct ContentView: View {
             }
         )
         browserIntentRuntime.registerTabSnapshot(windowID: browserIntentWindowID) {
-            vm.tabs
+            // Current tab first: Siri and Shortcuts treat the first tab as the default target.
+            BrowserIntentRuntime.currentTabFirst(vm.tabs, selectedID: vm.selectedTabID)
         }
     }
 

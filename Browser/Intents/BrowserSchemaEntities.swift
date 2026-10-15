@@ -100,6 +100,11 @@ struct BrowserSchemaTabQuery: EntityStringQuery {
         return Array(all.prefix(Self.resultLimit))
     }
 
+    /// The tab Siri uses when the request doesn't name one: the tab on screen.
+    func defaultResult() async -> BrowserSchemaTabEntity? {
+        await liveTabEntities().first
+    }
+
     func entities(matching string: String) async throws -> [BrowserSchemaTabEntity] {
         let all = await liveTabEntities()
         let matches = all.filter { $0.name.localizedCaseInsensitiveContains(string) }

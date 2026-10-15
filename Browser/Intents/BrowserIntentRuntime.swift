@@ -187,6 +187,14 @@ final class BrowserIntentRuntime: ObservableObject {
         }
     }
 
+    /// Orders tabs so the selected tab comes first; the rest keep their tab-strip order.
+    static func currentTabFirst(_ tabs: [BrowserTab], selectedID: UUID?) -> [BrowserTab] {
+        guard let selectedID, let index = tabs.firstIndex(where: { $0.id == selectedID }) else { return tabs }
+        var ordered = tabs
+        ordered.insert(ordered.remove(at: index), at: 0)
+        return ordered
+    }
+
     func registerTabSnapshot(windowID: UUID, tabs: @escaping TabSnapshot) {
         tabSnapshots[windowID] = tabs
     }

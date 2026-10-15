@@ -240,6 +240,11 @@ struct OpenTabEntityQuery: EntityStringQuery {
         return Array(all.prefix(BrowserSpotlightLimits.maximumQueryResults))
     }
 
+    /// The tab used when the request doesn't name one: the tab on screen.
+    func defaultResult() async -> OpenTabEntity? {
+        await liveTabEntities().first
+    }
+
     func entities(matching string: String) async throws -> [OpenTabEntity] {
         let all = await liveTabEntities()
         let matches = all.filter { $0.title.localizedCaseInsensitiveContains(string) }
