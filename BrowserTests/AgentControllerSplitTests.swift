@@ -113,6 +113,15 @@ final class AgentControllerSplitTests: XCTestCase {
         "finish"
     ]
 
+    func testCurrentDateLineStatesTodayInPlainWords() {
+        let utc = TimeZone(identifier: "UTC")!
+        let now = Date(timeIntervalSince1970: 1_792_065_600) // 2026-10-15 12:00 UTC
+        XCTAssertEqual(
+            BrowserAgentController.currentDateLine(now: now, timeZone: utc),
+            "Today's date is Thursday, 15 October 2026. Sources dated on or before today are current, not future-dated.\n"
+        )
+    }
+
     func testBrowserToolNamesMatchLiteralCatalog() {
         XCTAssertEqual(BrowserAgentController.browserToolNames, expectedBrowserToolNames)
     }

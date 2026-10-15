@@ -579,7 +579,7 @@ final class BrowserAgentController: ObservableObject {
                 let earlier = conversation.map {
                     "Earlier in this conversation (for reference):\n\(bounded($0, to: profile.recentConversationCharacters))\n\n"
                 } ?? ""
-                initialPrompt = earlier + "Task: \(task)" + Self.snapshotMarker + snapshot + "\n</page_snapshot>"
+                initialPrompt = earlier + Self.currentDateLine() + "Task: \(task)" + Self.snapshotMarker + snapshot + "\n</page_snapshot>"
             }
             let tools = Self.toolsForRun(
                 task: task,
@@ -862,6 +862,16 @@ final class BrowserAgentController: ObservableObject {
         return autofillPrivacy.redactKnownValues(
             BrowserAgentLocalContext.searchResultsBlock(results, maximumBytes: 420)
         )
+    }
+
+    /// Models assume their training cutoff is "now" and distrust newer sources as future-dated.
+    /// Stating the device's date keeps research and "latest" answers anchored to today.
+    static func currentDateLine(now: Date = Date(), timeZone: TimeZone = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = timeZone
+        formatter.dateFormat = "EEEE, d MMMM yyyy"
+        return "Today's date is \(formatter.string(from: now)). Sources dated on or before today are current, not future-dated.\n"
     }
 
     /// Native page translation may outlive a successful agent finish, but Stop and a newer run
