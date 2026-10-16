@@ -64,6 +64,8 @@ enum BrowserAgentRouter {
             // chat cannot create files ("extract the dates", then "now create the PDF").
             "^(?:\(lead))(?:extract|scrape|pull out|grab|gather|collect)\\b",
             "^(?:\(lead))(?:create|make|generate|produce|build|export|save|turn (?:it|this|that|them) into|put (?:it|this|that|them) (?:in|into))\\b.{0,60}\\b(?:pdfs?|csvs?|spreadsheets?|excel|reports?|files?)\\b",
+            // "Compare the price of these laptops and make a PDF report": the file request comes later.
+            "^(?!(?:what|how|why|when|where|who|which|is|are|does|do|did|should|could)\\b).*\\b(?:and|then) (?:make|create|generate|produce|export|save) (?:me )?(?:a |an |the |it as |them as )?.{0,30}\\b(?:pdfs?|csvs?|spreadsheets?|reports?)\\b",
             "^(?:\(lead))compare .*(?:tables|datasets|pages|sources|prices)\\b",
             "^(?:\(lead))translate (?:this )?page\\b",
             "^(?:\(lead))(?:turn on|turn off|enable|disable) (?:the )?reader mode\\b",
@@ -109,6 +111,11 @@ enum BrowserAgentRouter {
         }
         if let forced = stripping(prefix: "/ask", from: trimmed) {
             return .chat(forced)
+        }
+        // Local and Cloud handle /search as a quick lookup before this router runs. Other models reach
+        // here; chat cannot search, so the agent searches the web and answers with its sources.
+        if let query = stripping(prefix: "/search", from: trimmed) {
+            return .agent("Search the web for: \(query)\nAnswer briefly and name the sources you used.")
         }
         let normalized = trimmed
             .lowercased()

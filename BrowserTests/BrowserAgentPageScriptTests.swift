@@ -203,6 +203,34 @@ final class BrowserAgentPageScriptTests: XCTestCase {
         XCTAssertEqual(visibleRisk, "form with sensitive fields")
     }
 
+    func testRefusingCookiesInAConsentBannerNeedsNoApproval() async throws {
+        // Seen on device: Google's consent page asked for approval to click "Rejeitar tudo" (a POST form).
+        _ = try await snapshotLines()
+        _ = try await page("""
+        (() => {
+          const banner = document.createElement('div');
+          banner.id = 'consent-banner';
+          banner.innerHTML = '<p>Utilizamos cookies e dados para...</p>'
+            + '<form method="post" action="https://consent.example/save"><button id="reject-all" type="submit">Rejeitar tudo</button></form>';
+          const other = document.createElement('form');
+          other.method = 'post'; other.action = '/applications';
+          other.innerHTML = '<button id="reject-application" type="submit">Reject</button>';
+          document.body.append(banner, other);
+          return true;
+        })()
+        """)
+        let consent = try await webView.callAsyncJavaScript(
+            "return globalThis.__vxAgent.risk(document.getElementById('reject-all'));",
+            arguments: [:], in: nil, contentWorld: BrowserAgentPageScript.world
+        )
+        XCTAssertNil(consent as? String, "Refusing cookies is safe to click.")
+        let ordinary = try await webView.callAsyncJavaScript(
+            "return globalThis.__vxAgent.risk(document.getElementById('reject-application'));",
+            arguments: [:], in: nil, contentWorld: BrowserAgentPageScript.world
+        ) as? String
+        XCTAssertEqual(ordinary, "form submission", "A Reject button outside a consent banner still asks first.")
+    }
+
     func testSearchTypesAndSubmitsWithoutApproval() async throws {
         let lines = try await snapshotLines()
         let result = try await agent(BrowserAgentPageScript.type, [

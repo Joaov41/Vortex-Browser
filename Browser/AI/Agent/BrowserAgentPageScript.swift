@@ -142,10 +142,27 @@ enum BrowserAgentPageScript {
           const text = [agent.label(el), el.value && el.tagName === 'INPUT' ? el.value : ''].join(' ');
           const match = text.match(RISKY);
           if (match) return match[0].toLowerCase();
+          // Refusing cookies on a consent banner is always safe, even when the banner is a POST form
+          // (Google's "Rejeitar tudo"); it shares nothing and buys, sends or signs in to nothing.
+          if (agent.isConsentRefusal(el, text)) return null;
           const form = el.form || el.closest('form');
           const isSubmit = (el.tagName === 'BUTTON' && (el.type || 'submit') === 'submit') ||
             (el.tagName === 'INPUT' && ['submit', 'image'].includes((el.type || '').toLowerCase()));
           return form && isSubmit ? agent.formRisk(form) : null;
+        },
+
+        isConsentRefusal(el, text) {
+          const refuse = /^\s*(reject|reject all|decline|decline all|refuse|refuse all|deny|deny all|only necessary|necessary only|essential only|use necessary cookies only|rejeitar|rejeitar tudo|recusar|recusar tudo|rechazar|rechazar todo|tout refuser|refuser|alle ablehnen|ablehnen|rifiuta|rifiuta tutto|weigeren|alles weigeren)\s*$/i;
+          if (!refuse.test(String(text || '').trim())) return false;
+          const form = el.form || el.closest('form');
+          const context = [
+            form ? form.action : '',
+            ...[el, form, el.closest('[id],[class],[role=dialog],[aria-modal]')].filter(Boolean)
+              .map(node => [node.id, node.className, node.getAttribute && node.getAttribute('aria-label')].join(' '))
+          ].join(' ');
+          const nearbyText = (el.closest('[role=dialog],[aria-modal=true],form,div') || el).innerText || '';
+          return /consent|cookie|gdpr|privacy|cmp|onetrust|didomi/i.test(context)
+            || /cookie|consent|privacidade|privacy|datenschutz|confidentialit/i.test(nearbyText.slice(0, 3000));
         },
 
         // Search and other GET forms are safe to submit; sign-in, POST and

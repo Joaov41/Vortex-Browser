@@ -57,7 +57,13 @@ final class BrowserAgentRouterTests: XCTestCase {
         ] {
             XCTAssertEqual(BrowserAgentRouter.route(text), .agent(text), text)
         }
-        for text in ["What is a PDF?", "Can you explain this report?", "Why does the file not open?"] {
+        let laptops = "Compare the price and battery life of these three laptops and make a PDF report."
+        XCTAssertEqual(BrowserAgentRouter.route(laptops), .agent(laptops))
+        guard case .agent(let search) = BrowserAgentRouter.route("/search when is the next Benfica home game?") else {
+            return XCTFail("/search must reach the agent when the model has no quick lookup.")
+        }
+        XCTAssertTrue(search.hasPrefix("Search the web for: when is the next Benfica home game?"), search)
+        for text in ["What is a PDF?", "Can you explain this report?", "Why does the file not open?", "How do I compare prices and make a PDF?"] {
             XCTAssertEqual(BrowserAgentRouter.route(text), .chat(text), text)
         }
     }
