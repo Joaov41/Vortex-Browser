@@ -81,8 +81,10 @@ enum BrowserSchemaCommands {
         return [.closeTabs(ids)]
     }
 
+    /// Siri sends "search for X in Vortyra" here. People mean the page they are looking at, so X is
+    /// found on that page first; the web is searched only when X isn't there.
     static func search(_ term: String) -> [BrowserIntentCommand] {
-        [.search(term)]
+        [.findOnPageOrSearch(term)]
     }
 
     static func deleteBookmarks(_ bookmarks: [String]) throws -> [BrowserIntentCommand] {

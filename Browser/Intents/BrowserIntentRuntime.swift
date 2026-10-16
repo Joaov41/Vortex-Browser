@@ -4,6 +4,8 @@ import Foundation
 enum BrowserIntentCommand: Sendable, Equatable {
     case openURL(URL)
     case search(String)
+    /// Siri's "search for X in Vortyra": find X on the page on screen, and search the web only when it isn't there.
+    case findOnPageOrSearch(String)
     case newTab
     case newPrivateTab
     case reopenClosedTab

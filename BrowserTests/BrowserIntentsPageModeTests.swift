@@ -88,6 +88,24 @@ final class BrowserIntentsPageModeTests: BrowserIntentsExecutorTestCase {
         XCTAssertEqual(harness.recorded.translatePredicate?(), true)
     }
 
+    func testSiriSearchFindsOnThePageFirstAndSearchesTheWebOnlyWhenMissing() async throws {
+        // Reported on device: "search for X in Vortyra" opened a search-engine tab instead of finding X on the page.
+        let harness = try makeHarness()
+        _ = try await loadPage(harness, html: "<main><p>alpha berry alpha</p></main>")
+        let (executor, confirm) = makeExecutor(harness)
+        let tabsBefore = harness.viewModel.tabs.count
+
+        let onPage = try await executor.execute(.findOnPageOrSearch("alpha"), confirm: confirm)
+        XCTAssertTrue(onPage.text.hasPrefix("Found ") && onPage.text.contains("for alpha"), onPage.text)
+        XCTAssertEqual(harness.viewModel.tabs.count, tabsBefore, "Text on the page must not open a search tab.")
+
+        let missing = try await executor.execute(.findOnPageOrSearch("zebra"), confirm: confirm)
+        XCTAssertTrue(missing.text.contains("isn't on this page"), missing.text)
+        XCTAssertEqual(harness.viewModel.tabs.count, tabsBefore + 1, "Only missing text searches the web.")
+        let searchTab = try XCTUnwrap(harness.viewModel.tabs.last)
+        XCTAssertTrue(searchTab.currentURL?.absoluteString.contains("zebra") == true, "\(String(describing: searchTab.currentURL))")
+    }
+
     func testFindTextUsesRealPageAndSafeQuery() async throws {
         let harness = try makeHarness()
         _ = try await loadPage(

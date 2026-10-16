@@ -73,7 +73,7 @@ final class BrowserSchemaIntentMappingTests: XCTestCase {
     }
 
     func testSearchInAppMapsToSearch() {
-        XCTAssertEqual(BrowserSchemaCommands.search("caf\u{00e9} tea"), [.search("caf\u{00e9} tea")])
+        XCTAssertEqual(BrowserSchemaCommands.search("caf\u{00e9} tea"), [.findOnPageOrSearch("caf\u{00e9} tea")])
     }
 
     func testDeleteBookmarksMapsToDeleteBookmarks() throws {

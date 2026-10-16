@@ -120,6 +120,8 @@ final class BrowserIntentExecutor {
         switch command {
         case .openURL, .search:
             return try executeOpenCommand(command)
+        case .findOnPageOrSearch(let query):
+            return try await findOnPageOrSearch(query)
         case .newTab, .newPrivateTab, .reopenClosedTab, .closeCurrentTab, .closeGroup,
              .switchGroup, .switchToTab, .moveToGroup, .openSplit, .endSplit:
             return try await executeTabCommand(command, confirm: confirm)

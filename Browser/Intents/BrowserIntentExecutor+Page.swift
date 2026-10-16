@@ -118,6 +118,30 @@ extension BrowserIntentExecutor {
     }
 
     func findText(_ rawQuery: String) async throws -> BrowserIntentOutput {
+        try await findTextCountingMatches(rawQuery).output
+    }
+
+    /// Finds `rawQuery` on the page on screen and opens the find bar on the matches. Only when the text
+    /// isn't on the page, or no web page is open, does it run a web search in a new tab, and it says why.
+    func findOnPageOrSearch(_ rawQuery: String) async throws -> BrowserIntentOutput {
+        let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        let reason: String
+        do {
+            let found = try await findTextCountingMatches(query)
+            if found.matches > 0 { return found.output }
+            reason = "\(query) isn't on this page, so I searched the web for it."
+        } catch BrowserIntentError.invalidInput(let message) {
+            throw BrowserIntentError.invalidInput(message)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            reason = "No web page was open to search, so I searched the web for \(query)."
+        }
+        _ = try await execute(.search(query), confirm: { _ in })
+        return output(reason)
+    }
+
+    private func findTextCountingMatches(_ rawQuery: String) async throws -> (matches: Int, output: BrowserIntentOutput) {
         let query = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, query.count <= 240 else {
             throw BrowserIntentError.invalidInput("Provide search text between 1 and 240 characters.")
@@ -140,18 +164,18 @@ extension BrowserIntentExecutor {
         }
         let count = (result["count"] as? NSNumber)?.intValue ?? 0
         guard result["found"] as? Bool == true, count > 0 else {
-            return output("No matches for \(query) on the page.")
+            return (0, output("No matches for \(query) on the page."))
         }
         // Prefer the system find bar: it highlights every match and lets the user step through them.
         if let interaction = binding.webView.findInteraction {
             _ = try? await callAgentJSON(BrowserAgentInteractionScript.clearHighlights, [:], in: binding.webView)
             interaction.searchText = query
             interaction.presentFindNavigator(showingReplace: false)
-            return output("Found \(count) match\(count == 1 ? "" : "es") for \(query). Use the arrows in the find bar to move between them.")
+            return (count, output("Found \(count) match\(count == 1 ? "" : "es") for \(query). Use the arrows in the find bar to move between them."))
         }
         let highlighted = result["highlighted"] as? Bool == true
         let suffix = highlighted ? " and highlighted them" : ""
-        return output("Found \(count) match\(count == 1 ? "" : "es") for \(query)\(suffix).")
+        return (count, output("Found \(count) match\(count == 1 ? "" : "es") for \(query)\(suffix)."))
     }
 
     func bookmark(folderID: UUID?) throws -> BrowserIntentOutput {
