@@ -10508,6 +10508,10 @@ class AppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDele
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // Background refresh for page watches must be registered before launch finishes.
         PageWatchBackgroundScheduler.register()
+        // The on-device UI tests (BrowserUITests) pass this so the screen stays awake between their steps.
+        if ProcessInfo.processInfo.arguments.contains("-VortyraUITestKeepAwake") {
+            application.isIdleTimerDisabled = true
+        }
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         Task { @MainActor in
