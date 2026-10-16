@@ -90,6 +90,104 @@ final class AgentGuideExamplesUITests: XCTestCase {
         finishRun(named: "14-calendar")
     }
 
+    // MARK: Commands (/do, /ask, /search)
+
+    @MainActor func test30DoCommand() {
+        openPage("https://www.rtings.com/headphones/reviews/best/by-type/wireless")
+        sendToAgent("/do add the cheapest option to the comparison table")
+        finishRun(named: "30-do-command")
+    }
+
+    @MainActor func test31AskCommand() {
+        openPage("https://www.apple.com/legal/internet-services/itunes/us/terms.html")
+        sendChat("/ask what does this contract say about cancellation?")
+        attach("31-ask-command-result", screenshot: true)
+        XCTAssertFalse(app.buttons["Stop agent"].exists, "/ask must answer as chat, without starting the agent.")
+    }
+
+    @MainActor func test32SearchCommand() {
+        openPage("https://www.google.com")
+        sendChat("/search when is the next Benfica home game?")
+        attach("32-search-command-result", screenshot: true)
+    }
+
+    // MARK: Research and other apps
+
+    @MainActor func test33ResearchInTabsPDF() {
+        openPage("https://www.google.com")
+        sendToAgent("Research noise-cancelling headphones in tabs and export a PDF report.")
+        finishRun(named: "33-research-tabs-pdf", timeout: 600)
+    }
+
+    @MainActor func test34CompareReturnPolicies() {
+        openPage("https://www.google.com")
+        sendToAgent("Compare the return policies of three phone shops across websites.")
+        finishRun(named: "34-return-policies", timeout: 600)
+    }
+
+    @MainActor func test35TableCSVEmail() {
+        queue("Extract the container table, export it as CSV and email it to me.", url: "https://en.wikipedia.org/wiki/List_of_largest_container_ships")
+        finishRun(named: "35-csv-email")
+    }
+
+    @MainActor func test36PassportReminder() {
+        queue("Find when the passport office opens tomorrow and remind me.", url: "https://www.google.com")
+        finishRun(named: "36-passport-reminder")
+    }
+
+    @MainActor func test37CompareThreeOpenLaptops() {
+        openPage("https://www.apple.com/macbook-air/specs/")
+        openInNewTab("https://www.dell.com/en-us/shop/dell-laptops/xps-13-laptop/spd/xps-13-9350-laptop")
+        openInNewTab("https://www.lenovo.com/us/en/p/laptops/thinkpad/thinkpadx1/thinkpad-x1-carbon-gen-13-14-inch-intel/len101t0111")
+        sendToAgent("Compare the price and battery life of these three laptops and make a PDF report.")
+        finishRun(named: "37-three-laptops-pdf", timeout: 480)
+    }
+
+    // MARK: Saved tasks, history, teach mode, page watches
+
+    @MainActor func test38SaveRunAndHistory() {
+        queue("Find the page title and tell me", url: "https://en.wikipedia.org/wiki/Lisbon")
+        finishRun(named: "38a-run")
+        tapIfPresent(app.buttons["Save Run as Task"], "38b-save-run")
+        tapIfPresent(app.buttons["Save Task"], "38c-save-editor")
+        tapIfPresent(app.buttons["Saved agent tasks and history"], "38d-library")
+        attach("38d-library-tasks", screenshot: true)
+        tapIfPresent(app.buttons["History"], "38e-history")
+        let firstRun = app.cells.firstMatch
+        tapIfPresent(firstRun, "38f-run-detail")
+        attach("38f-run-detail", screenshot: true)
+        tapIfPresent(app.buttons["Run Again"], "38g-run-again")
+        if app.buttons["Stop agent"].waitForExistence(timeout: 30) { finishRun(named: "38g-run-again") }
+    }
+
+    @MainActor func test39TeachMode() {
+        openPage("https://en.wikipedia.org/wiki/Lisbon")
+        showAISidebarIfNeeded()
+        tapIfPresent(app.buttons["Saved agent tasks and history"], "39a-library")
+        tapIfPresent(app.buttons["Record a New Task"], "39b-record")
+        attach("39b-recording", screenshot: true)
+        let link = app.links.matching(NSPredicate(format: "label CONTAINS[c] 'Portugal'")).firstMatch
+        tapIfPresent(link, "39c-tap-link")
+        Thread.sleep(forTimeInterval: 4)
+        tapIfPresent(app.buttons["Stop"], "39d-stop")
+        attach("39d-save-recorded", screenshot: true)
+        tapIfPresent(app.buttons["Save Task"], "39e-saved")
+        attach("39e-saved", screenshot: true)
+    }
+
+    @MainActor func test40PageWatch() {
+        openPage("https://en.wikipedia.org/wiki/Special:Random")
+        tapIfPresent(app.buttons["Page options"], "40a-menu")
+        attach("40a-menu", screenshot: true)
+        tapIfPresent(app.buttons["Watch This Page…"], "40b-watch-sheet")
+        attach("40b-watch-sheet", screenshot: true)
+        tapIfPresent(app.buttons["Watch Page"], "40c-saved")
+        showAISidebarIfNeeded()
+        tapIfPresent(app.buttons["Saved agent tasks and history"], "40d-library")
+        tapIfPresent(app.buttons["Watches"], "40e-watches")
+        attach("40e-watches", screenshot: true)
+    }
+
     // MARK: Siri
 
     /// "Search for X in Vortyra" should find X on the page on screen (find bar), not open a web search.
@@ -132,6 +230,45 @@ final class AgentGuideExamplesUITests: XCTestCase {
         field.typeText(url + "\n")
         Thread.sleep(forTimeInterval: 8)
         attach("page-loaded", screenshot: true)
+    }
+
+    /// Sends a message that should be answered as chat; waits for the reply to arrive.
+    @MainActor private func sendChat(_ text: String) {
+        showAISidebarIfNeeded()
+        let field = app.textFields.matching(NSPredicate(format: "placeholderValue BEGINSWITH 'Ask'")).firstMatch
+        guard field.waitForExistence(timeout: 20) else { return XCTFail("The AI panel's input field was not found.") }
+        for _ in 0..<5 where !(field.value(forKey: "hasKeyboardFocus") as? Bool ?? false) {
+            field.tap()
+            Thread.sleep(forTimeInterval: 1)
+        }
+        field.typeText(text)
+        app.buttons["Send message"].firstMatch.tap()
+        Thread.sleep(forTimeInterval: 45)
+    }
+
+    @MainActor private func openInNewTab(_ url: String) {
+        let visibleNewTab = app.buttons.matching(identifier: "New Tab").allElementsBoundByIndex.first { $0.isHittable }
+        tapIfPresent(visibleNewTab ?? app.buttons["New Tab"].firstMatch, "new-tab")
+        let field = app.textFields.matching(NSPredicate(format: "hasKeyboardFocus == true OR placeholderValue == 'Search or enter address'")).firstMatch
+        if field.waitForExistence(timeout: 5) {
+            if !(field.value(forKey: "hasKeyboardFocus") as? Bool ?? false) { field.tap() }
+            field.typeText(url + "\n")
+            Thread.sleep(forTimeInterval: 8)
+        } else {
+            openPage(url)
+        }
+        attach("new-tab-loaded", screenshot: true)
+    }
+
+    /// Taps the element if it shows up; otherwise records a screenshot and a failure, and carries on.
+    @MainActor private func tapIfPresent(_ element: XCUIElement, _ name: String) {
+        if element.waitForExistence(timeout: 10), element.isHittable {
+            element.tap()
+            Thread.sleep(forTimeInterval: 2)
+        } else {
+            attach("missing-\(name)", screenshot: true)
+            XCTFail("\(name): element not found")
+        }
     }
 
     @MainActor private func sendToAgent(_ text: String) {

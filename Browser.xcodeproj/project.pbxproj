@@ -13,6 +13,7 @@
 		486980AEF31F84CFC275BA7C /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 2917E92251ED63F502730D09 /* MLX */; };
 		5D6C9AD86E85ED6FFF7E00D9 /* SavedTaskControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222FF3C345FC483A28FA9DCF /* SavedTaskControl.swift */; };
 		604AC870F6EAAB8DCCD5C378 /* VortyraWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D23C3191B3789898FDB098 /* VortyraWidgetsBundle.swift */; };
+		88A8AAD1CE63294F354F05BD /* ShortcutsActionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F6616E41C0E6C1278B0D93 /* ShortcutsActionsUITests.swift */; };
 		8DBD88C18A37EAD09F23CA05 /* SharedReaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87BDEF7F3DA04341925B920F /* SharedReaders.swift */; };
 		96EA66320F4C323403857291 /* AgentGuideExamplesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8417A41F0A9071F4C1E94A7D /* AgentGuideExamplesUITests.swift */; };
 		AED7C9B2D8AC6360A28746A6 /* AgentRunLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37864195823A2E94E7450CB /* AgentRunLiveActivity.swift */; };
@@ -80,6 +81,7 @@
 		2EAB0625BFFBCB7AC2AE315E /* OpenLinkControls.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OpenLinkControls.swift; sourceTree = "<group>"; };
 		332CC0F0FED450FE74300C13 /* SavedTasksWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SavedTasksWidget.swift; sourceTree = "<group>"; };
 		4B7ABD22CC8D4D754EA031B1 /* PageWatchesWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PageWatchesWidget.swift; sourceTree = "<group>"; };
+		64F6616E41C0E6C1278B0D93 /* ShortcutsActionsUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShortcutsActionsUITests.swift; sourceTree = "<group>"; };
 		8417A41F0A9071F4C1E94A7D /* AgentGuideExamplesUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentGuideExamplesUITests.swift; sourceTree = "<group>"; };
 		87BDEF7F3DA04341925B920F /* SharedReaders.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedReaders.swift; sourceTree = "<group>"; };
 		A10000000000000000000001 /* BrowserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BrowserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -251,6 +253,7 @@
 			isa = PBXGroup;
 			children = (
 				8417A41F0A9071F4C1E94A7D /* AgentGuideExamplesUITests.swift */,
+				64F6616E41C0E6C1278B0D93 /* ShortcutsActionsUITests.swift */,
 			);
 			name = BrowserUITests;
 			path = BrowserUITests;
@@ -498,6 +501,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				96EA66320F4C323403857291 /* AgentGuideExamplesUITests.swift in Sources */,
+				88A8AAD1CE63294F354F05BD /* ShortcutsActionsUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
