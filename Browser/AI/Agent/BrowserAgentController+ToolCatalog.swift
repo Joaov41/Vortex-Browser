@@ -180,6 +180,7 @@ extension BrowserAgentController {
         task: String,
         browserAdapterAvailable: Bool,
         fetchPageAvailable: Bool = true,
+        includeDataTools: Bool = false,
         coreOnly: Bool = false,
         supportsVision: Bool = false,
         readChunkCharacters: Int = 8_000
@@ -190,7 +191,8 @@ extension BrowserAgentController {
         if !coreOnly {
             let bundles = selectedBundles(forTask: task, browserAdapterAvailable: browserAdapterAvailable)
             if bundles.contains(.browser) { names.formUnion(browserBundleToolNames) }
-            if bundles.contains(.data) { names.formUnion(dataToolNames) }
+            // Data kept from the previous request needs the export tools even when this request only says "do it".
+            if bundles.contains(.data) || (includeDataTools && browserAdapterAvailable) { names.formUnion(dataToolNames) }
             if bundles.contains(.research) { names.formUnion(researchToolNames) }
             if bundles.contains(.handoff) { names.formUnion(handoffToolNames) }
         }

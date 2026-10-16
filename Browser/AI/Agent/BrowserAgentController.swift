@@ -166,6 +166,8 @@ final class BrowserAgentController: ObservableObject {
     var datasets: [UUID: BrowserAgentDataset] = [:]
     var datasetOrder: [UUID] = []
     var comparisons: [UUID: BrowserAgentExportService.Comparison] = [:]
+    /// Data the last non-private run extracted, kept so a follow-up such as "now make the PDF" can use it.
+    var keptRunData: KeptRunData?
     /// The tab the agent is acting in; changes when it opens a new tab.
     var activeWebView: WKWebView?
     private var confirmationContinuation: CheckedContinuation<ConfirmationDecision, Never>?
@@ -324,6 +326,11 @@ final class BrowserAgentController: ObservableObject {
         datasets = [:]
         datasetOrder = []
         comparisons = [:]
+        restoreKeptRunData(
+            hasEarlierConversation: safeConversation?.isEmpty == false,
+            isPrivate: runIsPrivate,
+            dataStore: runWebsiteDataStore
+        )
         readPageKeys = []
         runDeclaredToolNames = []
         runTask = Task { [weak self, weak webView] in
@@ -364,6 +371,7 @@ final class BrowserAgentController: ObservableObject {
         activeWebView = nil
         browserAdapter?.endRun()
         browserAdapter = nil
+        keepRunDataForFollowUp(isPrivate: context.isPrivate || runIsPrivate, dataStore: runWebsiteDataStore)
         runWebsiteDataStore = nil
         runIsPrivate = false
         datasets = [:]
@@ -579,12 +587,13 @@ final class BrowserAgentController: ObservableObject {
                 let earlier = conversation.map {
                     "Earlier in this conversation (for reference):\n\(bounded($0, to: profile.recentConversationCharacters))\n\n"
                 } ?? ""
-                initialPrompt = earlier + Self.currentDateLine() + "Task: \(task)" + Self.snapshotMarker + snapshot + "\n</page_snapshot>"
+                initialPrompt = earlier + keptDataPromptSection() + Self.currentDateLine() + "Task: \(task)" + Self.snapshotMarker + snapshot + "\n</page_snapshot>"
             }
             let tools = Self.toolsForRun(
                 task: task,
                 browserAdapterAvailable: browserAdapter != nil,
                 fetchPageAvailable: runWebsiteDataStore != nil,
+                includeDataTools: !datasetOrder.isEmpty || !comparisons.isEmpty,
                 coreOnly: profile.toolPolicy == .coreOnly,
                 supportsVision: profile.supportsVision,
                 readChunkCharacters: profile.readChunkCharacters
