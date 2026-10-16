@@ -84,7 +84,7 @@ extension BrowserIntentExecutor {
     }
 
     func translate(_ rawTag: String) async throws -> BrowserIntentOutput {
-        let tag = rawTag.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tag = Self.languageTag(for: rawTag)
         guard tag.range(of: #"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"#, options: .regularExpression) != nil,
               Locale.Language(identifier: tag).languageCode != nil else {
             throw BrowserIntentError.invalidInput("Use a valid language tag such as pt or pt-BR.")
@@ -119,6 +119,27 @@ extension BrowserIntentExecutor {
 
     func findText(_ rawQuery: String) async throws -> BrowserIntentOutput {
         try await findTextCountingMatches(rawQuery).output
+    }
+
+    /// Accepts a language tag ("pt", "pt-BR") or a language name in English or the device language
+    /// ("Portuguese", "português"), which is what people type into Shortcuts. Anything else is returned
+    /// unchanged for the tag check to reject.
+    nonisolated static func languageTag(for raw: String, locale: Locale = .current) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.range(of: #"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$"#, options: .regularExpression) == nil else {
+            return trimmed
+        }
+        let wanted = trimmed.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        let english = Locale(identifier: "en")
+        for code in Locale.LanguageCode.isoLanguageCodes where code.identifier.count == 2 {
+            for naming in [english, locale, Locale(identifier: code.identifier)] {
+                guard let name = naming.localizedString(forLanguageCode: code.identifier) else { continue }
+                if name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil) == wanted {
+                    return code.identifier
+                }
+            }
+        }
+        return trimmed
     }
 
     /// Finds `rawQuery` on the page on screen and opens the find bar on the matches. Only when the text

@@ -117,6 +117,7 @@ final class BrowserIntentExecutor {
     ) async throws -> BrowserIntentOutput {
         try Task.checkCancellation()
         guard isCurrent() else { throw BrowserIntentError.stalePage }
+        await waitForSelectedPageToFinishLoading()
         switch command {
         case .openURL, .search:
             return try executeOpenCommand(command)
@@ -139,6 +140,18 @@ final class BrowserIntentExecutor {
             return try await executeDownloadCommand(command, confirm: confirm)
         case .loadURLInTab, .closeTabs, .deleteBookmarks, .clearHistory, .renameBookmark:
             return try await executeSchemaCommand(command, confirm: confirm)
+        }
+    }
+
+    /// Shortcuts run actions back to back, so the page from the previous action is often still loading.
+    /// Give it up to `timeout` seconds to finish instead of refusing at once; the page checks still run after.
+    func waitForSelectedPageToFinishLoading(timeout: TimeInterval = 10) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline, !Task.isCancelled,
+              let selectedID = viewModel.selectedTabID,
+              let tab = viewModel.tabs.first(where: { $0.id == selectedID }),
+              tab.liveWebView?.isLoading == true {
+            try? await Task.sleep(for: .milliseconds(250))
         }
     }
 

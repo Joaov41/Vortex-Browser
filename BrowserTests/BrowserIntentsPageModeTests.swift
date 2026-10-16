@@ -88,6 +88,15 @@ final class BrowserIntentsPageModeTests: BrowserIntentsExecutorTestCase {
         XCTAssertEqual(harness.recorded.translatePredicate?(), true)
     }
 
+    func testTranslateAcceptsLanguageNamesAsWellAsTags() {
+        // Seen on device: Translate Vortyra Page with "Portuguese" failed with "Use a valid language tag".
+        XCTAssertEqual(BrowserIntentExecutor.languageTag(for: "Portuguese"), "pt")
+        XCTAssertEqual(BrowserIntentExecutor.languageTag(for: "português", locale: Locale(identifier: "en")), "pt")
+        XCTAssertEqual(BrowserIntentExecutor.languageTag(for: " french "), "fr")
+        XCTAssertEqual(BrowserIntentExecutor.languageTag(for: "pt-BR"), "pt-BR")
+        XCTAssertEqual(BrowserIntentExecutor.languageTag(for: "Klingonese"), "Klingonese", "Unknown names stay as typed and are rejected later.")
+    }
+
     func testSiriSearchFindsOnThePageFirstAndSearchesTheWebOnlyWhenMissing() async throws {
         // Reported on device: "search for X in Vortyra" opened a search-engine tab instead of finding X on the page.
         let harness = try makeHarness()
