@@ -103,6 +103,8 @@ final class BrowserTab: ObservableObject, Identifiable {
         // Vortex owns back/forward gestures so it can enforce a deliberate
         // threshold and provide consistent animation and iPhone haptics.
         created.allowsBackForwardNavigationGestures = false
+        // The system find bar: ⌘F, match count and next/previous, used by Find on Page.
+        created.isFindInteractionEnabled = true
 
         AdBlockService.shared.configureWebView(created)
         ThirdPartyCookieBlocker.shared.register(webView: created)

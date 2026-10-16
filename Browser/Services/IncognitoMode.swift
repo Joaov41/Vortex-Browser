@@ -55,6 +55,7 @@ class IncognitoMode: ObservableObject {
         config.userContentController.addUserScript(privacyScript)
         
         let webView = WKWebView(frame: .zero, configuration: config)
+        webView.isFindInteractionEnabled = true
 
         // Apply ad blocking if enabled
         AdBlockService.shared.configureWebView(webView)

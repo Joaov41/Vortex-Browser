@@ -142,6 +142,13 @@ extension BrowserIntentExecutor {
         guard result["found"] as? Bool == true, count > 0 else {
             return output("No matches for \(query) on the page.")
         }
+        // Prefer the system find bar: it highlights every match and lets the user step through them.
+        if let interaction = binding.webView.findInteraction {
+            _ = try? await callAgentJSON(BrowserAgentInteractionScript.clearHighlights, [:], in: binding.webView)
+            interaction.searchText = query
+            interaction.presentFindNavigator(showingReplace: false)
+            return output("Found \(count) match\(count == 1 ? "" : "es") for \(query). Use the arrows in the find bar to move between them.")
+        }
         let highlighted = result["highlighted"] as? Bool == true
         let suffix = highlighted ? " and highlighted them" : ""
         return output("Found \(count) match\(count == 1 ? "" : "es") for \(query)\(suffix).")

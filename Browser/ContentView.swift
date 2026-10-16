@@ -2277,6 +2277,15 @@ struct ContentView: View {
             }
         }
 
+        if !tab.isBlank, let webView = tab.liveWebView, webView.findInteraction != nil {
+            Button {
+                collapseToolbar()
+                webView.findInteraction?.presentFindNavigator(showingReplace: false)
+            } label: {
+                Label("Find on Page…", systemImage: "text.magnifyingglass")
+            }
+        }
+
         // Private tabs and non-web pages can never be watched.
         if !tab.isIncognito, !tab.isBlank, tab.liveWebView != nil,
            let pageURL = tab.currentURL, PageWatch.isWebURL(pageURL) {
