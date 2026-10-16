@@ -164,10 +164,7 @@ final class AgentGuideExamplesUITests: XCTestCase {
         }
         Thread.sleep(forTimeInterval: 2)
         attach("\(name)-result", screenshot: true)
-        // Only the visible text, not the full accessibility tree: a translated reader page made the
-        // full dump big enough to stop the test runner.
-        let texts = app.staticTexts.allElementsBoundByIndex.prefix(400).map(\.label).joined(separator: "\n")
-        attachText("\(name)-screen-text", texts)
+        // Screenshots only: dumping the screen's text failed on large or changing pages and stopped the runner.
         XCTAssertTrue(ended, "\(name) was still running after \(Int(timeout)) seconds.")
     }
 
