@@ -38,20 +38,31 @@ struct OpenBrowserURLIntent: AppIntent {
     }
 }
 
+/// Siri's "Search with Vortyra" (also matched by "search for X in Vortyra"). By default it finds the
+/// text on the page on screen and searches the web only when it isn't there; Shortcuts can turn on
+/// Search the Web Only.
 struct SearchBrowserIntent: AppIntent {
     static let title: LocalizedStringResource = "Search in Vortyra"
+    static let description = IntentDescription(
+        "Find text on the page on screen and highlight it. If it isn't on the page, or no page is open, search the web in a new tab."
+    )
     static var supportedModes: IntentModes { .foreground }
     static var authenticationPolicy: IntentAuthenticationPolicy { .requiresLocalDeviceAuthentication }
 
-    @Parameter(title: "Search Text")
+    @Parameter(title: "Search Text", requestValueDialog: IntentDialog("What should I look for?"))
     var query: String
 
+    @Parameter(title: "Search the Web Only", description: "Skip the page on screen and search the web in a new tab.", default: false)
+    var webOnly: Bool
+
     static var parameterSummary: some ParameterSummary {
-        Summary("Search Vortyra for \(\.$query)")
+        Summary("Search Vortyra for \(\.$query)") {
+            \.$webOnly
+        }
     }
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        try await performBrowserIntent(.search(query))
+        try await performBrowserIntent(webOnly ? .search(query) : .findOnPageOrSearch(query))
     }
 }
 
