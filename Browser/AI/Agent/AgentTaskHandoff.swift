@@ -347,7 +347,10 @@ struct UserDefaultsAgentTaskQueuePersistence: PendingAgentTaskQueuePersistence {
     func writeData(_ data: Data, forKey key: String) throws {
         let previous = try readData(forKey: key)
         defaults.set(data, forKey: key)
-        guard synchronizeDefaults(), defaults.data(forKey: key) == data else {
+        // synchronize() is deprecated and can return false for app-group defaults even though the value
+        // was stored (seen on device), so only the read-back decides whether the write succeeded.
+        _ = synchronizeDefaults()
+        guard defaults.data(forKey: key) == data else {
             if let previous {
                 defaults.set(previous, forKey: key)
             } else {

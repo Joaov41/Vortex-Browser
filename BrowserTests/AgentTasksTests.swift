@@ -475,16 +475,17 @@ final class AgentTasksTests: XCTestCase {
         XCTAssertEqual(try queue.pendingTasks(), [request])
     }
 
-    func testFailedUserDefaultsWriteSynchronizationRollsBackWithoutNotifyingOrConsuming() throws {
-        let suite = "AgentTasksTests.FailedSyncWrite.\(UUID().uuidString)"
+    func testUserDefaultsWriteSucceedsWhenSynchronizeReportsFalseButTheValueReadsBack() throws {
+        // On device, synchronize() returned false for the app-group defaults although the value was stored,
+        // so every webmebrowser://agent link and Shortcuts request failed with "could not confirm".
+        let suite = "AgentTasksTests.FalseSyncWrite.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let key = try AgentTaskStoreLocation.defaultsKey(bundleIdentifier: "com.example.BrowserTests")
-        var synchronizationSucceeds = true
         var synchronizationCalls = 0
         let persistence = UserDefaultsAgentTaskQueuePersistence(defaults: defaults) {
             synchronizationCalls += 1
-            return synchronizationSucceeds
+            return false
         }
         let queue = PendingAgentTaskQueue(persistence: persistence, storageKey: key)
         var notifications = 0
@@ -493,32 +494,10 @@ final class AgentTasksTests: XCTestCase {
         let second = PendingAgentTask(task: "Second request")
         try coordinator.enqueue(first)
         try coordinator.enqueue(second)
-        let originalBytes = try XCTUnwrap(defaults.data(forKey: key))
         XCTAssertEqual(notifications, 2)
-
-        synchronizationSucceeds = false
-        XCTAssertThrowsError(try coordinator.enqueue(PendingAgentTask(task: "Do not notify"))) { error in
-            XCTAssertEqual(error as? PendingAgentTaskQueueError, .writeFailed)
-        }
-        XCTAssertEqual(notifications, 2, "A failed commit must not notify a consumer.")
-        XCTAssertEqual(defaults.data(forKey: key), originalBytes)
         XCTAssertEqual(try queue.pendingTasks(), [first, second])
+        XCTAssertGreaterThan(synchronizationCalls, 0, "Writes still ask UserDefaults to flush.")
 
-        XCTAssertThrowsError(try queue.consumeNextIfReady(
-            isForeground: true,
-            hasBrowserView: true,
-            aiBusy: false,
-            agentBusy: false,
-            startupBusy: false
-        )) { error in
-            XCTAssertEqual(error as? PendingAgentTaskQueueError, .writeFailed)
-        }
-        XCTAssertEqual(defaults.data(forKey: key), originalBytes)
-        XCTAssertEqual(try queue.pendingTasks(), [first, second], "A failed dequeue commit must leave the FIFO head available.")
-        XCTAssertEqual(notifications, 2)
-        XCTAssertGreaterThan(synchronizationCalls, 0, "Writes still require their explicit commit confirmation.")
-
-        synchronizationSucceeds = true
         XCTAssertEqual(try queue.consumeNext(), first)
         XCTAssertEqual(try queue.pendingTasks(), [second])
     }
