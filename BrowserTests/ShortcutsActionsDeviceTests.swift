@@ -99,7 +99,7 @@ final class ShortcutsActionsDeviceTests: XCTestCase {
         try await settle(6)
         await run("End Split View") { _ = try await EndBrowserSplitIntent().perform() }
         try await settle(2)
-        await run("Close Current Vortyra Tab") { _ = try await CloseBrowserTabIntent().perform() }
+        await command("Close Current Vortyra Tab", .closeCurrentTab)
         try await settle(2)
         await run("Reopen Last Closed Tab") { _ = try await ReopenBrowserTabIntent().perform() }
         try await settle(4)
@@ -152,9 +152,7 @@ final class ShortcutsActionsDeviceTests: XCTestCase {
         await command("Get Recorded Web Searches", .searchesOn(Date()))
 
         // Downloads
-        await run("Download URL in Vortyra") {
-            let i = DownloadBrowserURLIntent(); i.url = URL(string: "https://www.w3.org/TR/PNG/iso_8859-1.txt")!; _ = try await i.perform()
-        }
+        await command("Download URL in Vortyra", .downloadURL(URL(string: "https://www.w3.org/TR/PNG/iso_8859-1.txt")!))
         await run("Download Direct Page Video", expectFailureOn: "no direct video on a Wikipedia page") { _ = try await DownloadBrowserVideoIntent().perform() }
 
         // Page watches
@@ -231,6 +229,14 @@ final class ShortcutsActionsDeviceTests: XCTestCase {
                 try? store.deleteWatch(id: watch.id)
             }
         }
+        // Read only: list bookmarks earlier test runs may have left, for the person to review.
+        var leftovers: [String] = []
+        for term in ["Vortyra test", "Lisbon", "carbonara"] {
+            for bookmark in (try? await BrowserSchemaBookmarkQuery().entities(matching: term)) ?? [] {
+                leftovers.append("\(bookmark.name) — \(bookmark.url.absoluteString)")
+            }
+        }
+        print("LEFTOVER-BOOKMARKS\n" + Set(leftovers).sorted().joined(separator: "\n") + "\nEND-LEFTOVERS")
         record("Cleanup", "removed \(newBookmarks.count) test bookmarks, \(newTabs.count) test tabs and the test page watch")
 
         let report = outcomes.map { "\($0.result.hasPrefix("ok") ? "✅" : $0.result.hasPrefix("skipped") ? "⏭️" : "❌") \($0.name): \($0.result)" }

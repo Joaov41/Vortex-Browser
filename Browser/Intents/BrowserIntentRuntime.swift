@@ -156,7 +156,8 @@ final class BrowserIntentRuntime: ObservableObject {
     private let pollNanoseconds: UInt64
 
     init(
-        readinessTimeout: TimeInterval = 10,
+        // Long enough for a Web AI or summary request started by the previous action to finish.
+        readinessTimeout: TimeInterval = 30,
         executionTimeout: TimeInterval = 90,
         pollInterval: TimeInterval = 0.1
     ) {
