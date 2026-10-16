@@ -371,7 +371,12 @@ final class BrowserAgentController: ObservableObject {
         activeWebView = nil
         browserAdapter?.endRun()
         browserAdapter = nil
-        keepRunDataForFollowUp(isPrivate: context.isPrivate || runIsPrivate, dataStore: runWebsiteDataStore)
+        keepRunDataForFollowUp(
+            isPrivate: context.isPrivate || runIsPrivate,
+            dataStore: runWebsiteDataStore,
+            answer: steps.last { $0.kind == .answer }?.text,
+            sourceURL: context.startURL
+        )
         runWebsiteDataStore = nil
         runIsPrivate = false
         datasets = [:]

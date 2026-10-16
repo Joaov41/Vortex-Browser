@@ -2120,11 +2120,11 @@ final class BrowserAgentLoopTests: XCTestCase {
     }
 
     func testAppleTaskInstructionsAreIsolatedFromChatGPT() async throws {
-        XCTAssertEqual(BrowserAgentController.instructions.utf8.count, 4_463)
+        XCTAssertEqual(BrowserAgentController.instructions.utf8.count, 4_621)
         XCTAssertEqual(
             SHA256.hash(data: Data(BrowserAgentController.instructions.utf8))
                 .map { String(format: "%02x", $0) }.joined(),
-            "1f66d1d1e80e5ca19643ebdbfd6a3fc0400fd54cb6e735d6118a842bf81a698d"
+            "db5c46ecb375b8afb9231034964f422c0b959fd561c0b1e50c14187e11d9f9a6"
         )
         let scope = BrowserAgentController.appleTaskScopeInstructions
 

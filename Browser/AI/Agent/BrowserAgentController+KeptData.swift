@@ -11,6 +11,11 @@
 import Foundation
 import WebKit
 
+extension BrowserAgentDataset {
+    /// Title of the text dataset that holds a run's written answer for the next request.
+    nonisolated static let previousAnswerTitle = "Answer from the previous request"
+}
+
 struct KeptRunData {
     let datasets: [UUID: BrowserAgentDataset]
     let datasetOrder: [UUID]
@@ -23,8 +28,22 @@ extension BrowserAgentController {
     static let keptRunDataLifetime: TimeInterval = 30 * 60
     private static let maximumKeptTitleCharacters = 80
 
-    /// Called as a run ends. A private run, or a run with nothing extracted, leaves nothing behind.
-    func keepRunDataForFollowUp(isPrivate: Bool, dataStore: WKWebsiteDataStore?, now: Date = Date()) {
+    private static let maximumKeptAnswerCharacters = 20_000
+
+    /// Called as a run ends. A private run, or a run with nothing extracted and no answer, leaves nothing behind.
+    /// A written answer is kept as text too, so "now make a PDF of that" works when the run listed its findings
+    /// instead of extracting a table.
+    func keepRunDataForFollowUp(
+        isPrivate: Bool,
+        dataStore: WKWebsiteDataStore?,
+        answer: String? = nil,
+        sourceURL: URL? = nil,
+        now: Date = Date()
+    ) {
+        if !isPrivate, let dataset = Self.answerDataset(answer, sourceURL: sourceURL, now: now) {
+            datasets[dataset.id] = dataset
+            datasetOrder.append(dataset.id)
+        }
         guard !isPrivate, !datasetOrder.isEmpty || !comparisons.isEmpty else {
             keptRunData = nil
             return
@@ -35,6 +54,27 @@ extension BrowserAgentController {
             comparisons: comparisons,
             dataStore: dataStore,
             keptAt: now
+        )
+    }
+
+    private static func answerDataset(_ answer: String?, sourceURL: URL?, now: Date) -> BrowserAgentDataset? {
+        guard let text = answer?.trimmingCharacters(in: .whitespacesAndNewlines),
+              text.count > 20,
+              let source = sourceURL.flatMap({ BrowserAgentExtractionParser.safeSourceURL($0) }) else { return nil }
+        let bounded = String(text.prefix(maximumKeptAnswerCharacters))
+        return BrowserAgentDataset(
+            id: UUID(),
+            kind: .fetchedPage,
+            title: BrowserAgentDataset.previousAnswerTitle,
+            pageTitle: source.host ?? "",
+            sourceURL: source.absoluteString,
+            sourceTabID: nil,
+            capturedAt: ISO8601DateFormatter().string(from: now),
+            wasTruncated: bounded.count < text.count,
+            truncationReasons: bounded.count < text.count ? ["answer_text_limit"] : [],
+            links: [],
+            tables: [],
+            fetchedText: bounded
         )
     }
 
@@ -67,7 +107,7 @@ extension BrowserAgentController {
             switch dataset.kind {
             case .links: size = "\(dataset.links.count) links"
             case .htmlTable: size = "\(dataset.tables.reduce(0) { $0 + $1.rows.count }) rows"
-            case .fetchedPage: size = "page text"
+            case .fetchedPage: size = dataset.title == BrowserAgentDataset.previousAnswerTitle ? "your previous answer as text" : "page text"
             }
             let title = autofillPrivacy.redactKnownValues(String(dataset.title.prefix(Self.maximumKeptTitleCharacters)))
             lines.append("- dataset \(id.uuidString): \(encode(["title": title])) (\(size))")

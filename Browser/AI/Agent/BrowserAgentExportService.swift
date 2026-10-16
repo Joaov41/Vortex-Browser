@@ -356,7 +356,12 @@ enum BrowserAgentExportService {
                     }
                 }
             case .fetchedPage:
-                lines.append(.init(text: "Fetched page text (bounded, read-only source):", style: .label))
+                lines.append(.init(
+                    text: dataset.title == BrowserAgentDataset.previousAnswerTitle
+                        ? "Answer written by the browser agent:"
+                        : "Fetched page text (bounded, read-only source):",
+                    style: .label
+                ))
                 let text = dataset.fetchedText ?? ""
                 if text.isEmpty {
                     lines.append(.init(text: "No readable text was captured.", style: .note))

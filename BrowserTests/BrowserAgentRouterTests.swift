@@ -43,6 +43,25 @@ final class BrowserAgentRouterTests: XCTestCase {
         }
     }
 
+    func testDataAndFileRequestsGoToTheAgent() {
+        // Seen on device: both went to chat, which answered "I can't create or attach a PDF".
+        for text in [
+            "Extract the concert dates on this page",
+            "Now create the PDF",
+            "now make a PDF of that",
+            "Export it as CSV",
+            "Save the results as a spreadsheet",
+            "Scrape the prices",
+            "Gather the opening hours",
+            "Turn it into a PDF report"
+        ] {
+            XCTAssertEqual(BrowserAgentRouter.route(text), .agent(text), text)
+        }
+        for text in ["What is a PDF?", "Can you explain this report?", "Why does the file not open?"] {
+            XCTAssertEqual(BrowserAgentRouter.route(text), .chat(text), text)
+        }
+    }
+
     func testOrdinaryPageAndResearchQuestionsStayOnChat() {
         let questions = [
             "What does this page say about product reviews?",

@@ -164,6 +164,43 @@ final class AgentFollowUpDataTests: XCTestCase {
         XCTAssertTrue(result.exportOutput.hasPrefix("Export "), "The PDF export must succeed: \(result.exportOutput)")
     }
 
+    func testFollowUpCanExportAWrittenAnswerAsPDF() async throws {
+        // On device the first run listed the dates in its answer instead of extracting the table.
+        let harness = try await makeHarness()
+        defer { harness.cleanup() }
+        var followUpPrompt = ""
+        var exportOutput = ""
+        var runIndex = 0
+        let answerEngine = ScriptedEngine { _, _, _ in
+            "The page lists these concert dates:\n- 12 Nov — Lisbon\n- 15 Nov — Porto"
+        }
+        let followUpEngine = ScriptedEngine { request, execute, _ in
+            followUpPrompt = request.initialPrompt
+            let id = self.datasetID(in: request.initialPrompt.components(separatedBy: "<page_snapshot>").first ?? "") ?? UUID().uuidString
+            exportOutput = (await execute("export_dataset_pdf", #"{"dataset_ids":["\#(id)"]}"#)).text
+            return "Created the PDF."
+        }
+        let controller = BrowserAgentController(engineFactory: { _ in
+            defer { runIndex += 1 }
+            return runIndex == 0 ? answerEngine : followUpEngine
+        })
+        defer { controller.stop() }
+        var first = ""
+        controller.start(task: "Extract the concert dates on this page", conversation: nil, in: harness.webView, openTab: nil, browserAdapter: harness.adapter) { first = $0 }
+        _ = await waitUntil { !controller.isRunning && !first.isEmpty }
+        var second = ""
+        controller.start(
+            task: "Now create the PDF",
+            conversation: "User: Extract the concert dates on this page\nAssistant: \(first)",
+            in: harness.webView,
+            openTab: nil,
+            browserAdapter: harness.adapter
+        ) { second = $0 }
+        _ = await waitUntil { !controller.isRunning && !second.isEmpty }
+        XCTAssertTrue(followUpPrompt.contains("your previous answer as text"), followUpPrompt)
+        XCTAssertTrue(exportOutput.hasPrefix("Export "), "The written answer must be exportable: \(exportOutput)")
+    }
+
     func testANewChatStartsWithoutTheEarlierData() async throws {
         let harness = try await makeHarness()
         defer { harness.cleanup() }

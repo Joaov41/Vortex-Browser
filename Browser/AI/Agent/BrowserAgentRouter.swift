@@ -60,6 +60,10 @@ enum BrowserAgentRouter {
             "^(?:\(lead))cancel (?:this |the )?download\\b",
             "^(?:\(lead))(?:extract|export|save) (?:the |these |this )?.*\\b(?:links|tables|csv|pdf|comparison)\\b",
             "^(?:\(lead))collect .*(?:names|prices|links|table|data)\\b.*\\bfrom\\b",
+            // Pulling data off the page and making files need the agent's data and export tools;
+            // chat cannot create files ("extract the dates", then "now create the PDF").
+            "^(?:\(lead))(?:extract|scrape|pull out|grab|gather|collect)\\b",
+            "^(?:\(lead))(?:create|make|generate|produce|build|export|save|turn (?:it|this|that|them) into|put (?:it|this|that|them) (?:in|into))\\b.{0,60}\\b(?:pdfs?|csvs?|spreadsheets?|excel|reports?|files?)\\b",
             "^(?:\(lead))compare .*(?:tables|datasets|pages|sources|prices)\\b",
             "^(?:\(lead))translate (?:this )?page\\b",
             "^(?:\(lead))(?:turn on|turn off|enable|disable) (?:the )?reader mode\\b",
