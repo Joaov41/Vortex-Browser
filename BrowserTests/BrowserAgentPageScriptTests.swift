@@ -173,6 +173,36 @@ final class BrowserAgentPageScriptTests: XCTestCase {
         XCTAssertEqual(visibleToPage, false)
     }
 
+    func testHiddenTokensDoNotMakeAFormSensitiveButVisibleTokenFieldsDo() async throws {
+        // Seen on device: MSC's container-tracking form asked for approval as "form with sensitive fields"
+        // because of a hidden anti-forgery token.
+        _ = try await snapshotLines()
+        _ = try await page("""
+        (() => {
+          const tracking = document.createElement('form');
+          tracking.id = 'tracking-form'; tracking.action = '/track';
+          tracking.innerHTML = '<input type="hidden" name="__RequestVerificationToken" value="x">'
+            + '<input type="hidden" name="sessionToken" value="y">'
+            + '<input name="trackingNumber" aria-label="Enter a Container/Bill of Lading Number">';
+          const visible = document.createElement('form');
+          visible.id = 'visible-token-form'; visible.action = '/settings';
+          visible.innerHTML = '<input name="api_token" aria-label="API token">';
+          document.body.append(tracking, visible);
+          return true;
+        })()
+        """)
+        let trackingRisk = try await webView.callAsyncJavaScript(
+            "return globalThis.__vxAgent.formRisk(document.getElementById('tracking-form'));",
+            arguments: [:], in: nil, contentWorld: BrowserAgentPageScript.world
+        )
+        XCTAssertNil(trackingRisk as? String, "A GET tracking form with hidden tokens needs no approval.")
+        let visibleRisk = try await webView.callAsyncJavaScript(
+            "return globalThis.__vxAgent.formRisk(document.getElementById('visible-token-form'));",
+            arguments: [:], in: nil, contentWorld: BrowserAgentPageScript.world
+        ) as? String
+        XCTAssertEqual(visibleRisk, "form with sensitive fields")
+    }
+
     func testSearchTypesAndSubmitsWithoutApproval() async throws {
         let lines = try await snapshotLines()
         let result = try await agent(BrowserAgentPageScript.type, [

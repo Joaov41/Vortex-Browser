@@ -122,7 +122,9 @@ enum BrowserAgentPageScript {
           if (el.isContentEditable) return true;
           if (el.tagName === 'TEXTAREA') return true;
           if (el.tagName !== 'INPUT') return false;
-          return !['button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'range', 'color'].includes((el.type || 'text').toLowerCase());
+          // Hidden inputs are not text fields: sites keep anti-forgery tokens there, and their names must not
+          // make an ordinary form (such as a container-tracking search) look like a password form.
+          return !['hidden', 'button', 'submit', 'reset', 'image', 'checkbox', 'radio', 'file', 'range', 'color'].includes((el.type || 'text').toLowerCase());
         },
 
         sensitive(el) {
