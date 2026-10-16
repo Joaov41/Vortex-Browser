@@ -90,10 +90,30 @@ final class AgentGuideExamplesUITests: XCTestCase {
         finishRun(named: "14-calendar")
     }
 
+    // MARK: Siri
+
+    /// "Search for X in Vortyra" should find X on the page on screen (find bar), not open a web search.
+    @MainActor func test20SiriSearchFindsOnPage() {
+        openPage("https://en.wikipedia.org/wiki/Lisbon")
+        attach("siri-before", screenshot: true)
+        XCUIDevice.shared.siriService.activate(voiceRecognitionText: "Search for tram in Vortyra")
+        Thread.sleep(forTimeInterval: 15)
+        attach("siri-search-on-page", screenshot: true)
+        app.activate()
+        Thread.sleep(forTimeInterval: 3)
+        attach("siri-search-on-page-app", screenshot: true)
+    }
+
     // MARK: Driving the app
 
     /// Opens the starting page from the address bar, then sends the request to the agent with /do.
     @MainActor private func queue(_ task: String, url: String) {
+        openPage(url)
+        sendToAgent("/do " + task)
+        attach("start", screenshot: true)
+    }
+
+    @MainActor private func openPage(_ url: String) {
         let address = app.buttons.matching(NSPredicate(format: "label ENDSWITH 'connection' OR label == 'Focus Address Bar'")).firstMatch
         guard address.waitForExistence(timeout: 20) else {
             attach("no-address-bar", screenshot: true)
@@ -112,8 +132,6 @@ final class AgentGuideExamplesUITests: XCTestCase {
         field.typeText(url + "\n")
         Thread.sleep(forTimeInterval: 8)
         attach("page-loaded", screenshot: true)
-        sendToAgent("/do " + task)
-        attach("start", screenshot: true)
     }
 
     @MainActor private func sendToAgent(_ text: String) {
