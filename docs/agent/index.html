@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="How to use Vortyra's browser agent, Shortcuts actions, Siri, Spotlight, widgets and controls, with examples you can try.">
+  <title>Agent Guide — Vortyra</title>
+  <link rel="icon" href="../assets/vortex-browser.png">
+  <link rel="stylesheet" href="../styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <a class="brand" href="../" aria-label="Vortyra home">
+      <img src="../assets/vortex-browser.png" alt="">
+      <span>Vortyra</span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="./" aria-current="page">Agent guide</a>
+      <a href="../feedback/">TestFlight replies</a>
+      <a href="../privacy/">Privacy</a>
+      <a href="../terms/">Terms</a>
+      <a href="https://github.com/Joaov41/Vortex-Browser">Source</a>
+    </nav>
+  </header>
+
+  <main class="document" id="main">
+    <aside class="document-summary" aria-label="On this page">
+      <strong>Agent Guide</strong>
+      <p>Vortyra for iPhone and iPad</p>
+      <nav class="guide-toc" aria-label="Sections">
+        <a href="#start">Turn on Agent mode</a>
+        <a href="#words">The words that matter</a>
+        <a href="#examples">What to ask</a>
+        <a href="#abilities">Everything the agent can do</a>
+        <a href="#research">Research mode</a>
+        <a href="#safety">Approvals and privacy</a>
+        <a href="#tasks">Saved tasks and history</a>
+        <a href="#teach">Teach mode</a>
+        <a href="#watches">Page watches</a>
+        <a href="#handoff">Calendar, Mail and more</a>
+        <a href="#shortcuts">Shortcuts</a>
+        <a href="#siri">Siri</a>
+        <a href="#spotlight">Spotlight</a>
+        <a href="#controls">Controls and widgets</a>
+        <a href="#progress">Progress and notifications</a>
+      </nav>
+    </aside>
+
+    <article class="document-content">
+      <h1>The Vortyra agent</h1>
+      <p class="guide-lede">Vortyra can do things on webpages for you: click, type, fill forms, collect data, research across sites and hand the result to other apps. This guide shows how to ask, which words switch modes, and how to run it all from Shortcuts, Siri and Control Center.</p>
+
+      <div class="notice">
+        <p><strong>The short version:</strong> open the AI panel, turn on <strong>Agent mode</strong>, and start your request with a verb like <em>find</em>, <em>open</em> or <em>fill</em>. Start with <em>Research</em> to compare several websites. Anything that could buy, send, post, delete or sign in waits for your approval.</p>
+      </div>
+
+      <h2 id="start">Turn on Agent mode</h2>
+      <ol class="guide-steps">
+        <li>Open a webpage and tap the AI button to show the AI panel.</li>
+        <li>Under <strong>Model</strong>, choose <strong>ChatGPT</strong>, <strong>Local</strong> or <strong>Cloud</strong>. These are the models that can drive the agent.</li>
+        <li>Switch on <strong>Agent mode</strong>. The line below it tells you whether the selected model is ready.</li>
+        <li>Type your request. Questions are still answered as normal chat; requests to <em>do</em> something go to the agent.</li>
+      </ol>
+
+      <table class="guide-table">
+        <caption>What each model can do in Agent mode</caption>
+        <thead>
+          <tr><th scope="col">Model</th><th scope="col">Works on the page</th><th scope="col">Web search</th><th scope="col">Research mode</th></tr>
+        </thead>
+        <tbody>
+          <tr><th scope="row">ChatGPT</th><td>Yes, all tools</td><td>Yes, also with <code>/search</code></td><td>Yes, up to 8 sources</td></tr>
+          <tr><th scope="row">Cloud (Private Cloud Compute)</th><td>Yes</td><td>Quick lookup with <code>/search</code></td><td>No</td></tr>
+          <tr><th scope="row">Local (on device)</th><td>Yes, core tools</td><td>Quick lookup with <code>/search</code></td><td>No</td></tr>
+        </tbody>
+      </table>
+      <p>The on-device model has a small memory for each request, so it can't read several full websites at once. Its quick lookup runs one search, reads short excerpts from a few public results and answers with numbered citations.</p>
+
+      <h2 id="words">The words that matter</h2>
+      <p>Vortyra reads the start of your message to decide what you want. You can always override it.</p>
+
+      <h3>Commands</h3>
+      <dl class="guide-words">
+        <dt><code>/do</code></dt>
+        <dd>Always send this to the agent. Use it when Vortyra treats your request as a question.<span class="try">/do add the cheapest option to the comparison table</span></dd>
+        <dt><code>/ask</code></dt>
+        <dd>Always answer as chat about the page, without touching anything.<span class="try">/ask what does this contract say about cancellation?</span></dd>
+        <dt><code>/search</code></dt>
+        <dd>Look something up on the public web and answer with sources, without leaving your page. Works with every model: ChatGPT searches and reads the results itself; Local and Cloud read short excerpts and answer with numbered citations.<span class="try">/search when is the next Benfica home game?</span></dd>
+      </dl>
+
+      <h3>Words that start the agent</h3>
+      <p>Begin with an action and the agent takes over. Common ones: <em>find, search, look up, open, go to, click, tap, type, fill, select, choose, add, remove, scroll, download, sort, filter, sign in, book, buy, send, share, copy, close, switch, turn on, turn off, show me, take me</em>. Polite openings are fine: “Can you…”, “Please…”, “Help me…”.</p>
+
+      <h3>Words that start research</h3>
+      <p>Begin with <em>Research</em> (or <em>web research</em>, <em>find sources online</em>, <em>compare … across websites</em>) to read and compare several sites. See <a href="#research">Research mode</a>.</p>
+
+      <h3>Words that add extra tools</h3>
+      <ul>
+        <li><strong>Data:</strong> <em>extract, collect, export, CSV, PDF, spreadsheet, table, links, compare</em> add tools that pull tables and links off pages and export them.</li>
+        <li><strong>Other apps:</strong> <em>calendar, event, meeting, appointment, remind, reminder, email, mail, message, text me</em> let the agent prepare a calendar event, reminder or email for you to review.</li>
+      </ul>
+
+      <h2 id="examples">What to ask</h2>
+      <h3>On the page you're reading</h3>
+      <ul class="guide-examples">
+        <li><span class="try">Find the search box, search for “wireless headphones” and tell me the top 3 results with prices.</span></li>
+        <li><span class="try">Fill this contact form with my details and ask for a quote on 20 pallets.</span> Your name, email, phone and address come from <strong>Settings → Autofill Profile</strong>. The agent stops before pressing Submit.</li>
+        <li><span class="try">Close the cookie banner and scroll to the reviews.</span></li>
+        <li><span class="try">Go to my carrier's tracking page, enter MSCU1234567 and tell me the ETA.</span></li>
+      </ul>
+
+      <h3>Data and exports</h3>
+      <ul class="guide-examples">
+        <li><span class="try">Extract the table of sailing dates on this page and export it as CSV.</span></li>
+        <li><span class="try">Collect every PDF link on this page.</span></li>
+        <li><span class="try">Compare the price and battery life of these three laptops and make a PDF report.</span> Open the three laptop pages in tabs first; “these” means your open tabs.</li>
+      </ul>
+
+      <h3>Step by step, in the same chat</h3>
+      <p>A follow-up can use what the previous request found, for up to 30 minutes in the same conversation. It works whether the agent extracted a table or just wrote its answer.</p>
+      <ul class="guide-examples">
+        <li><span class="try">Extract the concert dates on this page.</span> then <span class="try">Now create the PDF.</span></li>
+        <li><span class="try">Find the opening hours of the three nearest libraries.</span> then <span class="try">Put that in a PDF.</span></li>
+      </ul>
+      <p>A new chat starts fresh, and nothing carries over from private tabs. The agent replies in the language you write in.</p>
+
+      <h3>Tabs and bookmarks</h3>
+      <ul class="guide-examples">
+        <li><span class="try">Put all my tabs about Lisbon hotels into a tab group called Trip.</span></li>
+        <li><span class="try">Bookmark this page in my Recipes folder.</span></li>
+        <li><span class="try">Open the English and Portuguese versions side by side.</span></li>
+        <li><span class="try">Translate this page and turn on reader mode.</span></li>
+        <li><span class="try">Find “refund” on this page.</span> Highlights every match, like Find on Page.</li>
+      </ul>
+
+      <p>If a request is unclear, the agent asks you a question in the panel and waits for your answer.</p>
+
+      <h2 id="abilities">Everything the agent can do</h2>
+      <p>You never call these by name; just describe what you want. Items marked <em>(asks first)</em> always wait for your approval.</p>
+
+      <h3>Work on the page</h3>
+      <ul>
+        <li>Click links, buttons, tabs and menu items; type into fields and press Enter; pick dropdown options; tick checkboxes, radio buttons and switches.</li>
+        <li>Press keys, scroll the page or a single panel, bring an element into view, hover over menus, set sliders <em>(asks first)</em> and drag and drop <em>(asks first)</em>.</li>
+        <li>Read the page text, inspect one element, wait for loading, and close cookie banners and pop-ups (only through their safe close or reject buttons).</li>
+        <li>Go to an address, go back and forward, reload, and search the web with your search engine.</li>
+        <li>Fill contact and address forms from your Autofill Profile <em>(asks first, shows a preview)</em>.</li>
+        <li>Open a website's file picker for an upload form <em>(asks first)</em>. You choose the file; the agent never submits it.</li>
+        <li>Take a screenshot of the page to understand its layout, on models that can see images. Sensitive fields are masked first.</li>
+      </ul>
+
+      <h3>Tabs, groups and bookmarks</h3>
+      <ul>
+        <li>List, switch and open tabs, open a page side by side in split view, and close tabs <em>(asks first)</em>.</li>
+        <li>List, create and rename tab groups, and move tabs between groups.</li>
+        <li>List Favorites, create folders, bookmark the current page, move bookmarks, and remove them <em>(asks first)</em>.</li>
+        <li>Search your browsing history (not in private browsing).</li>
+      </ul>
+
+      <h3>Page tools</h3>
+      <ul>
+        <li>Turn reader mode on or off, translate the page on the device and switch back to the original, and request the desktop or mobile site.</li>
+        <li>Find and highlight text on the page, and clear the highlights.</li>
+        <li>Hide an annoying element (such as a sticky banner) and remember that for the website.</li>
+        <li>Copy text to the clipboard.</li>
+      </ul>
+
+      <h3>Data and files</h3>
+      <ul>
+        <li>Extract visible tables and links, compare data from several pages, and write a comparison.</li>
+        <li>Export tables or comparisons as CSV or PDF, and save the whole page as a PDF with its address.</li>
+        <li>Download a file or link <em>(asks first)</em>, list downloads, and cancel one <em>(asks first)</em>.</li>
+      </ul>
+
+      <h3>Research and other apps</h3>
+      <ul>
+        <li>Read other pages quietly in the background and open chosen sources in a tab group (research mode).</li>
+        <li>Prepare a calendar event, a reminder or an email for you to review after the task. Nothing is saved or sent by the agent.</li>
+        <li>Ask you a question when something is unclear, and finish with a written answer.</li>
+      </ul>
+
+      <h2 id="research">Research mode</h2>
+      <p>Start with <em>Research</em> and the agent searches the web, reads up to 8 sources quietly in the background, compares them and writes a short report with sources. It never leaves the page you're on. Research mode needs the ChatGPT model.</p>
+      <ul class="guide-examples">
+        <li><span class="try">Research the best e-bikes under €2000.</span></li>
+        <li><span class="try">Research noise-cancelling headphones in tabs and export a PDF report.</span> “In tabs” opens the chosen sources in a new tab group, behind your current tab.</li>
+        <li><span class="try">Compare the return policies of three phone shops across websites.</span></li>
+      </ul>
+
+      <h2 id="safety">Approvals and privacy</h2>
+      <ul>
+        <li><strong>You approve risky steps.</strong> Before anything that could buy, pay, send, post, delete or sign in, the agent stops and shows <strong>Approve this action?</strong> with Allow and Decline.</li>
+        <li><strong>Always on site.</strong> For actions you trust on one website, choose <em>Always on site</em>. Review or revoke these in <strong>Agent Site Permissions</strong>.</li>
+        <li><strong>Sensitive fields are off limits.</strong> The agent never types into password, card or one-time-code fields, and covers them before taking screenshots.</li>
+        <li><strong>Private tabs stay private.</strong> Runs in private tabs aren't saved to history, Spotlight, widgets or Shortcuts results.</li>
+        <li><strong>No endless loops.</strong> If the agent repeats the same action, it's warned after 3 repeats, blocked after 5, and the run stops after 8.</li>
+      </ul>
+
+      <h2 id="tasks">Saved tasks and history</h2>
+      <p>Open <strong>Agent Tasks</strong> in the AI panel to see three tabs: <strong>Tasks</strong>, <strong>History</strong> and <strong>Watches</strong>.</p>
+      <ul>
+        <li>After a run, tap <strong>Save as Task</strong> to reuse it, or create one with <strong>New saved task</strong>.</li>
+        <li>Tap any run in History to see its status, duration, every step, the approvals you gave, the questions it asked, its sources and exported files. From there: <strong>Run Again</strong>, <strong>Save as Task</strong> or <strong>Share Log</strong>.</li>
+        <li>Saved tasks can run from Shortcuts, Siri, Spotlight, a widget or a Control Center button.</li>
+      </ul>
+
+      <h2 id="teach">Teach mode</h2>
+      <p>Show the agent once instead of describing it.</p>
+      <ol class="guide-steps">
+        <li>In Agent Tasks, tap <strong>Record a New Task</strong>.</li>
+        <li>Do the task yourself on the page: search, pick filters, press buttons. A <strong>Recording</strong> banner stays on screen.</li>
+        <li>Tap <strong>Stop</strong>, then name and save the task.</li>
+      </ol>
+      <p>When the task runs, the agent follows your steps on the current page, adapting if the layout changed. Passwords, email addresses, phone numbers, card numbers and codes are never recorded; the agent asks you for them each time. Recording doesn't work in private tabs.</p>
+
+      <h2 id="watches">Page watches</h2>
+      <p>Get a notification when a page changes. Open the page menu and choose <strong>Watch This Page…</strong>, pick how often to check, and turn on <strong>Notify when it changes</strong>.</p>
+      <ul class="guide-examples">
+        <li><strong>Price or stock:</strong> watch a product page. Under Advanced, enter the price element (for example <code>.price</code>) so other page changes don't count.</li>
+        <li><strong>Deliveries:</strong> choose <strong>Run a saved task instead</strong> with a task like <span class="try">What is the ETA for container MSCU1234567?</span> You're told only when the answer changes.</li>
+        <li><strong>Openings:</strong> job boards, apartment listings, visa appointment pages, ticket sales.</li>
+      </ul>
+      <p>The first check only records a starting point. Vortyra checks when you open the app and in the background; iOS decides exactly when background checks run. Clock times on a page are ignored.</p>
+
+      <h2 id="handoff">Calendar, Reminders, Mail and Messages</h2>
+      <p>Under a finished answer, use <strong>Add to Calendar</strong>, <strong>Add Reminder</strong>, <strong>Email</strong>, <strong>Message</strong> or <strong>Share</strong>. You can also ask for it in the request:</p>
+      <ul class="guide-examples">
+        <li><span class="try">Find the next Benfica home match and add it to my calendar.</span></li>
+        <li><span class="try">Extract the container table, export it as CSV and email it to me.</span></li>
+        <li><span class="try">Find when the passport office opens tomorrow and remind me.</span></li>
+      </ul>
+      <p>Everything opens prefilled for you to check. Nothing is saved or sent until you tap Add, Save or Send. Reminders access is requested only the first time you save one.</p>
+
+      <h2 id="shortcuts">Shortcuts</h2>
+      <p>Open the Shortcuts app and search for <strong>Vortyra</strong>. These are all 53 actions, with the names you'll see there.</p>
+
+      <p>Each action below has an example of what to put in it. Words in <em>italics</em> are the fields you fill in Shortcuts.</p>
+
+      <table class="guide-table action-table">
+        <caption>Browser agent</caption>
+        <thead><tr><th scope="col">Action</th><th scope="col">Example</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Run Browser Task and Get Result</th><td><em>Task:</em> “Find the ETA for container MSCU1234567”, <em>Starting Website:</em> your carrier's tracking page. Returns the answer, sources and any CSV or PDF to the next action.</td></tr>
+          <tr><th scope="row">Run Saved Browser Task and Get Result</th><td><em>Saved Task:</em> “Morning tracking”. Same result as above, for a task you saved in Agent Tasks.</td></tr>
+          <tr><th scope="row">Run Browser Task</th><td><em>Task:</em> “Put all my tabs about Lisbon into a group called Trip”. Starts it in Vortyra without waiting; you can get a notification when it finishes.</td></tr>
+          <tr><th scope="row">Run Saved Browser Task</th><td><em>Saved Task:</em> “Check visa appointments”. Starts it without waiting.</td></tr>
+          <tr><th scope="row">Open Saved Browser Task</th><td>Runs a saved task in the app. This is what a Spotlight result for a saved task does.</td></tr>
+          <tr><th scope="row">Research a Topic</th><td><em>Topic:</em> “best e-bikes under €2000”, <em>Open Sources in Tabs</em> on, <em>Make PDF Report</em> on. Returns the report and its PDF. Needs the ChatGPT model.</td></tr>
+          <tr><th scope="row">Get Last Browser Task Result</th><td>Returns the answer from the latest finished task, for example to paste into a note.</td></tr>
+          <tr><th scope="row">Watch Page</th><td><em>Page Address:</em> a product page, <em>Title:</em> “Headphones price”, <em>Check Every:</em> daily.</td></tr>
+          <tr><th scope="row">Check Watched Pages</th><td>Checks every watch now and returns the ones that changed.</td></tr>
+        </tbody>
+      </table>
+
+      <table class="guide-table action-table">
+        <caption>AI on the page</caption>
+        <thead><tr><th scope="col">Action</th><th scope="col">Example</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Summarize Current Page</th><td>Summarizes the page on screen and shows a summary card.</td></tr>
+          <tr><th scope="row">Ask On-Device AI</th><td><em>Question:</em> “Rewrite this in plain English: …”. Answered on the device, nothing leaves it.</td></tr>
+          <tr><th scope="row">Send Page to Web AI</th><td><em>Provider:</em> ChatGPT or Gemini. Opens the page's text in that chat, signed in with your own account.</td></tr>
+        </tbody>
+      </table>
+
+      <table class="guide-table action-table">
+        <caption>Open and search</caption>
+        <thead><tr><th scope="col">Action</th><th scope="col">Example</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Open URL in Vortyra</th><td><em>URL:</em> https://www.ipma.pt</td></tr>
+          <tr><th scope="row">Load URL in Vortyra Tab</th><td><em>URL:</em> a news site, <em>Tab:</em> your “Morning” tab, so it reuses that tab.</td></tr>
+          <tr><th scope="row">Search in Vortyra</th><td><em>Search Text:</em> “price”. Highlights it on the page you're reading; searches the web only if it isn't there. Turn on <em>Search the Web Only</em> to skip the page.</td></tr>
+          <tr><th scope="row">Search Web in Vortyra</th><td><em>Search:</em> “Lisbon weather tomorrow”. Always opens your search engine in a new tab.</td></tr>
+          <tr><th scope="row">Search Clipboard in Vortyra</th><td>Copy a word in any app, run it, and Vortyra searches for it.</td></tr>
+          <tr><th scope="row">Open Websites Side by Side</th><td><em>First URL:</em> the English page, <em>Second URL:</em> the Portuguese page.</td></tr>
+          <tr><th scope="row">End Split View</th><td>Goes back to one page.</td></tr>
+        </tbody>
+      </table>
+
+      <table class="guide-table action-table">
+        <caption>Tabs and groups</caption>
+        <thead><tr><th scope="col">Action</th><th scope="col">Example</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">New Vortyra Tab</th><td>Opens an empty tab.</td></tr>
+          <tr><th scope="row">Create Tab in Vortyra</th><td><em>URL:</em> your bank's website, <em>Private</em> on.</td></tr>
+          <tr><th scope="row">New Private Vortyra Tab</th><td>Opens a private tab.</td></tr>
+          <tr><th scope="row">Reopen Last Closed Tab</th><td>Brings back the tab you just closed.</td></tr>
+          <tr><th scope="row">Switch to Vortyra Tab / Switch to Tab in Vortyra</th><td><em>Tab:</em> pick “Recipes” from your open tabs.</td></tr>
+          <tr><th scope="row">Switch to Tab Group</th><td><em>Group:</em> Trip.</td></tr>
+          <tr><th scope="row">Move Tab to Group</th><td><em>Group:</em> Trip. Moves the current tab there.</td></tr>
+          <tr><th scope="row">Close Current Vortyra Tab</th><td>Closes the tab on screen.</td></tr>
+          <tr><th scope="row">Close Tabs in Vortyra</th><td><em>Tabs:</em> choose several. Asks before closing.</td></tr>
+          <tr><th scope="row">Close Tabs in Group</th><td><em>Group:</em> Trip, when the trip is booked.</td></tr>
+        </tbody>
+      </table>
+
+      <table class="guide-table action-table">
+        <caption>Navigation and page modes</caption>
+        <thead><tr><th scope="col">Action</th><th scope="col">Example</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Go Back / Go Forward in Vortyra</th><td>Moves through the current tab's history.</td></tr>
+          <tr><th scope="row">Reload Vortyra Page</th><td>Reloads the page on screen.</td></tr>
+          <tr><th scope="row">Set Reader Mode</th><td><em>Enabled</em> on, for a clean article view.</td></tr>
+          <tr><th scope="row">Set Desktop Site Mode</th><td><em>Enabled</em> on, when a site hides features on mobile.</td></tr>
+          <tr><th scope="row">Translate Vortyra Page</th><td><em>Language:</em> “English”, “Portuguese” or a code like “pt”. Translated on the device.</td></tr>
+          <tr><th scope="row">Find Text on Page</th><td><em>Search Text:</em> “cancellation”. Highlights every match.</td></tr>
+          <tr><th scope="row">Find Text on Vortyra Page</th><td>The same, in a tab you choose.</td></tr>
+        </tbody>
+      </table>
+
+      <table class="guide-table action-table">
+        <caption>Bookmarks, history and saving</caption>
+        <thead><tr><th scope="col">Action</th><th scope="col">Example</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Bookmark Current Page</th><td><em>Folder:</em> Recipes.</td></tr>
+          <tr><th scope="row">Bookmark Vortyra Tab</th><td><em>Tab:</em> any open tab, <em>Name:</em> “Carbonara”.</td></tr>
+          <tr><th scope="row">Open Bookmark in Vortyra</th><td><em>Bookmark:</em> pick from your Favorites.</td></tr>
+          <tr><th scope="row">Open Bookmark in Vortyra Tab</th><td>The same, in a tab you choose.</td></tr>
+          <tr><th scope="row">Delete Vortyra Bookmarks</th><td>Choose the bookmarks. Asks before deleting.</td></tr>
+          <tr><th scope="row">Save Page to Reading List</th><td>Saves the page on screen to read later.</td></tr>
+          <tr><th scope="row">Open Last Matching History Page</th><td><em>Search Text:</em> “carbonara” reopens the last page you visited about it.</td></tr>
+          <tr><th scope="row">Open History Page in Vortyra</th><td><em>History Page:</em> pick a page. Turn on History in <strong>Settings → Spotlight</strong> first.</td></tr>
+          <tr><th scope="row">Get Recorded Web Searches</th><td><em>Date:</em> today. Returns what you searched for that day.</td></tr>
+          <tr><th scope="row">Clear Vortyra History</th><td><em>Time Frame:</em> last hour. Asks before clearing.</td></tr>
+        </tbody>
+      </table>
+
+      <table class="guide-table action-table">
+        <caption>Export and download</caption>
+        <thead><tr><th scope="col">Action</th><th scope="col">Example</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Export Page as PDF</th><td>Returns the whole page as a PDF, ready for <em>Save File</em> or <em>Send Email</em>.</td></tr>
+          <tr><th scope="row">Capture Page Screenshot</th><td>Returns an image of the page on screen.</td></tr>
+          <tr><th scope="row">Copy Page Title and URL</th><td>Copies the page title and address, ready to paste into a message.</td></tr>
+          <tr><th scope="row">Download URL in Vortyra</th><td><em>URL:</em> a link to a PDF or ZIP file.</td></tr>
+          <tr><th scope="row">Download Direct Page Video</th><td>Downloads the video on the page when it's a plain video file (not a stream).</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Ideas to build</h3>
+      <ul class="guide-examples">
+        <li><strong>Morning tracking report:</strong> a time-of-day automation runs <em>Run Saved Browser Task and Get Result</em> with your tracking task, then <em>Send Email</em> with the CSV it returns.</li>
+        <li><strong>Save and summarize:</strong> on the Action button, <em>Summarize Current Page</em> followed by <em>Save Page to Reading List</em>.</li>
+        <li><strong>Daily page check:</strong> an automation runs <em>Check Watched Pages</em> every morning and shows which pages changed.</li>
+        <li><strong>Weekend research:</strong> <em>Research a Topic</em> with “Ask Each Time”, then <em>Save File</em> to put the PDF in iCloud Drive.</li>
+        <li><strong>Find on page by voice:</strong> a shortcut named “Find on page” with <em>Find Text on Page</em> set to “Ask Each Time”.</li>
+      </ul>
+      <p>Results show as a card in Shortcuts and Siri with <strong>Open in Vortyra</strong> and <strong>Copy Result</strong> buttons. Most actions need Vortyra open with a regular (non-private) tab, and some ask you to unlock the device first.</p>
+
+      <h2 id="siri">Siri</h2>
+      <p>Say these phrases as written.</p>
+      <table class="guide-table action-table">
+        <caption>Say the phrase, then answer if Siri asks a question</caption>
+        <thead><tr><th scope="col">Say</th><th scope="col">What happens</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">“Run a browser task with Vortyra” or “Ask Vortyra to work on a webpage”</th><td>Siri asks what to do. Answer “find the next Benfica home match and add it to my calendar”.</td></tr>
+          <tr><th scope="row">“Run <em>Morning tracking</em> with Vortyra” or “Start <em>Morning tracking</em> in Vortyra”</th><td>Runs that saved task. Use the task's name as you saved it.</td></tr>
+          <tr><th scope="row">“Search with Vortyra”</th><td>Siri asks “What should I look for?”. Say “price”: the matches are highlighted on the page you're reading, or the web is searched if it isn't there.</td></tr>
+          <tr><th scope="row">“Find on this page with Vortyra”</th><td>Siri asks what to find, then highlights it on the page.</td></tr>
+          <tr><th scope="row">“Search my clipboard with Vortyra”</th><td>Searches for the text you copied.</td></tr>
+          <tr><th scope="row">“Open a website with Vortyra”</th><td>Siri asks for the address, then opens it.</td></tr>
+          <tr><th scope="row">“Open a private tab in Vortyra”</th><td>Opens a new private tab.</td></tr>
+          <tr><th scope="row">“Summarize this page with Vortyra”</th><td>Shows a summary card for the page on screen.</td></tr>
+          <tr><th scope="row">“Translate this page with Vortyra”</th><td>Siri asks for the language. Say “English”.</td></tr>
+          <tr><th scope="row">“Ask on-device AI in Vortyra”</th><td>Siri asks for your question and answers on the device.</td></tr>
+        </tbody>
+      </table>
+      <p>On devices with Apple Intelligence, Siri also understands natural requests about tabs and bookmarks, such as “open a new tab in Vortyra”, “bookmark this tab in Vortyra”, “switch to my recipes tab in Vortyra” and “search for <em>price</em> in Vortyra”. Closing tabs, deleting bookmarks and clearing history always ask first.</p>
+
+      <h2 id="spotlight">Spotlight</h2>
+      <p>Swipe down on the Home Screen and type the name of a bookmark or saved task to open it in Vortyra. Choose what appears in <strong>Settings → Spotlight</strong>. History is off by default, and private browsing never appears.</p>
+
+      <h2 id="controls">Controls and widgets</h2>
+      <h3>Control Center, Lock Screen and Action button</h3>
+      <p>Open Control Center, tap <strong>+</strong>, choose <strong>Add a Control</strong> and search for Vortyra:</p>
+      <ul>
+        <li><strong>New Private Tab.</strong></li>
+        <li><strong>Search Clipboard:</strong> puts the copied text in the search field for you to check; it never searches by itself.</li>
+        <li><strong>Run Saved Task:</strong> choose which task when you add it.</li>
+      </ul>
+      <h3>Home Screen widgets</h3>
+      <ul>
+        <li><strong>Saved Tasks:</strong> up to four tasks; tap one to run it.</li>
+        <li><strong>Page Watches:</strong> your watches with the time of the last change and a <em>Changed</em> badge.</li>
+      </ul>
+
+      <h2 id="progress">Progress and notifications</h2>
+      <p>While a task runs, its current step appears on the Lock Screen and in the Dynamic Island. Tasks started from Shortcuts or Siri can notify you when they finish. Turn either off in <strong>Settings → Browser Tasks</strong>. Private tasks never show page text; their notification just says “Finished”.</p>
+
+      <div class="notice">
+        <p><strong>Something not working as expected?</strong> Tell us through <a href="https://testflight.apple.com/join/KTsJ3qz4">TestFlight</a> or <a href="https://github.com/Joaov41/Vortex-Browser/issues">GitHub</a>. Replies are posted on the <a href="../feedback/">TestFlight replies</a> page.</p>
+      </div>
+    </article>
+  </main>
+
+  <footer class="site-footer">
+    <p>Open source under the <a href="https://github.com/Joaov41/Vortex-Browser/blob/main/LICENSE">MIT License</a>.</p>
+    <p><a href="./">Agent guide</a> · <a href="../feedback/">TestFlight replies</a> · <a href="../privacy/">Privacy</a> · <a href="../terms/">Terms</a> · <a href="https://github.com/Joaov41/Vortex-Browser/issues">Support</a></p>
+  </footer>
+</body>
+</html>
