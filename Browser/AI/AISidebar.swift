@@ -61,6 +61,12 @@ struct AISidebar: View {
     var agentWatchOpenRequest: AgentWatchOpenRequest? = nil
     /// Called once a requested watch has been presented, so the window can clear its request.
     var onAgentWatchOpenRequestHandled: (() -> Void)? = nil
+    /// Set by the toolbar's AI menu (Summarize, Explain, Ask, Talk, Do a Task).
+    var quickRequest: AIQuickRequest? = nil
+    /// Called once the quick request has been taken, so the window can clear it.
+    var onQuickRequestHandled: (() -> Void)? = nil
+    /// Starts Talk; shown as a microphone in the input row while it's empty.
+    var onTalk: (() -> Void)? = nil
 
     @State private var input: String = ""
     @AppStorage("customPrompts") private var customPromptsData: String = "[]"
@@ -85,6 +91,14 @@ struct AISidebar: View {
     @State private var savedAgentReplyIDs: Set<UUID> = []
     @State private var attemptedPendingAgentTaskID: UUID?
     @State private var isSidebarVisible = false
+    /// Opened from the AI menu: just the answer and the input box, settings tucked away.
+    @State private var compactForQuickRequest = false
+    /// Do a Task and Talk use the agent for the next send even when Agent mode is off.
+    @State private var agentForNextSend = false
+    /// Talk reads the next answer aloud; the reply shown before the request is skipped.
+    @State private var speakNextReply = false
+    @State private var replyBeforeSpokenRequest: UUID?
+    @AppStorage("aiReadVoiceRepliesAloud") private var readVoiceRepliesAloud = true
 
     private struct AgentCompletionUI: Identifiable {
         let snapshot: BrowserAgentController.CompletionSnapshot
@@ -101,7 +115,7 @@ struct AISidebar: View {
 
     /// Route actions through the chosen engine only for the three supported agent backends.
     private var agentModeActive: Bool {
-        isAgentMode && agent.canOfferAgent(for: aiService.backend)
+        (isAgentMode || agentForNextSend) && agent.canOfferAgent(for: aiService.backend)
     }
 
     private var mlxAvailable: Bool {
@@ -222,6 +236,9 @@ struct AISidebar: View {
         if isIPadInputFocused {
             return false
         }
+        if compactForQuickRequest {
+            return areControlsExpanded
+        }
         if !hasConversationContent {
             return true
         }
@@ -229,7 +246,7 @@ struct AISidebar: View {
     }
 
     private var canToggleControlsVisibility: Bool {
-        hasConversationContent && !aiService.isProcessing
+        (hasConversationContent || compactForQuickRequest) && !aiService.isProcessing
     }
 
     private let panelCornerRadius: CGFloat = 22
@@ -276,6 +293,11 @@ struct AISidebar: View {
     }
 
     var body: some View {
+        sidebarPanel
+            .background { quickActionObserver }
+    }
+
+    private var sidebarPanel: some View {
         VStack(spacing: 12) {
             headerRow
                 .dynamicTypeSize(...DynamicTypeSize.xLarge)
@@ -695,102 +717,14 @@ struct AISidebar: View {
     private var summarizeRow: some View {
         Menu {
             Button {
-                guard !browserActionIsBusy else { return }
-                if aiService.backend.isWebProvider {
-                    sendSidebarPrompt(
-                        "Provide a brief 2-paragraph summary of the following text. First paragraph: main topic. Second paragraph: key points. Be concise:",
-                        hideFromVisibleConversation: true
-                    )
-                    return
-                }
-                Task {
-                    if let selection = trimmedSelectionText {
-                        let binding = currentPageContextBinding
-                        await MainActor.run {
-                            aiService.prepareForNewContext(currentWebView?.url)
-                        }
-                        let handled = onSummaryExtraction?(selection, .short, binding, nil) ?? false
-                        if !handled { aiService.enqueueSummary(selection, length: .short) }
-                        return
-                    }
-                    guard let webView = currentWebView else {
-                        await MainActor.run {
-                            aiService.appendAssistantMessage("No webpage loaded")
-                        }
-                        return
-                    }
-
-                    await MainActor.run {
-                        aiService.prepareForNewContext(webView.url)
-                    }
-                    let binding = currentPageContextBinding
-                    let extractedContent = await PageContentExtractor.extractContent(from: webView, url: webView.url)
-                    if let extractedContent {
-                        let content = extractedContent.formattedForAIContext
-                        print("📄 Extracted content length: \(content.count) characters")
-                        let handled = await MainActor.run {
-                            onSummaryExtraction?(content, .short, binding, extractedContent) ?? false
-                        }
-                        if !handled {
-                            aiService.enqueueSummary(content, length: .short)
-                        }
-                    } else {
-                        await MainActor.run {
-                            aiService.appendAssistantMessage("Could not extract page content. Please try again.")
-                        }
-                    }
-                }
+                runSummary(.short)
             } label: {
                 Label("Short Summary", systemImage: "text.badge.minus")
                 Text("2 paragraphs max")
             }
 
             Button {
-                guard !browserActionIsBusy else { return }
-                if aiService.backend.isWebProvider {
-                    sendSidebarPrompt(
-                        "Summarize the following text clearly, highlighting key themes and points. Provide a detailed analysis:",
-                        hideFromVisibleConversation: true
-                    )
-                    return
-                }
-                Task {
-                    if let selection = trimmedSelectionText {
-                        let binding = currentPageContextBinding
-                        await MainActor.run {
-                            aiService.prepareForNewContext(currentWebView?.url)
-                        }
-                        let handled = onSummaryExtraction?(selection, .long, binding, nil) ?? false
-                        if !handled { aiService.enqueueSummary(selection, length: .long) }
-                        return
-                    }
-                    guard let webView = currentWebView else {
-                        await MainActor.run {
-                            aiService.appendAssistantMessage("No webpage loaded")
-                        }
-                        return
-                    }
-
-                    await MainActor.run {
-                        aiService.prepareForNewContext(webView.url)
-                    }
-                    let binding = currentPageContextBinding
-                    let extractedContent = await PageContentExtractor.extractContent(from: webView, url: webView.url)
-                    if let extractedContent {
-                        let content = extractedContent.formattedForAIContext
-                        print("📄 Extracted content length: \(content.count) characters")
-                        let handled = await MainActor.run {
-                            onSummaryExtraction?(content, .long, binding, extractedContent) ?? false
-                        }
-                        if !handled {
-                            aiService.enqueueSummary(content, length: .long)
-                        }
-                    } else {
-                        await MainActor.run {
-                            aiService.appendAssistantMessage("Could not extract page content. Please try again.")
-                        }
-                    }
-                }
+                runSummary(.long)
             } label: {
                 Label("Long Summary", systemImage: "text.badge.plus")
                 Text("Detailed analysis")
@@ -1186,6 +1120,25 @@ struct AISidebar: View {
                 .buttonStyle(.plain)
                 .disabled(aiService.isProcessing || browserActionIsBusy)
                 .accessibilityLabel("Send message")
+            } else if let onTalk {
+                Button {
+                    isInputFocused = false
+                    onTalk()
+                } label: {
+                    Image(systemName: "mic.fill")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(primaryText)
+                        .frame(width: 44, height: 44)
+                        .glassEffectCompat(
+                            in: Circle(),
+                            material: .ultraThinMaterial,
+                            strokeOpacity: isDark ? 0.16 : 0.3
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(aiService.isProcessing || browserActionIsBusy)
+                .accessibilityLabel("Talk")
+                .accessibilityHint("Ask about the page or give a task by voice")
             }
         }
         .glassEffectContainerCompat(spacing: 10)
@@ -1265,6 +1218,137 @@ struct AISidebar: View {
         selectedContextID = contextOptions.first?.id
     }
 
+    /// Watches for AI menu requests and finished answers to read aloud. A separate view
+    /// keeps the body's modifier chain short enough to type-check.
+    private var quickActionObserver: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .accessibilityHidden(true)
+            .onAppear { handleQuickRequest() }
+            .onChange(of: quickRequest?.id) { _, _ in handleQuickRequest() }
+            .onChange(of: aiService.messages) { _, _ in speakReplyIfReady() }
+            .onChange(of: aiService.isProcessing) { _, _ in speakReplyIfReady() }
+            .onChange(of: agent.isRunning) { _, _ in speakReplyIfReady() }
+    }
+
+    /// Summarizes the selection, or the whole page when nothing is selected.
+    private func runSummary(_ length: SummaryLength) {
+        guard !browserActionIsBusy else { return }
+        if aiService.backend.isWebProvider {
+            sendSidebarPrompt(
+                length == .short
+                    ? "Provide a brief 2-paragraph summary of the following text. First paragraph: main topic. Second paragraph: key points. Be concise:"
+                    : "Summarize the following text clearly, highlighting key themes and points. Provide a detailed analysis:",
+                hideFromVisibleConversation: true
+            )
+            return
+        }
+        Task {
+            if let selection = trimmedSelectionText {
+                let binding = currentPageContextBinding
+                await MainActor.run {
+                    aiService.prepareForNewContext(currentWebView?.url)
+                }
+                let handled = onSummaryExtraction?(selection, length, binding, nil) ?? false
+                if !handled { aiService.enqueueSummary(selection, length: length) }
+                return
+            }
+            guard let webView = currentWebView else {
+                await MainActor.run {
+                    aiService.appendAssistantMessage("No webpage loaded")
+                }
+                return
+            }
+
+            await MainActor.run {
+                aiService.prepareForNewContext(webView.url)
+            }
+            let binding = currentPageContextBinding
+            let extractedContent = await PageContentExtractor.extractContent(from: webView, url: webView.url)
+            if let extractedContent {
+                let content = extractedContent.formattedForAIContext
+                let handled = await MainActor.run {
+                    onSummaryExtraction?(content, length, binding, extractedContent) ?? false
+                }
+                if !handled {
+                    aiService.enqueueSummary(content, length: length)
+                }
+            } else {
+                await MainActor.run {
+                    aiService.appendAssistantMessage("Could not extract page content. Please try again.")
+                }
+            }
+        }
+    }
+
+    /// Carries out an action picked from the toolbar's AI menu.
+    private func handleQuickRequest() {
+        guard let request = quickRequest else { return }
+        onQuickRequestHandled?()
+        compactForQuickRequest = true
+        areControlsExpanded = false
+        let busy = !Self.canStartInteractiveAction(
+            browserActionIsBusy: browserActionIsBusy,
+            aiIsProcessing: aiService.isProcessing,
+            agentIsRunning: agent.isRunning
+        )
+
+        switch request.action {
+        case .summarize:
+            guard !busy else { return }
+            runSummary(.short)
+        case .explainSelection:
+            guard !busy else { return }
+            sendSidebarPrompt("Explain the selected text in simple terms: what it means first, then any background that helps.")
+        case .ask(let text):
+            submitOrFocus(text, useAgent: false, busy: busy)
+        case .task(let text):
+            guard agent.canOfferAgent(for: aiService.backend) else {
+                aiService.appendAssistantMessage("Tasks need a model that can use the browser. Choose one in Settings → AI.")
+                return
+            }
+            submitOrFocus(text, useAgent: true, busy: busy)
+        case .spoken(let text):
+            guard !busy else { return }
+            if readVoiceRepliesAloud {
+                replyBeforeSpokenRequest = latestAssistantReply?.id
+                speakNextReply = true
+            }
+            // The agent's router decides: questions get answers, jobs become tasks.
+            submitOrFocus(text, useAgent: agent.canOfferAgent(for: aiService.backend), busy: busy)
+        }
+    }
+
+    private func submitOrFocus(_ text: String?, useAgent: Bool, busy: Bool) {
+        agentForNextSend = useAgent
+        if let text, !busy {
+            input = text
+            send()
+        } else {
+            if let text { input = text }
+            // The panel may still be sliding in; focus once it's there.
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(350))
+                isInputFocused = true
+            }
+        }
+    }
+
+    private var latestAssistantReply: ChatMessage? {
+        aiService.messages.last {
+            $0.role == .assistant && $0.showsInSidebar
+                && !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
+    /// After a spoken request, reads the finished answer aloud.
+    private func speakReplyIfReady() {
+        guard speakNextReply, !aiService.isProcessing, !agent.isRunning,
+              let reply = latestAssistantReply, reply.id != replyBeforeSpokenRequest else { return }
+        speakNextReply = false
+        ReadAloud.shared.speak(reply.text)
+    }
+
     private func sendSidebarPrompt(_ prompt: String, hideFromVisibleConversation: Bool = false) {
         guard !browserActionIsBusy else { return }
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1283,7 +1367,9 @@ struct AISidebar: View {
         }
         var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        if agentModeActive {
+        let useAgent = agentModeActive
+        agentForNextSend = false
+        if useAgent {
             if let mode = BrowserAppleWebLookup.requestMode(text: text, backend: aiService.backend) {
                 switch mode {
                 case .webLookup(let task):

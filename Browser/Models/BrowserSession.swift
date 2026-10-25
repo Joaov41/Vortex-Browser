@@ -111,6 +111,7 @@ final class BrowserTab: ObservableObject, Identifiable {
         if !isIncognito {
             PasswordManager.shared.configureWebView(created)
         }
+        syncDarkModeSiteException(for: url)
         DarkModeService.shared.configureWebView(
             created,
             enabled: hasDarkModeOverride ? isDarkMode : DarkModeService.shared.isDarkMode,

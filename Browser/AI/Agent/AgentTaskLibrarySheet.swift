@@ -241,7 +241,7 @@ struct AgentTaskLibrarySheet: View {
                     }
                 } else {
                     if pageWatches.isEmpty {
-                        ContentUnavailableView("No Page Watches", systemImage: "eye", description: Text("Use Watch This Page in the page menu to be told when a page changes."))
+                        ContentUnavailableView("No Page Watches", systemImage: "eye", description: Text("Use Watch Page in the page menu to be told when a page changes."))
                             .listRowSeparator(.hidden)
                     }
                     ForEach(pageWatches) { watch in

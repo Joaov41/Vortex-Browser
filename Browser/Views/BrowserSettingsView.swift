@@ -22,12 +22,11 @@ struct BrowserSettingsView: View {
     @ObservedObject private var cookieBlocker = ThirdPartyCookieBlocker.shared
     @ObservedObject private var darkModeService = DarkModeService.shared
     @ObservedObject private var fontSizeService = FontSizeService.shared
+    @ObservedObject private var aiService = SimpleAIService.shared
     @AppStorage("requestDesktopSite") private var requestDesktopSite = false
     @AppStorage(BrowserSpotlightSettings.bookmarksKey) private var spotlightBookmarks = true
     @AppStorage(BrowserSpotlightSettings.savedTasksKey) private var spotlightSavedTasks = true
     @AppStorage(BrowserSpotlightSettings.historyKey) private var spotlightHistory = false
-    @AppStorage(AgentRunLiveActivitySettings.enabledKey) private var agentLiveActivity = true
-    @AppStorage(AgentRunFinishNotification.enabledKey) private var agentShortcutNotifications = true
     @State private var showBookmarkImporter = false
     @State private var bookmarkImportMessage: String?
 
@@ -40,8 +39,6 @@ struct BrowserSettingsView: View {
                     spotlightSection
                     appearanceSection
                     aiSection
-                    agentTasksSection
-                    advancedSection
                 }
                 // Translucent rows so the panel's glass shows through; the Form's
                 // default solid backgrounds hid it completely.
@@ -206,97 +203,33 @@ struct BrowserSettingsView: View {
 
     private var aiSection: some View {
         Section {
-            webAIAccountRow(for: .chatgpt, isSignedIn: isChatGPTSignedIn)
-            webAIAccountRow(for: .gemini, isSignedIn: isGeminiSignedIn)
             NavigationLink {
-                AgentSitePermissionsView()
-            } label: {
-                Label("Agent Site Permissions", systemImage: "hand.raised")
-            }
-            NavigationLink {
-                AutofillProfileSettingsView(service: .shared)
-            } label: {
-                Label("Autofill Profile", systemImage: "person.text.rectangle")
-            }
-        } header: {
-            Text("AI Accounts")
-        } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Sign in inside Vortyra so the in-app ChatGPT and Gemini assistants reuse your session.")
-                if let webAIStatusMessage, !webAIStatusMessage.isEmpty {
-                    Text(webAIStatusMessage)
-                }
-            }
-        }
-    }
-
-    private var agentTasksSection: some View {
-        Section {
-            Toggle(isOn: $agentLiveActivity) {
-                Label("Live Activity While Running", systemImage: "sparkles.rectangle.stack")
-            }
-            Toggle(isOn: $agentShortcutNotifications) {
-                Label("Notify When Shortcuts Tasks Finish", systemImage: "bell.badge")
-            }
-        } header: {
-            Text("Browser Tasks")
-        } footer: {
-            Text("The Live Activity shows a running task's steps on the Lock Screen and in the Dynamic Island. Tasks started from Shortcuts or Siri can notify you when they finish. Private tasks never show page text: their notification says only \"Finished\".")
-        }
-    }
-
-    private func webAIAccountRow(for provider: WebAIProvider, isSignedIn: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(provider.displayName)
-                Label(
-                    isSignedIn ? "Signed in" : "Not signed in",
-                    systemImage: isSignedIn ? "checkmark.circle.fill" : "circle.dashed"
+                AISettingsView(
+                    isChatGPTSignedIn: isChatGPTSignedIn,
+                    isGeminiSignedIn: isGeminiSignedIn,
+                    webAIStatusMessage: webAIStatusMessage,
+                    isLoadingMLXModel: $isLoadingMLXModel,
+                    mlxDownloadProgress: $mlxDownloadProgress,
+                    mlxLoadError: $mlxLoadError,
+                    onSignIn: onSignIn,
+                    onSignOut: onSignOut,
+                    onDownloadMLXModel: onDownloadMLXModel,
+                    onCancelMLXDownload: onCancelMLXDownload
                 )
-                .font(.caption)
-                .foregroundStyle(isSignedIn ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
-            }
-            Spacer()
-            if isSignedIn {
-                Button("Sign Out", role: .destructive) {
-                    onSignOut(provider)
-                }
-                .accessibilityLabel("Sign out of \(provider.displayName)")
-            } else {
-                Button("Sign In") {
-                    onSignIn(provider)
-                }
-                .accessibilityLabel("Sign in to \(provider.displayName)")
-            }
-        }
-        .buttonStyle(.borderless)
-    }
-
-    private var advancedSection: some View {
-        Section("Advanced") {
-            if ChatGPTPlanAvailability.isEnabled {
-                NavigationLink {
-                    ChatGPTPlanSettingsView()
+            } label: {
+                LabeledContent {
+                    Text(AISettingsView.modelMenuTitle(for: aiService.backend))
                 } label: {
-                    Label("ChatGPT Plan", systemImage: "person.badge.key")
+                    Label("AI", systemImage: "sparkles")
                 }
             }
-            NavigationLink {
-                MLXAdvancedSettingsView(
-                    isLoadingModel: $isLoadingMLXModel,
-                    downloadProgress: $mlxDownloadProgress,
-                    loadError: $mlxLoadError,
-                    onDownload: onDownloadMLXModel,
-                    onCancelDownload: onCancelMLXDownload
-                )
-            } label: {
-                Label("On-Device Models (MLX)", systemImage: "cpu")
-            }
+        } footer: {
+            Text("Choose the AI model, the agent and voice answers.")
         }
     }
 }
 
-private struct MLXAdvancedSettingsView: View {
+struct MLXAdvancedSettingsView: View {
     @Binding var isLoadingModel: Bool
     @Binding var downloadProgress: Progress?
     @Binding var loadError: String?

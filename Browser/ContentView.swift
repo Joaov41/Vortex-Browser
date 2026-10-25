@@ -22,31 +22,6 @@ nonisolated private func browserURLForLog(_ url: URL?) -> String {
     return "\(scheme)://\(host)"
 }
 
-/// Pages start a little below the status bar and the blurred band under it, so a site's
-/// top row can be tapped when it loads; scrolling still slides content up under the
-/// status bar. Began as a Reddit/X fix and applies to every web page.
-enum BrowserSiteViewportPolicy {
-    static let iPadTopContentInset: CGFloat = 12
-    static let iPhoneTopContentInset: CGFloat = 24
-
-    static func topContentInset(for url: URL?, idiom: UIUserInterfaceIdiom) -> CGFloat {
-        guard let scheme = url?.scheme?.lowercased(),
-              scheme == "http" || scheme == "https",
-              url?.host?.isEmpty == false else {
-            return 0
-        }
-
-        switch idiom {
-        case .pad:
-            return iPadTopContentInset
-        case .phone:
-            return iPhoneTopContentInset
-        default:
-            return 0
-        }
-    }
-}
-
 enum BrowserExternalNavigationPolicy {
     private static func isXWebHost(_ host: String?) -> Bool {
         guard let host = host?.lowercased() else { return false }
@@ -267,6 +242,12 @@ final class BrowserWebViewContainer: UIView {
         backgroundColor = webView.backgroundColor
         webView.frame = bounds
         webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        // WebKit switches a page with viewport-fit=cover (YouTube, for one) to `.never`, which
+        // drops the status bar from the scroll view's insets: the page then comes to rest under
+        // the status bar after scrolling back to the top. The obscured insets below already keep
+        // env(safe-area-inset-*) at 0, so such a page doesn't pad itself either. Setting the
+        // behavior here stops WebKit from changing it, so every page starts below the status bar.
+        webView.scrollView.contentInsetAdjustmentBehavior = .always
         addSubview(webView)
     }
 
@@ -315,6 +296,10 @@ final class BrowserWebViewContainer: UIView {
         // Element fullscreen reparents the web view; leave its insets alone until it returns.
         guard webView.superview === self, window != nil else { return }
         let scrollView = webView.scrollView
+        // Element fullscreen hands the web view back with the behavior reset; see init.
+        if scrollView.contentInsetAdjustmentBehavior != .always {
+            scrollView.contentInsetAdjustmentBehavior = .always
+        }
         let adjusted = scrollView.adjustedContentInset
         let content = scrollView.contentInset
         let bottomObscured: CGFloat
@@ -330,11 +315,13 @@ final class BrowserWebViewContainer: UIView {
         // status bar / notch edges explicitly along with the bottom controls. Fixed and
         // sticky page bars then sit below the status bar, where they can be tapped, and
         // above the bottom controls.
+        // Use this view's own safe area: the scroll view's adjusted insets update after this
+        // runs on rotation, so they'd leave the previous orientation's edges in place.
         let obscured = UIEdgeInsets(
-            top: max(safeAreaInsets.top, adjusted.top - content.top),
-            left: max(safeAreaInsets.left, adjusted.left - content.left),
+            top: safeAreaInsets.top,
+            left: safeAreaInsets.left,
             bottom: bottomObscured,
-            right: max(safeAreaInsets.right, adjusted.right - content.right)
+            right: safeAreaInsets.right
         )
         if webView.obscuredContentInsets != obscured {
             webView.obscuredContentInsets = obscured
@@ -1659,6 +1646,9 @@ struct ContentView: View {
     @StateObject private var passwordManager = PasswordManager.shared
     @StateObject private var incognitoMode = IncognitoMode.shared
     @StateObject private var darkModeService = DarkModeService.shared
+    @StateObject private var voiceInput = VoiceInput()
+    @ObservedObject private var readAloud = ReadAloud.shared
+    @State private var quickAIRequest: AIQuickRequest?
     @StateObject private var fontSizeService = FontSizeService.shared
     @StateObject private var thirdPartyCookieBlocker = ThirdPartyCookieBlocker.shared
     @StateObject private var downloadManager = BrowserDownloadManager()
@@ -1736,6 +1726,7 @@ struct ContentView: View {
     @State private var agentRunDetailRequest: AgentRunDetailRequest?
     @State private var agentWatchOpenRequest: AgentWatchOpenRequest?
     @State private var pageWatchDraft: PageWatchDraft?
+    @State private var showsIdeasGuide = false
     @StateObject private var agentTaskRecorder = AgentTaskRecorder()
     @State private var recordedTaskDraft: AgentTaskSaveDraft?
     @State private var lastAgentBackendStatusShown: String?
@@ -1857,7 +1848,8 @@ struct ContentView: View {
     }
 
     private var isSidebarDark: Bool {
-        colorScheme == .dark || darkModeService.isDarkMode
+        // Follows what the visible page shows, so a site set to Always Light keeps dark icons.
+        colorScheme == .dark || darkModeService.isDark(for: selectedTab?.currentURL)
     }
 
     /// The device's own light/dark setting. Settings panels follow this rather than
@@ -1968,39 +1960,148 @@ struct ContentView: View {
             : (isSidebarCollapsed ? "Show sidebar" : "Hide sidebar"))
     }
 
+    /// The sparkles button. With the assistant closed it's the AI menu: one tap for
+    /// summarize, translate, explain, ask, talk or a task, without leaving the page.
+    /// With the assistant open it closes it.
+    @ViewBuilder
     private var aiSidebarToggleButton: some View {
-        Button {
-            if isPhone {
-                togglePhoneSecondaryPanel(.ai)
-            } else if showAIPanel {
-                dismissAIPanel()
-            } else {
-                syncAIContextSelection(forceVisibleTab: true)
-                prepareAIContext()
-                withAnimation(.easeOut(duration: 0.2)) {
-                    showAIPanel = true
+        let assistantIsOpen = isPhone ? phoneSecondaryPanel == .ai : showAIPanel
+        if assistantIsOpen {
+            Button {
+                if isPhone {
+                    togglePhoneSecondaryPanel(.ai)
+                } else {
+                    dismissAIPanel()
                 }
+            } label: {
+                aiButtonLabel
             }
-        } label: {
-            Image(systemName: "sparkles")
-                .font(.footnote.weight(.semibold))
-                .foregroundColor(isSidebarDark ? .white.opacity(0.85) : .primary)
-                .padding(.horizontal, 12)
-                .frame(height: toolbarPillHeight)
-                .toolbarBackdrop(in: Capsule(), frosted: toolbarOverText)
-                .shadow(
-                    color: Color.black.opacity(isSidebarDark ? 0.35 : 0.2),
-                    radius: 8,
-                    x: 0,
-                    y: 4
-                )
-                .contentShape(.interaction, Capsule())
+            .buttonStyle(.plain)
+            .ios26ButtonHitTargetCompat()
+            .accessibilityLabel(isPhone ? "Hide AI assistant" : "Hide AI sidebar")
+        } else {
+            Menu {
+                aiQuickMenuItems
+            } label: {
+                aiButtonLabel
+            }
+            .menuOrder(.fixed)
+            .buttonStyle(.plain)
+            .ios26ButtonHitTargetCompat()
+            .accessibilityLabel("AI")
+            .accessibilityHint("Summarize, translate, ask, talk, or give the assistant a task")
         }
-        .buttonStyle(.plain)
-        .ios26ButtonHitTargetCompat()
-        .accessibilityLabel(isPhone
-            ? (phoneSecondaryPanel == .ai ? "Hide AI assistant" : "Show AI assistant")
-            : (showAIPanel ? "Hide AI sidebar" : "Show AI sidebar"))
+    }
+
+    private var aiButtonLabel: some View {
+        Image(systemName: "sparkles")
+            .font(.footnote.weight(.semibold))
+            .foregroundColor(isSidebarDark ? .white.opacity(0.85) : .primary)
+            .padding(.horizontal, 12)
+            .frame(height: toolbarPillHeight)
+            .toolbarBackdrop(in: Capsule(), frosted: toolbarOverText)
+            .shadow(
+                color: Color.black.opacity(isSidebarDark ? 0.35 : 0.2),
+                radius: 8,
+                x: 0,
+                y: 4
+            )
+            .contentShape(.interaction, Capsule())
+    }
+
+    @ViewBuilder
+    private var aiQuickMenuItems: some View {
+        Button {
+            performQuickAI(.summarize)
+        } label: {
+            Label("Summarize Page", systemImage: "doc.text")
+        }
+        if let idx = vm.selectedIndex, !vm.tabs[idx].isBlank, vm.tabs[idx].currentURL != nil {
+            let tab = vm.tabs[idx]
+            if tab.translatedFrom != nil {
+                Button {
+                    showOriginalPage(for: tab)
+                } label: {
+                    Label("Show Original", systemImage: "translate")
+                }
+            } else {
+                Button {
+                    startPageTranslation(for: tab)
+                } label: {
+                    Label(
+                        tab.isTranslating
+                            ? "Translating…"
+                            : "Translate to \(PageTranslator.displayName(for: PageTranslator.targetLanguage))",
+                        systemImage: "translate"
+                    )
+                }
+                .disabled(tab.isTranslating)
+            }
+        }
+        if activeAISelectionText != nil {
+            Button {
+                performQuickAI(.explainSelection)
+            } label: {
+                Label("Explain Selection", systemImage: "text.quote")
+            }
+        }
+        Button {
+            performQuickAI(.ask(nil))
+        } label: {
+            Label("Ask About This Page", systemImage: "questionmark.bubble")
+        }
+        Button {
+            startTalking()
+        } label: {
+            Label("Talk", systemImage: "mic")
+        }
+        Button {
+            performQuickAI(.task(nil))
+        } label: {
+            Label("Do a Task", systemImage: "wand.and.stars")
+        }
+        Divider()
+        Button {
+            openAIPanel(expanded: true)
+        } label: {
+            Label("Open Assistant", systemImage: "sparkles")
+        }
+    }
+
+    /// Opens the assistant (half height on iPhone unless `expanded`) without toggling it closed.
+    private func openAIPanel(expanded: Bool = false) {
+        if isPhone {
+            if phoneSecondaryPanel != .ai {
+                togglePhoneSecondaryPanel(.ai)
+            }
+            if !expanded {
+                phoneAIPanelExpanded = false
+            }
+        } else if !showAIPanel {
+            syncAIContextSelection(forceVisibleTab: true)
+            prepareAIContext()
+            withAnimation(.easeOut(duration: 0.2)) {
+                showAIPanel = true
+            }
+        }
+    }
+
+    private func performQuickAI(_ action: AIQuickRequest.Action) {
+        guard !browserIntentRuntime.isBusy else {
+            showPageStatus("Finishing a Siri or Shortcuts action\u{2026}")
+            return
+        }
+        openAIPanel()
+        quickAIRequest = AIQuickRequest(action: action)
+    }
+
+    /// Listens, then answers the question or runs the task, and reads the answer aloud.
+    private func startTalking() {
+        Task {
+            await voiceInput.start { text in
+                performQuickAI(.spoken(text))
+            }
+        }
     }
 
     private var exitSplitViewButton: some View {
@@ -2202,13 +2303,30 @@ struct ContentView: View {
     @ViewBuilder
     private func pageActionsMenuItems(for tab: BrowserTab) -> some View {
         let _ = pageMenuRevision
-        Button {
-            presentShareSheet(for: tab)
-        } label: {
-            Label("Share…", systemImage: "square.and.arrow.up")
+        // Three short actions share one row, like Zoom, and the labels stay short enough for one
+        // line, so the menu fits on an 11-inch iPad in landscape with large text and opens at
+        // the top instead of partway down.
+        ControlGroup {
+            Button {
+                presentShareSheet(for: tab)
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            .disabled(tab.currentURL == nil)
+            if !tab.isBlank, let webView = tab.liveWebView, webView.findInteraction != nil {
+                Button {
+                    collapseToolbar()
+                    webView.findInteraction?.presentFindNavigator(showingReplace: false)
+                } label: {
+                    Label("Find", systemImage: "text.magnifyingglass")
+                }
+            }
+            Button {
+                setChromeHidden(true)
+            } label: {
+                Label("Hide Toolbar", systemImage: "arrow.up.left.and.arrow.down.right")
+            }
         }
-        .disabled(tab.currentURL == nil)
-
         if !tab.isBlank, tab.liveWebView != nil {
             let zoom = PageZoomStore.zoom(for: tab.currentURL, isIncognito: tab.isIncognito)
             ControlGroup {
@@ -2232,30 +2350,21 @@ struct ContentView: View {
                 .disabled(!PageZoomStore.canZoomIn(zoom))
             }
 
-            if tab.translatedFrom != nil {
-                Button {
-                    showOriginalPage(for: tab)
-                } label: {
-                    Label("Show Original", systemImage: "translate")
-                }
-            } else {
-                Button {
-                    startPageTranslation(for: tab)
-                } label: {
-                    Label(
-                        tab.isTranslating
-                            ? "Translating…"
-                            : "Translate to \(PageTranslator.displayName(for: PageTranslator.targetLanguage))",
-                        systemImage: "translate"
-                    )
-                }
-                .disabled(tab.isTranslating)
+            // Translate lives in the ✨ AI menu; dark mode is one row with its options inside,
+            // so this menu fits on screen and opens at the top.
+            Menu {
+                darkModeMenuItems(for: tab)
+            } label: {
+                Label(
+                    "Dark Mode",
+                    systemImage: darkModeService.isDark(for: tab.currentURL) ? "moon.fill" : "moon"
+                )
             }
 
             Button {
                 startDistractionPicker(for: tab)
             } label: {
-                Label("Hide Distracting Items", systemImage: "eye.slash")
+                Label("Hide Clutter", systemImage: "eye.slash")
             }
             if DistractionHider.hasHiddenItems(for: tab.currentURL, isIncognito: tab.isIncognito) {
                 Button {
@@ -2277,14 +2386,6 @@ struct ContentView: View {
             }
         }
 
-        if !tab.isBlank, let webView = tab.liveWebView, webView.findInteraction != nil {
-            Button {
-                collapseToolbar()
-                webView.findInteraction?.presentFindNavigator(showingReplace: false)
-            } label: {
-                Label("Find on Page…", systemImage: "text.magnifyingglass")
-            }
-        }
 
         // Private tabs and non-web pages can never be watched.
         if !tab.isIncognito, !tab.isBlank, tab.liveWebView != nil,
@@ -2296,14 +2397,15 @@ struct ContentView: View {
                     title: tab.title.isEmpty ? (pageURL.host ?? pageURL.absoluteString) : tab.title
                 )
             } label: {
-                Label("Watch This Page…", systemImage: "eye")
+                Label("Watch Page…", systemImage: "eye")
             }
         }
 
         Button {
-            setChromeHidden(true)
+            collapseToolbar()
+            showsIdeasGuide = true
         } label: {
-            Label("Hide Toolbar", systemImage: "arrow.up.left.and.arrow.down.right")
+            Label("Tips & Ideas…", systemImage: "lightbulb")
         }
     }
 
@@ -3938,6 +4040,15 @@ struct ContentView: View {
                 }
             }
 
+            if voiceInput.state != .idle || readAloud.isSpeaking {
+                // Above the toolbar; at the top while the iPhone panel fills the bottom.
+                let atTop = isPhone && phoneSecondaryPanelIsPresented
+                VoiceAssistantBar(voice: voiceInput, reader: readAloud)
+                    .padding(atTop ? .top : .bottom, atTop ? 8 : 24 + toolbarPillHeight + 14)
+                    .frame(maxHeight: .infinity, alignment: atTop ? .top : .bottom)
+                    .zIndex(161)
+            }
+
             if pageStatusMessage != nil {
                 pageStatusCapsule
                     .padding(.horizontal, 24)
@@ -3995,6 +4106,9 @@ struct ContentView: View {
         }
         .sheet(item: $pageWatchDraft) { draft in
             PageWatchEditorView(url: draft.url, title: draft.title, existing: nil)
+        }
+        .sheet(isPresented: $showsIdeasGuide) {
+            VortyraGuideView()
         }
         .sheet(item: $recordedTaskDraft) { draft in
             AgentTaskLibrarySheet(
@@ -5734,6 +5848,13 @@ struct ContentView: View {
             agentWatchOpenRequest: agentWatchOpenRequest,
             onAgentWatchOpenRequestHandled: {
                 agentWatchOpenRequest = nil
+            },
+            quickRequest: quickAIRequest,
+            onQuickRequestHandled: {
+                quickAIRequest = nil
+            },
+            onTalk: {
+                startTalking()
             }
         )
     }
@@ -6785,29 +6906,40 @@ struct ContentView: View {
         }
     }
 
-    private func toggleDarkMode(for tab: BrowserTab) {
-        if tab.hasDarkModeOverride {
-            tab.isDarkMode.toggle()
-        } else {
-            tab.isDarkMode = !darkModeService.isDarkMode
-            tab.hasDarkModeOverride = true
-        }
-
-        // Mark this webview as having a per-tab override so global toggle won't affect it
-        let webView = tab.activateWebView()
-        DarkModeService.shared.setOverride(for: webView, hasOverride: true)
-
-        if tab.isDarkMode {
-            DarkModeService.shared.enableDarkMode(for: webView)
-        } else {
-            DarkModeService.shared.disableDarkMode(for: webView)
-        }
-        webView.overrideUserInterfaceStyle = tab.isDarkMode ? .dark : .light
-        tab.lastAppliedDarkMode = tab.isDarkMode
+    /// The page menu's main switch is browser-wide and remembered, the same setting as
+    /// Settings → Appearance. Sites with their own choice keep it.
+    private func toggleDarkMode() {
+        darkModeService.isDarkMode.toggle()
+        applyDarkModeToOpenTabs()
     }
 
-    private func effectiveDarkMode(for tab: BrowserTab) -> Bool {
-        tab.hasDarkModeOverride ? tab.isDarkMode : darkModeService.isDarkMode
+    /// Remembers light or dark for this tab's site (nil: follow the browser-wide setting).
+    private func setDarkModeException(_ dark: Bool?, for tab: BrowserTab) {
+        let site = DarkModeService.siteKey(for: tab.currentURL)
+        darkModeService.setSiteException(dark, for: tab.currentURL)
+        applyDarkModeToOpenTabs()
+        // Sites with their own dark theme (YouTube, for one) only check it when a page
+        // loads, so reload this site's open tabs to switch them over completely.
+        for other in vm.tabs where DarkModeService.siteKey(for: other.currentURL) == site {
+            other.liveWebView?.reload()
+        }
+    }
+
+    private func applyDarkModeToOpenTabs() {
+        for tab in vm.tabs {
+            tab.syncDarkModeSiteException(for: tab.currentURL)
+            guard let webView = tab.liveWebView else { continue }
+            let dark = darkModeService.isDark(for: tab.currentURL)
+            if tab.lastAppliedDarkMode != dark {
+                if dark {
+                    DarkModeService.shared.enableDarkMode(for: webView)
+                } else {
+                    DarkModeService.shared.disableDarkMode(for: webView)
+                }
+            }
+            webView.overrideUserInterfaceStyle = dark ? .dark : .light
+            tab.lastAppliedDarkMode = dark
+        }
     }
 
     private func applyUserAgentPreference() {
@@ -7533,6 +7665,37 @@ struct ContentView: View {
         }
     }
 
+    /// Dark Web Pages for every site, plus a remembered choice for this site.
+    @ViewBuilder
+    private func darkModeMenuItems(for tab: BrowserTab) -> some View {
+        Button {
+            toggleDarkMode()
+        } label: {
+            Label(
+                darkModeService.isDarkMode ? "Turn Off Dark Web Pages" : "Turn On Dark Web Pages",
+                systemImage: darkModeService.isDarkMode ? "moon.fill" : "moon"
+            )
+        }
+        if let site = DarkModeService.siteKey(for: tab.currentURL) {
+            if darkModeService.siteException(for: tab.currentURL) != nil {
+                Button {
+                    setDarkModeException(nil, for: tab)
+                } label: {
+                    Label("Use Browser Setting on \(site)", systemImage: "circle.lefthalf.filled")
+                }
+            } else {
+                Button {
+                    setDarkModeException(!darkModeService.isDarkMode, for: tab)
+                } label: {
+                    Label(
+                        darkModeService.isDarkMode ? "Always Light on \(site)" : "Always Dark on \(site)",
+                        systemImage: darkModeService.isDarkMode ? "sun.max" : "moon.stars"
+                    )
+                }
+            }
+        }
+    }
+
     /// Long-press menu for a tab, shared by normal tab cards and split pair cards.
     @ViewBuilder
     private func tabMenuItems(for tab: BrowserTab) -> some View {
@@ -7544,14 +7707,6 @@ struct ContentView: View {
                 Label(
                     tab.isReaderMode ? "Disable Reader Mode" : "Enable Reader Mode",
                     systemImage: tab.isReaderMode ? "text.book.closed.fill" : "text.book.closed"
-                )
-            }
-            Button {
-                toggleDarkMode(for: tab)
-            } label: {
-                Label(
-                    effectiveDarkMode(for: tab) ? "Disable Dark Web Page" : "Enable Dark Web Page",
-                    systemImage: effectiveDarkMode(for: tab) ? "moon.fill" : "moon"
                 )
             }
             Divider()
@@ -9332,7 +9487,6 @@ struct ContentView: View {
             webView.scrollView.delegate = context.coordinator
             webView.scrollView.alwaysBounceVertical = true
             webView.scrollView.refreshControl = context.coordinator.refreshControl
-            Self.applySiteSpecificTopInset(to: webView, url: webView.url ?? tab.url)
             webView.onAskAI = onAskAI
             ThirdPartyCookieBlocker.shared.register(webView: webView)
             context.coordinator.installWebProviderMessageHandler(on: webView)
@@ -9357,7 +9511,6 @@ struct ContentView: View {
             webView.navigationDelegate = context.coordinator
             webView.uiDelegate = context.coordinator
             webView.scrollView.delegate = context.coordinator
-            Self.applySiteSpecificTopInset(to: webView, url: webView.url ?? tab.url)
             context.coordinator.installWebProviderMessageHandler(on: webView)
             context.coordinator.installGestures(on: webView)
             let agentOwnsInitialLoad = onAgentTaskWebViewReadiness?(tab, webView, true) ?? false
@@ -9378,6 +9531,7 @@ struct ContentView: View {
             context.coordinator.setEdgeGesturesEnabled(allowEdgeGestures)
 
             if !webView.isLoading {
+                tab.syncDarkModeSiteException(for: webView.url ?? tab.url)
                 let shouldDark = tab.hasDarkModeOverride ? tab.isDarkMode : DarkModeService.shared.isDarkMode
                 webView.overrideUserInterfaceStyle = shouldDark ? .dark : .light
                 if tab.lastAppliedDarkMode != shouldDark {
@@ -9405,37 +9559,6 @@ struct ContentView: View {
                         }
                     }
                 }
-            }
-        }
-
-        /// Site headers sit directly beneath the platform's scroll-edge glass when
-        /// the browser extends under the top safe area. A small device-specific
-        /// content inset makes their top controls reliably tappable at rest while
-        /// leaving the WebView itself underlapping the glass during scrolling.
-        private static func applySiteSpecificTopInset(to webView: WKWebView, url: URL?) {
-            let scrollView = webView.scrollView
-            let desiredTop = BrowserSiteViewportPolicy.topContentInset(
-                for: url,
-                idiom: UIDevice.current.userInterfaceIdiom
-            )
-            let oldTop = scrollView.contentInset.top
-            guard abs(oldTop - desiredTop) > 0.5 else { return }
-
-            let wasAtTop = scrollView.contentOffset.y <= -scrollView.adjustedContentInset.top + 1
-            var contentInset = scrollView.contentInset
-            contentInset.top = desiredTop
-            scrollView.contentInset = contentInset
-
-            var indicatorInset = scrollView.verticalScrollIndicatorInsets
-            indicatorInset.top = desiredTop
-            scrollView.verticalScrollIndicatorInsets = indicatorInset
-
-            if wasAtTop {
-                scrollView.layoutIfNeeded()
-                scrollView.setContentOffset(
-                    CGPoint(x: scrollView.contentOffset.x, y: -scrollView.adjustedContentInset.top),
-                    animated: false
-                )
             }
         }
 
@@ -9968,6 +10091,9 @@ struct ContentView: View {
                 }
 
                 if let url = navigationAction.request.url {
+                    if navigationAction.targetFrame?.isMainFrame == true {
+                        DarkModeService.shared.prepare(webView, forNavigationTo: url)
+                    }
                     if BrowserExternalNavigationPolicy.shouldForceXHTTPSNavigationInWebView(
                         url,
                         navigationType: navigationAction.navigationType
@@ -10054,7 +10180,6 @@ struct ContentView: View {
             func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
                 Task { @MainActor in
                     self.tab.isReaderMode = false
-                    WebViewHost.applySiteSpecificTopInset(to: webView, url: webView.url ?? self.tab.url)
                     if let navigation {
                         self.onAgentTaskNavigationEvent?(self.tab, webView, navigation, .started)
                     }
@@ -10133,11 +10258,11 @@ struct ContentView: View {
                         if !self.tab.isIncognito, self.tab.webAIProvider == nil {
                             HistoryStore.shared.record(url: u, title: webView.title)
                         }
-                        WebViewHost.applySiteSpecificTopInset(to: webView, url: u)
 
                         SitePrivacyStore.shared.applyPolicies(to: webView, url: u, reloadIfChanged: true)
                         
                         // Apply dark mode with per-tab override support
+                        self.tab.syncDarkModeSiteException(for: u)
                         let shouldDark = self.tab.hasDarkModeOverride ? self.tab.isDarkMode : DarkModeService.shared.isDarkMode
                         webView.overrideUserInterfaceStyle = shouldDark ? .dark : .light
                         if shouldDark {
