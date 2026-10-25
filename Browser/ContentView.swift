@@ -337,6 +337,11 @@ final class BrowserWebViewContainer: UIView {
     }
 }
 
+private struct TranslatePickerRequest: Identifiable {
+    let id = UUID()
+    let tabID: UUID
+}
+
 private struct BrowserWebAIRequest: Identifiable, Equatable {
     let id = UUID()
     let provider: WebAIProvider
@@ -1726,6 +1731,7 @@ struct ContentView: View {
     @State private var agentRunDetailRequest: AgentRunDetailRequest?
     @State private var agentWatchOpenRequest: AgentWatchOpenRequest?
     @State private var pageWatchDraft: PageWatchDraft?
+    @State private var translatePickerRequest: TranslatePickerRequest?
     @State private var showsIdeasGuide = false
     @StateObject private var agentTaskRecorder = AgentTaskRecorder()
     @State private var recordedTaskDraft: AgentTaskSaveDraft?
@@ -2019,38 +2025,7 @@ struct ContentView: View {
             Label("Summarize Page", systemImage: "doc.text")
         }
         if let idx = vm.selectedIndex, !vm.tabs[idx].isBlank, vm.tabs[idx].currentURL != nil {
-            let tab = vm.tabs[idx]
-            if tab.translatedFrom != nil {
-                Button {
-                    showOriginalPage(for: tab)
-                } label: {
-                    Label("Show Original", systemImage: "translate")
-                }
-            } else {
-                Button {
-                    startPageTranslation(for: tab)
-                } label: {
-                    Label(
-                        tab.isTranslating
-                            ? "Translating…"
-                            : "Translate to \(PageTranslator.displayName(for: PageTranslator.targetLanguage))",
-                        systemImage: "translate"
-                    )
-                }
-                .disabled(tab.isTranslating)
-                // A one-off translation into another language; Settings → Translate To
-                // changes the default.
-                Menu {
-                    ForEach(TranslationLanguages.shared.all) { option in
-                        Button(option.name) {
-                            startPageTranslation(for: tab, targetLanguage: option.language)
-                        }
-                    }
-                } label: {
-                    Label("Translate To…", systemImage: "character.book.closed")
-                }
-                .disabled(tab.isTranslating || TranslationLanguages.shared.all.isEmpty)
-            }
+            translateMenuItems(for: vm.tabs[idx])
         }
         if activeAISelectionText != nil {
             Button {
@@ -2364,8 +2339,13 @@ struct ContentView: View {
                 .disabled(!PageZoomStore.canZoomIn(zoom))
             }
 
-            // Translate lives in the ✨ AI menu; dark mode is one row with its options inside,
-            // so this menu fits on screen and opens at the top.
+            // Translate and dark mode are one row each with their options inside, so this
+            // menu fits on screen and opens at the top.
+            Menu {
+                translateMenuItems(for: tab)
+            } label: {
+                Label(tab.translatedFrom == nil ? "Translate" : "Translated", systemImage: "translate")
+            }
             Menu {
                 darkModeMenuItems(for: tab)
             } label: {
@@ -4123,6 +4103,13 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showsIdeasGuide) {
             VortyraGuideView()
+        }
+        .sheet(item: $translatePickerRequest) { request in
+            TranslateLanguagePicker { language in
+                if let tab = browserTab(withID: request.tabID) {
+                    startPageTranslation(for: tab, targetLanguage: language)
+                }
+            }
         }
         .sheet(item: $recordedTaskDraft) { draft in
             AgentTaskLibrarySheet(
@@ -7676,6 +7663,39 @@ struct ContentView: View {
             withAnimation(.easeOut(duration: 0.2)) {
                 clearSplitView()
             }
+        }
+    }
+
+    /// Translate this page: to the Settings language, to any other language once, or back.
+    @ViewBuilder
+    private func translateMenuItems(for tab: BrowserTab) -> some View {
+        if tab.translatedFrom != nil {
+            Button {
+                showOriginalPage(for: tab)
+            } label: {
+                Label("Show Original", systemImage: "translate")
+            }
+        } else {
+            Button {
+                startPageTranslation(for: tab)
+            } label: {
+                Label(
+                    tab.isTranslating
+                        ? "Translating…"
+                        : "Translate to \(PageTranslator.displayName(for: PageTranslator.targetLanguage))",
+                    systemImage: "translate"
+                )
+            }
+            .disabled(tab.isTranslating)
+            // A one-off translation into another language, picked from a list in a sheet:
+            // a long list inside a menu that opens upward runs Z to A and starts at the end.
+            Button {
+                collapseToolbar()
+                translatePickerRequest = TranslatePickerRequest(tabID: tab.id)
+            } label: {
+                Label("Translate To…", systemImage: "character.book.closed")
+            }
+            .disabled(tab.isTranslating)
         }
     }
 
