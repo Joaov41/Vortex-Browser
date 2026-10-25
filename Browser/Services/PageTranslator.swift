@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import NaturalLanguage
 import Translation
@@ -33,8 +34,16 @@ enum PageTranslator {
         let lowLatencyInstalled: Bool
     }
 
-    static var targetLanguage: Locale.Language {
+    /// Settings → Translate To. Empty means the device's language.
+    static let targetLanguageKey = "translateTargetLanguage"
+
+    static var deviceLanguage: Locale.Language {
         Locale.Language(identifier: Locale.preferredLanguages.first ?? "en")
+    }
+
+    static var targetLanguage: Locale.Language {
+        let chosen = UserDefaults.standard.string(forKey: targetLanguageKey) ?? ""
+        return chosen.isEmpty ? deviceLanguage : Locale.Language(identifier: chosen)
     }
 
     static func resolvedTargetLanguage(_ requested: Locale.Language?) -> Locale.Language {
@@ -286,4 +295,45 @@ enum PageTranslator {
         if (node && node.nodeValue !== text) node.nodeValue = text;
     }
     """
+}
+
+/// The languages Apple's on-device translation can translate into, for Settings and the
+/// AI menu: one entry per language (English, not English (Australia)…), except Chinese,
+/// which keeps Simplified and Traditional. Loaded once, in the background.
+@MainActor
+final class TranslationLanguages: ObservableObject {
+    struct Option: Identifiable {
+        let language: Locale.Language
+        let name: String
+        var id: String { language.minimalIdentifier }
+    }
+
+    static let shared = TranslationLanguages()
+
+    @Published private(set) var all: [Option] = []
+
+    private init() {
+        Task {
+            all = Self.options(from: await LanguageAvailability().supportedLanguages)
+        }
+    }
+
+    private static func options(from supported: [Locale.Language]) -> [Option] {
+        var groups: [String: [Locale.Language]] = [:]
+        for language in supported {
+            guard let code = language.languageCode?.identifier else { continue }
+            let script = code == "zh" ? (language.maximalIdentifier.contains("Hant") ? "Hant" : "Hans") : ""
+            groups[script.isEmpty ? code : "\(code)-\(script)", default: []].append(language)
+        }
+        let region = Locale.current.region?.identifier
+        return groups.map { key, members in
+            // Prefer the plain language, then the user's region, then whatever is listed.
+            let pick = members.first { $0.region == nil }
+                ?? members.first { $0.region?.identifier == region }
+                ?? members[0]
+            let name = Locale.current.localizedString(forIdentifier: key) ?? PageTranslator.displayName(for: pick)
+            return Option(language: pick, name: name)
+        }
+        .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
 }

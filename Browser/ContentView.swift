@@ -1966,6 +1966,8 @@ struct ContentView: View {
     @ViewBuilder
     private var aiSidebarToggleButton: some View {
         let assistantIsOpen = isPhone ? phoneSecondaryPanel == .ai : showAIPanel
+        // Starts loading the Translate To… list so it's ready when the menu opens.
+        let _ = TranslationLanguages.shared
         if assistantIsOpen {
             Button {
                 if isPhone {
@@ -2036,6 +2038,18 @@ struct ContentView: View {
                     )
                 }
                 .disabled(tab.isTranslating)
+                // A one-off translation into another language; Settings → Translate To
+                // changes the default.
+                Menu {
+                    ForEach(TranslationLanguages.shared.all) { option in
+                        Button(option.name) {
+                            startPageTranslation(for: tab, targetLanguage: option.language)
+                        }
+                    }
+                } label: {
+                    Label("Translate To…", systemImage: "character.book.closed")
+                }
+                .disabled(tab.isTranslating || TranslationLanguages.shared.all.isEmpty)
             }
         }
         if activeAISelectionText != nil {

@@ -24,6 +24,8 @@ struct BrowserSettingsView: View {
     @ObservedObject private var fontSizeService = FontSizeService.shared
     @ObservedObject private var aiService = SimpleAIService.shared
     @AppStorage("requestDesktopSite") private var requestDesktopSite = false
+    @AppStorage(PageTranslator.targetLanguageKey) private var translateTarget = ""
+    @ObservedObject private var translationLanguages = TranslationLanguages.shared
     @AppStorage(BrowserSpotlightSettings.bookmarksKey) private var spotlightBookmarks = true
     @AppStorage(BrowserSpotlightSettings.savedTasksKey) private var spotlightSavedTasks = true
     @AppStorage(BrowserSpotlightSettings.historyKey) private var spotlightHistory = false
@@ -83,6 +85,14 @@ struct BrowserSettingsView: View {
             Toggle(isOn: $requestDesktopSite) {
                 Label("Request Desktop Site", systemImage: "desktopcomputer")
             }
+            Picker(selection: $translateTarget) {
+                Text("Device Language (\(PageTranslator.displayName(for: PageTranslator.deviceLanguage)))").tag("")
+                ForEach(translationLanguages.all) { option in
+                    Text(option.name).tag(option.id)
+                }
+            } label: {
+                Label("Translate To", systemImage: "translate")
+            }
             Button {
                 showBookmarkImporter = true
             } label: {
@@ -117,7 +127,7 @@ struct BrowserSettingsView: View {
             if vm.newTabPage == .custom && vm.customNewTabURL == nil {
                 Text("Enter a web address. Until then, new tabs open \(vm.defaultSearchEngine.displayName).")
             } else {
-                Text("The search engine is used for searches typed in the address bar.")
+                Text("The search engine is used for searches typed in the address bar. Translate To is the language pages are translated into; translation happens on this device.")
             }
         }
     }
