@@ -541,7 +541,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VortyraWidgets/VortyraWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VortyraWidgets/Info.plist;
@@ -572,7 +572,7 @@
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CODE_SIGN_ENTITLEMENTS = VortyraWidgets/VortyraWidgets.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = VortyraWidgets/Info.plist;
@@ -774,7 +774,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser/Browser.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Browser/BrowserMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -809,7 +809,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser/Browser.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Browser/BrowserMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -841,7 +841,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BrowserShare/BrowserShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BrowserShare/Info.plist;
@@ -870,7 +870,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BrowserShare/BrowserShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 29;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BrowserShare/Info.plist;
