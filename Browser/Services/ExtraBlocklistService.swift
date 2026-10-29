@@ -278,7 +278,7 @@ final class ExtraBlocklistService: ObservableObject {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 30
         configuration.timeoutIntervalForResource = 300
-        configuration.httpAdditionalHeaders = ["User-Agent": "Vortex-Browser"]
+        configuration.httpAdditionalHeaders = ["User-Agent": "Vortyra-Browser"]
         session = URLSession(configuration: configuration)
         let state = store.loadState()
         lastCheck = state.lastCheck

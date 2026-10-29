@@ -44,7 +44,14 @@ class DarkModeService: ObservableObject {
     private var effectiveStates = NSMapTable<WKWebView, NSNumber>.weakToStrongObjects()
     private var documentScripts: [String: String] = [:]
 
+    /// Sites that always show light (false) or dark (true), whatever the browser-wide
+    /// setting. Keyed by `siteKey(for:)`, remembered across launches.
+    @Published private(set) var siteExceptions: [String: Bool] {
+        didSet { UserDefaults.standard.set(siteExceptions, forKey: "darkModeSiteExceptions") }
+    }
+
     init() {
+        self.siteExceptions = UserDefaults.standard.dictionary(forKey: "darkModeSiteExceptions") as? [String: Bool] ?? [:]
         self.isDarkMode = UserDefaults.standard.bool(forKey: "darkModeEnabled")
         self.brightness = UserDefaults.standard.object(forKey: "darkModeBrightness") as? Int ?? 100
         self.contrast = UserDefaults.standard.object(forKey: "darkModeContrast") as? Int ?? 90
@@ -89,6 +96,44 @@ class DarkModeService: ObservableObject {
         } else {
             disableDarkReader(in: webView)
         }
+    }
+
+    // MARK: Site exceptions
+
+    /// The name a site's exception is stored under: its host without "www." or a mobile
+    /// "m.", so youtube.com and m.youtube.com share one choice.
+    static func siteKey(for url: URL?) -> String? {
+        guard let url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              var host = url.host?.lowercased(), !host.isEmpty else { return nil }
+        for prefix in ["www.", "m.", "mobile."] where host.hasPrefix(prefix) && host.count > prefix.count + 3 {
+            host.removeFirst(prefix.count)
+            break
+        }
+        return host
+    }
+
+    /// The site's own choice, or nil when it follows the browser-wide setting.
+    func siteException(for url: URL?) -> Bool? {
+        Self.siteKey(for: url).flatMap { siteExceptions[$0] }
+    }
+
+    func setSiteException(_ dark: Bool?, for url: URL?) {
+        guard let key = Self.siteKey(for: url) else { return }
+        siteExceptions[key] = dark
+    }
+
+    /// Whether pages from this address should be dark.
+    func isDark(for url: URL?) -> Bool {
+        siteException(for: url) ?? isDarkMode
+    }
+
+    /// Before a page loads, sets the document-start script for the site it's going to,
+    /// so a site with its own choice doesn't flash in the previous site's theme.
+    func prepare(_ webView: WKWebView, forNavigationTo url: URL?) {
+        let dark = isDark(for: url)
+        setOverride(for: webView, hasOverride: siteException(for: url) != nil)
+        guard effectiveStates.object(forKey: webView)?.boolValue != dark else { return }
+        updateDocumentScript(in: webView, enabled: dark)
     }
 
     /// Mark a webview as having a per-tab dark mode override (won't be affected by global toggle)
@@ -239,5 +284,17 @@ private class WeakSet<T: AnyObject> {
     
     var allObjects: [T] {
         return objects.allObjects
+    }
+}
+
+extension BrowserTab {
+    /// Points the tab's dark-mode override at the remembered choice for this site, if any.
+    func syncDarkModeSiteException(for url: URL?) {
+        let choice = DarkModeService.shared.siteException(for: url)
+        hasDarkModeOverride = choice != nil
+        if let choice { isDarkMode = choice }
+        if let liveWebView {
+            DarkModeService.shared.setOverride(for: liveWebView, hasOverride: choice != nil)
+        }
     }
 }

@@ -7,11 +7,11 @@ final class ShareViewController: SLComposeServiceViewController {
     static let appGroupID = "group.com.browser.app"
     static let notificationName = "com.browser.sharedURL"
     private var didStart = false
-    private var hasCompleted = false
-    private var hasFinishedExtensionRequest = false
+    private let deliveryGate = BrowserShareDeliveryGate()
     private var completionTimer: DispatchSourceTimer?
     private var openFallbackTimer: DispatchSourceTimer?
     private var pendingOpenURL: URL?
+    private var sharedProviders: [NSItemProvider] = []
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
@@ -44,100 +44,132 @@ final class ShareViewController: SLComposeServiceViewController {
         }
 
         let providers = items.flatMap { $0.attachments ?? [] }
-        guard let (provider, typeID) = selectProvider(from: providers) else {
+        sharedProviders = providers
+        let descriptors = providers.enumerated().map { index, provider in
+            BrowserShareProviderPicker.Descriptor(
+                index: index,
+                typeIdentifiers: providerTypeIdentifiers(of: provider)
+            )
+        }
+        switch BrowserShareProviderPicker.select(descriptors) {
+        case .textProvider(let index):
+            loadTextItem(providers[index])
+        case .urlProvider(let index):
+            loadURLItem(providers[index])
+        case .legacy(let index, let typeID):
+            loadLegacyItem(providers[index], typeID: typeID)
+        case .none:
+            if let attributed = items.lazy
+                .compactMap({ $0.attributedContentText?.string })
+                .first(where: { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
+                handleSharedText(attributed)
+                return
+            }
             complete()
-            return
-        }
-
-        if provider.canLoadObject(ofClass: URL.self) {
-            _ = provider.loadObject(ofClass: URL.self) { [weak self] object, _ in
-                let content = object?.absoluteString
-                DispatchQueue.main.async {
-                    if let content {
-                        self?.handleSharedContent(content)
-                    }
-                    self?.complete()
-                }
-            }
-            return
-        }
-
-        if provider.canLoadObject(ofClass: String.self) {
-            _ = provider.loadObject(ofClass: String.self) { [weak self] object, _ in
-                let content = object
-                DispatchQueue.main.async {
-                    if let content {
-                        self?.handleSharedContent(content)
-                    }
-                    self?.complete()
-                }
-            }
-            return
-        }
-
-        provider.loadItem(forTypeIdentifier: typeID, options: nil) { [weak self] data, _ in
-            let content = Self.contentString(from: data)
-            DispatchQueue.main.async {
-                guard let self else { return }
-                if let content {
-                    self.handleSharedContent(content)
-                }
-                self.complete()
-            }
         }
     }
 
-    nonisolated private static func contentString(from item: NSSecureCoding?) -> String? {
-        if let url = item as? URL {
-            return url.absoluteString
+    private func handleSharedText(_ content: String?) {
+        guard deliveryGate.acceptsCallbacks else { return }
+        let trimmed = (content ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            fallbackToURLProvider()
+            return
         }
-        if let string = item as? String {
-            return string
+        guard trimmed.utf8.count <= BrowserIntentShareParser.maximumTextUTF8Bytes else {
+            showTextAlert(
+                title: "Text Too Long",
+                message: "The shared text is longer than 4096 bytes, so it was not sent to Vortyra."
+            )
+            return
         }
-        if let attributed = item as? NSAttributedString {
-            return attributed.string
+
+        completionTimer?.cancel()
+        completionTimer = nil
+
+        let alert = UIAlertController(title: "Vortyra", message: nil, preferredStyle: .actionSheet)
+        if BrowserSharePayload.actions(for: trimmed).contains(.openLink) {
+            alert.addAction(UIAlertAction(title: "Open Link", style: .default) { [weak self] _ in
+                self?.finishWithURLPayload(trimmed)
+            })
         }
-        if let data = item as? Data {
-            return String(data: data, encoding: .utf8)
+        alert.addAction(UIAlertAction(title: "Search with Vortyra", style: .default) { [weak self] _ in
+            self?.finishWithSearchPayload(trimmed)
+        })
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { [weak self] _ in
+            self?.complete()
+        })
+        if let popover = alert.popoverPresentationController {
+            popover.sourceView = view
+            popover.sourceRect = CGRect(x: view.bounds.midX, y: view.bounds.midY, width: 0, height: 0)
+            popover.permittedArrowDirections = []
         }
-        return nil
+        present(alert, animated: true)
     }
 
-    private func selectProvider(from providers: [NSItemProvider]) -> (NSItemProvider, String)? {
-        if let provider = providers.first(where: { $0.canLoadObject(ofClass: URL.self) }) {
-            return (provider, UTType.url.identifier)
-        }
+    private func showTextAlert(title: String, message: String) {
+        guard deliveryGate.acceptsCallbacks else { return }
+        completionTimer?.cancel()
+        completionTimer = nil
+        let alert = UIAlertController(title: title, message: message, preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: "OK", style: .default) { [weak self] _ in
+            self?.complete()
+        })
+        present(alert, animated: true)
+    }
 
-        if let provider = providers.first(where: { $0.canLoadObject(ofClass: String.self) }) {
-            return (provider, UTType.plainText.identifier)
-        }
-
-        let typeIDs = [UTType.url.identifier, UTType.plainText.identifier, UTType.text.identifier]
-        for typeID in typeIDs {
-            if let provider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(typeID) }) {
-                return (provider, typeID)
+    private func finishWithSearchPayload(_ text: String) {
+        guard deliveryGate.acceptsCallbacks else { return }
+        if let defaults = UserDefaults(suiteName: Self.appGroupID) {
+            do {
+                _ = try BrowserSharePayload.writeSearchTextIfAllowed(
+                    text,
+                    to: defaults,
+                    gate: deliveryGate
+                )
+            } catch {
+                showTextAlert(
+                    title: "Text Too Long",
+                    message: "The shared text is empty or too long, so it was not sent to Vortyra."
+                )
+                return
             }
         }
+        postShareNotification()
+        pendingOpenURL = makeOpenURL()
+        complete()
+    }
 
-        return nil
+    private func finishWithURLPayload(_ content: String) {
+        guard deliveryGate.acceptsCallbacks else { return }
+        if let defaults = UserDefaults(suiteName: Self.appGroupID) {
+            BrowserSharePayload.writeSharedURL(content, to: defaults)
+        }
+        postShareNotification()
+        pendingOpenURL = makeOpenURL()
+        complete()
     }
 
     private func handleSharedContent(_ content: String) {
+        guard deliveryGate.acceptsCallbacks else { return }
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         if let defaults = UserDefaults(suiteName: Self.appGroupID) {
-            defaults.set(trimmed, forKey: "sharedURL")
-            defaults.synchronize()
+            BrowserSharePayload.writeSharedURL(trimmed, to: defaults)
         }
 
+        postShareNotification()
+
+        pendingOpenURL = makeOpenURL()
+    }
+
+    private func postShareNotification() {
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName(Self.notificationName as CFString),
             nil, nil, true
         )
-
-        pendingOpenURL = makeOpenURL()
     }
 
     private func makeOpenURL() -> URL? {
@@ -158,8 +190,8 @@ final class ShareViewController: SLComposeServiceViewController {
     }
 
     private func complete() {
-        guard !hasCompleted else { return }
-        hasCompleted = true
+        guard !deliveryGate.hasCompleted else { return }
+        deliveryGate.markCompleted()
         completionTimer?.cancel()
         completionTimer = nil
         guard let context = extensionContext else { return }
@@ -190,10 +222,96 @@ final class ShareViewController: SLComposeServiceViewController {
     }
 
     private func finishExtensionRequest() {
-        guard !hasFinishedExtensionRequest else { return }
-        hasFinishedExtensionRequest = true
+        guard !deliveryGate.hasFinishedRequest else { return }
+        deliveryGate.markRequestFinished()
         openFallbackTimer?.cancel()
         openFallbackTimer = nil
         extensionContext?.completeRequest(returningItems: nil)
+    }
+}
+
+private extension ShareViewController {
+    private func providerTypeIdentifiers(of provider: NSItemProvider) -> Set<String> {
+        var identifiers = Set(provider.registeredTypeIdentifiers)
+        for typeID in [UTType.url.identifier, UTType.plainText.identifier, UTType.text.identifier]
+        where provider.hasItemConformingToTypeIdentifier(typeID) {
+            identifiers.insert(typeID)
+        }
+        return identifiers
+    }
+
+    private func loadTextItem(_ provider: NSItemProvider) {
+        let typeID = provider.registeredTypeIdentifiers.first(where: {
+            $0 == UTType.plainText.identifier || $0 == UTType.text.identifier
+        }) ?? UTType.plainText.identifier
+        provider.loadItem(forTypeIdentifier: typeID, options: nil) { [weak self] data, _ in
+            let content = Self.contentString(from: data)
+            DispatchQueue.main.async {
+                guard let self, self.deliveryGate.acceptsCallbacks else { return }
+                if let content, !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.handleSharedText(content)
+                } else {
+                    self.fallbackToURLProvider()
+                }
+            }
+        }
+    }
+
+    private func fallbackToURLProvider() {
+        if let provider = sharedProviders.first(where: {
+            providerTypeIdentifiers(of: $0).contains(UTType.url.identifier)
+        }) {
+            loadURLItem(provider)
+        } else {
+            showTextAlert(title: "Nothing to Search", message: "The shared text is empty.")
+        }
+    }
+
+    private func loadURLItem(_ provider: NSItemProvider) {
+        provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] data, _ in
+            let content = Self.contentString(from: data)
+            DispatchQueue.main.async {
+                guard let self, self.deliveryGate.acceptsCallbacks else { return }
+                if let content {
+                    self.handleSharedContent(content)
+                }
+                self.complete()
+            }
+        }
+    }
+
+    private func loadLegacyItem(_ provider: NSItemProvider, typeID: String) {
+        provider.loadItem(forTypeIdentifier: typeID, options: nil) { [weak self] data, _ in
+            let content = Self.contentString(from: data)
+            DispatchQueue.main.async {
+                guard let self, self.deliveryGate.acceptsCallbacks else { return }
+                guard let content else {
+                    self.complete()
+                    return
+                }
+                if typeID == UTType.url.identifier {
+                    self.handleSharedContent(content)
+                    self.complete()
+                } else {
+                    self.handleSharedText(content)
+                }
+            }
+        }
+    }
+
+    nonisolated private static func contentString(from item: NSSecureCoding?) -> String? {
+        if let url = item as? URL {
+            return url.absoluteString
+        }
+        if let string = item as? String {
+            return string
+        }
+        if let attributed = item as? NSAttributedString {
+            return attributed.string
+        }
+        if let data = item as? Data {
+            return String(data: data, encoding: .utf8)
+        }
+        return nil
     }
 }

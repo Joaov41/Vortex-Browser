@@ -3,7 +3,7 @@
 //  Vortex
 //
 //  Settings → ChatGPT Plan: account, model, reasoning effort and Fast/Normal for
-//  the "ChatGPT Plan" model. Shown only in builds installed from Xcode.
+//  the "ChatGPT Plan" model. Available in development and TestFlight installs on iPhone and iPad.
 //
 
 import SwiftUI
@@ -21,7 +21,7 @@ struct ChatGPTPlanSettingsView: View {
             } header: {
                 Text("Account")
             } footer: {
-                Text("Runs AI requests on your own ChatGPT Plus or Pro plan. OpenAI allows this for personal apps run locally, so it only appears in builds installed from Xcode.")
+                Text("Sign in with your own ChatGPT account to run AI and Agent requests on your eligible ChatGPT plan. Your connection is stored securely on this device.")
             }
 
             if plan.status == .connected {

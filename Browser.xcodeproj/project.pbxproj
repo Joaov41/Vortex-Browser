@@ -7,14 +7,34 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0EC401B33F6BAAA51123DB32 /* PageWatchesWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4B7ABD22CC8D4D754EA031B1 /* PageWatchesWidget.swift */; };
+		175B414EE1BA12C4E8272F8B /* OpenLinkControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EAB0625BFFBCB7AC2AE315E /* OpenLinkControls.swift */; };
+		3BFFBC6FC0FE7FBBE04A2613 /* SavedTasksWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 332CC0F0FED450FE74300C13 /* SavedTasksWidget.swift */; };
 		486980AEF31F84CFC275BA7C /* MLX in Frameworks */ = {isa = PBXBuildFile; productRef = 2917E92251ED63F502730D09 /* MLX */; };
+		5D6C9AD86E85ED6FFF7E00D9 /* SavedTaskControl.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222FF3C345FC483A28FA9DCF /* SavedTaskControl.swift */; };
+		604AC870F6EAAB8DCCD5C378 /* VortyraWidgetsBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D23C3191B3789898FDB098 /* VortyraWidgetsBundle.swift */; };
+		88A8AAD1CE63294F354F05BD /* ShortcutsActionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64F6616E41C0E6C1278B0D93 /* ShortcutsActionsUITests.swift */; };
+		8DBD88C18A37EAD09F23CA05 /* SharedReaders.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87BDEF7F3DA04341925B920F /* SharedReaders.swift */; };
+		96EA66320F4C323403857291 /* AgentGuideExamplesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8417A41F0A9071F4C1E94A7D /* AgentGuideExamplesUITests.swift */; };
+		AED7C9B2D8AC6360A28746A6 /* AgentRunLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A37864195823A2E94E7450CB /* AgentRunLiveActivity.swift */; };
+		B28745AD843249FAFC882FDB /* VortyraWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = DD24F85D0B6C28E0E9C52633 /* VortyraWidgets.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		BB71BF931CF58912E002E9E9 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = D63D6D80716184BB569FA5BD /* Foundation.framework */; };
 		C151112D2F1E8D4900451BC5 /* BrowserShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C15111232F1E8D4900451BC5 /* BrowserShare.appex */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		CDE8898CB2D5EB28BF046249 /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02ECFAEE2F98E1F0F197E45C /* AgentRunActivityAttributes.swift */; };
 		D1F3A7B9C2468E13579BDF01 /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = D1F3A7B9C2468E13579BDF02 /* MLXVLM */; };
+		D338174915C3D82C25121F4E /* AgentRunActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02ECFAEE2F98E1F0F197E45C /* AgentRunActivityAttributes.swift */; };
 		E836848BCC3B2333531D7907 /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 781A079F6687ACA52FCFC8A5 /* MLXLLM */; };
 		F38E9F504536A49B1EB0EE19 /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 675F7F4EBED3CF113A9851C3 /* MLXLMCommon */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		9DD91FB889101A26CE502722 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C14615E72E45FDA5003058C1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C14615EE2E45FDA5003058C1;
+			remoteInfo = Browser;
+		};
 		A1000000000000000000000A /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = C14615E72E45FDA5003058C1 /* Project object */;
@@ -29,6 +49,13 @@
 			remoteGlobalIDString = C15111222F1E8D4900451BC5;
 			remoteInfo = BrowserShare;
 		};
+		F97A68DFACD89D1226674B46 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C14615E72E45FDA5003058C1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 80334C2A4C9F1E781F20DD35;
+			remoteInfo = VortyraWidgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -39,6 +66,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				C151112D2F1E8D4900451BC5 /* BrowserShare.appex in Embed Foundation Extensions */,
+				B28745AD843249FAFC882FDB /* VortyraWidgets.appex in Embed Foundation Extensions */,
 			);
 			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -46,9 +74,24 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		02ECFAEE2F98E1F0F197E45C /* AgentRunActivityAttributes.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentRunActivityAttributes.swift; sourceTree = "<group>"; };
+		18D23C3191B3789898FDB098 /* VortyraWidgetsBundle.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = VortyraWidgetsBundle.swift; sourceTree = "<group>"; };
+		222FF3C345FC483A28FA9DCF /* SavedTaskControl.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SavedTaskControl.swift; sourceTree = "<group>"; };
+		2542864BE01145AC8DADB9B1 /* VortyraWidgets.entitlements */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.entitlements; path = VortyraWidgets.entitlements; sourceTree = "<group>"; };
+		2EAB0625BFFBCB7AC2AE315E /* OpenLinkControls.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = OpenLinkControls.swift; sourceTree = "<group>"; };
+		332CC0F0FED450FE74300C13 /* SavedTasksWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SavedTasksWidget.swift; sourceTree = "<group>"; };
+		4B7ABD22CC8D4D754EA031B1 /* PageWatchesWidget.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = PageWatchesWidget.swift; sourceTree = "<group>"; };
+		64F6616E41C0E6C1278B0D93 /* ShortcutsActionsUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ShortcutsActionsUITests.swift; sourceTree = "<group>"; };
+		8417A41F0A9071F4C1E94A7D /* AgentGuideExamplesUITests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentGuideExamplesUITests.swift; sourceTree = "<group>"; };
+		87BDEF7F3DA04341925B920F /* SharedReaders.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedReaders.swift; sourceTree = "<group>"; };
 		A10000000000000000000001 /* BrowserTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BrowserTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A34D211AA7DD817FBAB83093 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A37864195823A2E94E7450CB /* AgentRunLiveActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = AgentRunLiveActivity.swift; sourceTree = "<group>"; };
 		C14615EF2E45FDA5003058C1 /* Browser.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Browser.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C15111232F1E8D4900451BC5 /* BrowserShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BrowserShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		D63D6D80716184BB569FA5BD /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		DD24F85D0B6C28E0E9C52633 /* VortyraWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VortyraWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		DD25DE3B9678A3086BBED6B1 /* BrowserUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BrowserUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -68,6 +111,16 @@
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
+/* Begin PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+		C251112B2F1E8D4900451BC6 /* Membership exceptions for "BrowserShare" target */ = {
+			isa = PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet;
+			buildPhase = C151111F2F1E8D4900451BC5 /* Sources */;
+			membershipExceptions = (
+				Intents/BrowserIntentShare.swift,
+			);
+		};
+/* End PBXFileSystemSynchronizedGroupBuildPhaseMembershipExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000002 /* BrowserTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -78,6 +131,7 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				C14615F92E46FDA5003058C2 /* Exceptions for "Browser" folder in "Browser" target */,
+				C251112B2F1E8D4900451BC6 /* Membership exceptions for "BrowserShare" target */,
 			);
 			path = Browser;
 			sourceTree = "<group>";
@@ -93,7 +147,22 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		2BD1820919CFBBE2FA7387B0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				BB71BF931CF58912E002E9E9 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A10000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A93FC1BF9F57FA86EEC881A8 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -121,13 +190,24 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		500B18158BE538F75823838C /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				D744C035DC8CF542A679FA1D /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		C14615E62E45FDA5003058C1 = {
 			isa = PBXGroup;
 			children = (
 				C14615F12E45FDA5003058C1 /* Browser */,
 				C15111242F1E8D4900451BC5 /* BrowserShare */,
 				A10000000000000000000002 /* BrowserTests */,
+				D2535ACAF5574DE993EBD076 /* VortyraWidgets */,
+				F3041E44326D541FE7D43DAB /* BrowserUITests */,
 				C14615F02E45FDA5003058C1 /* Products */,
+				500B18158BE538F75823838C /* Frameworks */,
 			);
 			sourceTree = "<group>";
 		};
@@ -137,13 +217,86 @@
 				C14615EF2E45FDA5003058C1 /* Browser.app */,
 				C15111232F1E8D4900451BC5 /* BrowserShare.appex */,
 				A10000000000000000000001 /* BrowserTests.xctest */,
+				DD24F85D0B6C28E0E9C52633 /* VortyraWidgets.appex */,
+				DD25DE3B9678A3086BBED6B1 /* BrowserUITests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		D2535ACAF5574DE993EBD076 /* VortyraWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				18D23C3191B3789898FDB098 /* VortyraWidgetsBundle.swift */,
+				87BDEF7F3DA04341925B920F /* SharedReaders.swift */,
+				2EAB0625BFFBCB7AC2AE315E /* OpenLinkControls.swift */,
+				222FF3C345FC483A28FA9DCF /* SavedTaskControl.swift */,
+				332CC0F0FED450FE74300C13 /* SavedTasksWidget.swift */,
+				4B7ABD22CC8D4D754EA031B1 /* PageWatchesWidget.swift */,
+				A34D211AA7DD817FBAB83093 /* Info.plist */,
+				2542864BE01145AC8DADB9B1 /* VortyraWidgets.entitlements */,
+				02ECFAEE2F98E1F0F197E45C /* AgentRunActivityAttributes.swift */,
+				A37864195823A2E94E7450CB /* AgentRunLiveActivity.swift */,
+			);
+			name = VortyraWidgets;
+			path = VortyraWidgets;
+			sourceTree = "<group>";
+		};
+		D744C035DC8CF542A679FA1D /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				D63D6D80716184BB569FA5BD /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		F3041E44326D541FE7D43DAB /* BrowserUITests */ = {
+			isa = PBXGroup;
+			children = (
+				8417A41F0A9071F4C1E94A7D /* AgentGuideExamplesUITests.swift */,
+				64F6616E41C0E6C1278B0D93 /* ShortcutsActionsUITests.swift */,
+			);
+			name = BrowserUITests;
+			path = BrowserUITests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		59644560CC42FF788C29D05A /* BrowserUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 73DE295365457334DD79E82B /* Build configuration list for PBXNativeTarget "BrowserUITests" */;
+			buildPhases = (
+				F0F398244CC95A55A8F44669 /* Sources */,
+				2BD1820919CFBBE2FA7387B0 /* Frameworks */,
+				45FB7D8D401BCC1E28FE1C48 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E545CCB036FBC2DBB8A0D261 /* PBXTargetDependency */,
+			);
+			name = BrowserUITests;
+			productName = BrowserUITests;
+			productReference = DD25DE3B9678A3086BBED6B1 /* BrowserUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		80334C2A4C9F1E781F20DD35 /* VortyraWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 25FFB1C64BEF7731FE85F3E4 /* Build configuration list for PBXNativeTarget "VortyraWidgets" */;
+			buildPhases = (
+				77D55D44074E3B9145924ED4 /* Sources */,
+				A93FC1BF9F57FA86EEC881A8 /* Frameworks */,
+				A321FA48731087C0FD28CDD1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VortyraWidgets;
+			productName = VortyraWidgets;
+			productReference = DD24F85D0B6C28E0E9C52633 /* VortyraWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		A10000000000000000000003 /* BrowserTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = A10000000000000000000007 /* Build configuration list for PBXNativeTarget "BrowserTests" */;
@@ -180,6 +333,7 @@
 			);
 			dependencies = (
 				C151112C2F1E8D4900451BC5 /* PBXTargetDependency */,
+				57B16289157297588A82BC77 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C14615F12E45FDA5003058C1 /* Browser */,
@@ -260,12 +414,28 @@
 				C14615EE2E45FDA5003058C1 /* Browser */,
 				C15111222F1E8D4900451BC5 /* BrowserShare */,
 				A10000000000000000000003 /* BrowserTests */,
+				80334C2A4C9F1E781F20DD35 /* VortyraWidgets */,
+				59644560CC42FF788C29D05A /* BrowserUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		45FB7D8D401BCC1E28FE1C48 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A10000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A321FA48731087C0FD28CDD1 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -289,6 +459,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		77D55D44074E3B9145924ED4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				604AC870F6EAAB8DCCD5C378 /* VortyraWidgetsBundle.swift in Sources */,
+				8DBD88C18A37EAD09F23CA05 /* SharedReaders.swift in Sources */,
+				175B414EE1BA12C4E8272F8B /* OpenLinkControls.swift in Sources */,
+				5D6C9AD86E85ED6FFF7E00D9 /* SavedTaskControl.swift in Sources */,
+				3BFFBC6FC0FE7FBBE04A2613 /* SavedTasksWidget.swift in Sources */,
+				0EC401B33F6BAAA51123DB32 /* PageWatchesWidget.swift in Sources */,
+				CDE8898CB2D5EB28BF046249 /* AgentRunActivityAttributes.swift in Sources */,
+				AED7C9B2D8AC6360A28746A6 /* AgentRunLiveActivity.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		A10000000000000000000004 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -300,6 +485,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D338174915C3D82C25121F4E /* AgentRunActivityAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -310,9 +496,25 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F0F398244CC95A55A8F44669 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				96EA66320F4C323403857291 /* AgentGuideExamplesUITests.swift in Sources */,
+				88A8AAD1CE63294F354F05BD /* ShortcutsActionsUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		57B16289157297588A82BC77 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = VortyraWidgets;
+			platformFilter = ios;
+			target = 80334C2A4C9F1E781F20DD35 /* VortyraWidgets */;
+			targetProxy = F97A68DFACD89D1226674B46 /* PBXContainerItemProxy */;
+		};
 		A1000000000000000000000B /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = C14615EE2E45FDA5003058C1 /* Browser */;
@@ -324,9 +526,77 @@
 			target = C15111222F1E8D4900451BC5 /* BrowserShare */;
 			targetProxy = C151112B2F1E8D4900451BC5 /* PBXContainerItemProxy */;
 		};
+		E545CCB036FBC2DBB8A0D261 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = Browser;
+			target = C14615EE2E45FDA5003058C1 /* Browser */;
+			targetProxy = 9DD91FB889101A26CE502722 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		6FE3791F2417F96E0EB6EDFF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = VortyraWidgets/VortyraWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 30;
+				DEVELOPMENT_TEAM = HNG8WV554B;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VortyraWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.web.me.Browser.Widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		836D0423C2026DCDFE329599 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = VortyraWidgets/VortyraWidgets.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 30;
+				DEVELOPMENT_TEAM = HNG8WV554B;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = VortyraWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.web.me.Browser.Widgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		A10000000000000000000008 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -504,7 +774,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser/Browser.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Browser/BrowserMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -539,7 +809,7 @@
 				CODE_SIGN_ENTITLEMENTS = Browser/Browser.entitlements;
 				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = Browser/BrowserMac.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -571,11 +841,11 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BrowserShare/BrowserShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BrowserShare/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = BrowserShare;
+				INFOPLIST_KEY_CFBundleDisplayName = Vortyra;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -600,11 +870,11 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = BrowserShare/BrowserShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 30;
 				DEVELOPMENT_TEAM = HNG8WV554B;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = BrowserShare/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = BrowserShare;
+				INFOPLIST_KEY_CFBundleDisplayName = Vortyra;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -624,9 +894,62 @@
 			};
 			name = Release;
 		};
+		E24BC8AA3E27A299D48C0BE1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = HNG8WV554B;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.web.me.BrowserUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Browser;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		FA45405EA999A586D90B58A0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = HNG8WV554B;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.web.me.BrowserUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Browser;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		25FFB1C64BEF7731FE85F3E4 /* Build configuration list for PBXNativeTarget "VortyraWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6FE3791F2417F96E0EB6EDFF /* Debug */,
+				836D0423C2026DCDFE329599 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		73DE295365457334DD79E82B /* Build configuration list for PBXNativeTarget "BrowserUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E24BC8AA3E27A299D48C0BE1 /* Release */,
+				FA45405EA999A586D90B58A0 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		A10000000000000000000007 /* Build configuration list for PBXNativeTarget "BrowserTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

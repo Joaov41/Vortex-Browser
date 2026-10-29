@@ -11,7 +11,7 @@ final class UBlockLiteService: ObservableObject {
         var title: String {
             switch self {
             case .ublockLite: "uBlock Origin Lite"
-            case .vortex: "Vortex"
+            case .vortex: "Vortyra"
             case .off: "Off"
             }
         }
@@ -97,7 +97,7 @@ final class UBlockLiteService: ObservableObject {
             UserDefaults.standard.set(value.rawValue, forKey: "experimental.blockerEngine")
         } catch {
             await activateVortexFallback(persist: false)
-            errorMessage = "uBlock Origin Lite could not start: \(error.localizedDescription) Vortex protection is active."
+            errorMessage = "uBlock Origin Lite could not start: \(error.localizedDescription) Vortyra protection is active."
         }
         ExtraBlocklistService.shared.reapplyAll()
         if reload { reloadOpenTabs() }
@@ -189,9 +189,9 @@ final class UBlockLiteService: ObservableObject {
                 try await reloadRegularRuntime(expectedRulesets: nil)
                 rulesVersion = packageStore.loadState()?.rulesVersion ?? version
             } catch {
-                message += " Restoring the previous rules also failed; Vortex protection is active."
+                message += " Restoring the previous rules also failed; Vortyra protection is active."
                 await activateVortexFallback(persist: false)
-                errorMessage = "Lite filtering could not be restored: \(error.localizedDescription) Vortex protection is active."
+                errorMessage = "Lite filtering could not be restored: \(error.localizedDescription) Vortyra protection is active."
             }
             rulesUpdater.setStatus(message)
         }
@@ -278,7 +278,7 @@ final class UBlockLiteService: ObservableObject {
         isChanging = true
         defer { isChanging = false }
         await activateVortexFallback(persist: true)
-        errorMessage = "Lite filtering could not become ready: \(error.localizedDescription) Vortex protection is active."
+        errorMessage = "Lite filtering could not become ready: \(error.localizedDescription) Vortyra protection is active."
     }
 
     private func cancelPrivateRuntimeLoad() async {

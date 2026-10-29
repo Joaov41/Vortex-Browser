@@ -192,7 +192,7 @@ struct ToolbarAddressButton: View {
                     if hugsContent {
                         Text(Self.shortened(host, maxCharacters: 30))
                             .lineLimit(1)
-                            .fixedSize()
+                            .truncationMode(.middle)
                     } else {
                         Text(host)
                             .lineLimit(1)
@@ -241,6 +241,57 @@ struct ToolbarLoadingProgressBar: View {
         .opacity(tab.isLoading ? 1 : 0)
         .animation(.easeOut(duration: 0.25), value: tab.isLoading)
         .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
+/// Text for the minimized address strip: the search terms on a search results page,
+/// like Safari, otherwise the site name.
+struct MinimizedAddressLabel: View {
+    @ObservedObject var tab: BrowserTab
+
+    private var searchTerms: String? {
+        guard let url = tab.currentURL,
+              url.path.lowercased().contains("search"),
+              let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems,
+              let query = items.first(where: { ["q", "p", "query"].contains($0.name) })?.value?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+              !query.isEmpty
+        else { return nil }
+        return query
+    }
+
+    private var host: String? {
+        guard let host = tab.currentURL?.host(), !host.isEmpty else { return nil }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            if tab.isIncognito {
+                Image(systemName: "eye.slash")
+                    .font(.caption2.weight(.semibold))
+            }
+            if let searchTerms {
+                Image(systemName: "magnifyingglass")
+                    .font(.caption2.weight(.semibold))
+                Text(searchTerms)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            } else if let host {
+                if tab.currentURL?.scheme?.lowercased() != "https" {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(BrowserDesign.Tint.warning)
+                }
+                Text(host)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } else {
+                Image(systemName: "magnifyingglass")
+                    .font(.caption2.weight(.semibold))
+            }
+        }
         .accessibilityHidden(true)
     }
 }

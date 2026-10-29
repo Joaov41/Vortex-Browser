@@ -5,11 +5,13 @@ struct AIResponseCanvasPresentation: Identifiable {
     let id: UUID
     let text: String
     let document: AIResponseDocument
+    let sources: [BrowserLookupSource]
 
     init(message: ChatMessage) {
         id = message.id
         text = message.text.trimmingCharacters(in: .whitespacesAndNewlines)
         document = AIResponseDocumentParser.parse(message.text)
+        sources = message.sources
     }
 
     var isRedditReply: Bool {
@@ -44,6 +46,7 @@ struct AIResponseCanvasPresentation: Identifiable {
 
 struct AIResponseCanvas: View {
     let presentation: AIResponseCanvasPresentation
+    var onOpenSource: ((BrowserLookupSource) -> Void)? = nil
 
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dismiss) private var dismiss
@@ -55,11 +58,21 @@ struct AIResponseCanvas: View {
             ZStack {
                 canvasBackground
                 ScrollView {
-                    AIResponseDocumentView(document: presentation.document, isDark: isDark)
-                        .frame(maxWidth: 920, alignment: .leading)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 24)
-                        .frame(maxWidth: .infinity)
+                    VStack(alignment: .leading, spacing: 18) {
+                        AIResponseDocumentView(document: presentation.document, isDark: isDark)
+                        if !presentation.sources.isEmpty {
+                            AIResponseSourceCards(
+                                sources: presentation.sources,
+                                onOpenSource: sourceOpener
+                            )
+                            .padding(14)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        }
+                    }
+                    .frame(maxWidth: 920, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 24)
+                    .frame(maxWidth: .infinity)
                 }
             }
             .navigationTitle("Full Reply")
@@ -84,6 +97,18 @@ struct AIResponseCanvas: View {
         }
     }
 
+    private var sourceOpener: ((BrowserLookupSource) -> Void)? {
+        guard onOpenSource != nil else { return nil }
+        return { source in openSource(source) }
+    }
+
+    private func openSource(_ source: BrowserLookupSource) {
+        dismiss()
+        DispatchQueue.main.async {
+            onOpenSource?(source)
+        }
+    }
+
     private var canvasBackground: some View {
         LinearGradient(
             colors: isDark
@@ -93,6 +118,48 @@ struct AIResponseCanvas: View {
             endPoint: .bottomTrailing
         )
         .ignoresSafeArea()
+    }
+}
+
+struct AIResponseSourceCards: View {
+    let sources: [BrowserLookupSource]
+    var onOpenSource: ((BrowserLookupSource) -> Void)? = nil
+
+    var body: some View {
+        if !sources.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Sources read")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                ForEach(sources) { source in
+                    Button {
+                        onOpenSource?(source)
+                    } label: {
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("[\(source.id)] \(source.title)")
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.leading)
+                                Text(source.url.host ?? source.url.absoluteString)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Label("Open source", systemImage: "arrow.up.right.square")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(onOpenSource == nil)
+                    .accessibilityLabel("Open source \(source.id): \(source.title)")
+                    .accessibilityIdentifier("lookupSource.\(source.id)")
+                }
+            }
+        }
     }
 }
 

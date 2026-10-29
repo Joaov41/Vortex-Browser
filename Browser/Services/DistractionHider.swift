@@ -70,6 +70,33 @@ enum DistractionHider {
         setHiddenSelectors([], in: webView)
     }
 
+    /// Persists and applies one selector produced by the shared stable-selector algorithm.
+    /// The selector must still identify exactly one element in the same document.
+    @discardableResult
+    static func hide(selector: String, in webView: WKWebView, isIncognito: Bool) async -> Bool {
+        guard selector.count <= 512, let url = webView.url else { return false }
+        let script = #"""
+        try {
+          const matches = document.querySelectorAll(selector);
+          return matches.length === 1;
+        } catch (_) { return false; }
+        """#
+        let result = try? await webView.callAsyncJavaScript(
+            script,
+            arguments: ["selector": selector],
+            in: nil,
+            contentWorld: .defaultClient
+        )
+        guard result as? Bool == true, webView.url == url else { return false }
+        var current = selectors(for: url, isIncognito: isIncognito)
+        if !current.contains(selector) {
+            current.append(selector)
+            store(current, for: url, isIncognito: isIncognito)
+        }
+        setHiddenSelectors(current, in: webView)
+        return true
+    }
+
     private static func store(_ selectors: [String], for url: URL, isIncognito: Bool) {
         guard let host = siteKey(for: url) else { return }
         if isIncognito {
@@ -147,47 +174,7 @@ enum DistractionHider {
         });
     }
 
-    const stableClass = c => /^[a-zA-Z][a-zA-Z_-]{1,40}$/.test(c);
-    const stableID = id => /^[a-zA-Z][\\w-]{0,60}$/.test(id) && !/\\d{4,}/.test(id);
-
-    function part(el) {
-        if (el.id && stableID(el.id)) return "#" + CSS.escape(el.id);
-        const classes = [...el.classList].filter(stableClass).slice(0, 2);
-        return el.localName + classes.map(c => "." + CSS.escape(c)).join("");
-    }
-
-    function nthPart(el) {
-        const base = part(el);
-        if (base.startsWith("#") || !el.parentElement) return base;
-        const same = [...el.parentElement.children].filter(c => c.localName === el.localName);
-        return same.length > 1 ? base + ":nth-of-type(" + (same.indexOf(el) + 1) + ")" : base;
-    }
-
-    function uniquelyMatches(selector, el) {
-        try {
-            const matches = document.querySelectorAll(selector);
-            return matches.length === 1 && matches[0] === el;
-        } catch (e) { return false; }
-    }
-
-    function selectorFor(el) {
-        // Prefer readable class and id paths; they survive layout changes better.
-        let parts = [];
-        for (let cur = el; cur && cur !== document.documentElement; cur = cur.parentElement) {
-            const p = part(cur);
-            parts.unshift(p);
-            const selector = parts.join(" > ");
-            if (uniquelyMatches(selector, el)) return selector;
-            if (p.startsWith("#")) break;
-        }
-        parts = [];
-        for (let cur = el; cur && cur !== document.documentElement; cur = cur.parentElement) {
-            parts.unshift(nthPart(cur));
-            const selector = parts.join(" > ");
-            if (uniquelyMatches(selector, el)) return selector;
-        }
-        return null;
-    }
+    \(BrowserStableSelectorScript.helpers)
 
     function refreshSheet() {
         const sheets = (document.adoptedStyleSheets || []).filter(sheet => !sheet[marker]);

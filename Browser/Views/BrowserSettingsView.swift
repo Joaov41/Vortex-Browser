@@ -22,7 +22,13 @@ struct BrowserSettingsView: View {
     @ObservedObject private var cookieBlocker = ThirdPartyCookieBlocker.shared
     @ObservedObject private var darkModeService = DarkModeService.shared
     @ObservedObject private var fontSizeService = FontSizeService.shared
+    @ObservedObject private var aiService = SimpleAIService.shared
     @AppStorage("requestDesktopSite") private var requestDesktopSite = false
+    @AppStorage(PageTranslator.targetLanguageKey) private var translateTarget = ""
+    @ObservedObject private var translationLanguages = TranslationLanguages.shared
+    @AppStorage(BrowserSpotlightSettings.bookmarksKey) private var spotlightBookmarks = true
+    @AppStorage(BrowserSpotlightSettings.savedTasksKey) private var spotlightSavedTasks = true
+    @AppStorage(BrowserSpotlightSettings.historyKey) private var spotlightHistory = false
     @State private var showBookmarkImporter = false
     @State private var bookmarkImportMessage: String?
 
@@ -32,9 +38,9 @@ struct BrowserSettingsView: View {
                 Group {
                     generalSection
                     privacySection
+                    spotlightSection
                     appearanceSection
                     aiSection
-                    advancedSection
                 }
                 // Translucent rows so the panel's glass shows through; the Form's
                 // default solid backgrounds hid it completely.
@@ -79,6 +85,14 @@ struct BrowserSettingsView: View {
             Toggle(isOn: $requestDesktopSite) {
                 Label("Request Desktop Site", systemImage: "desktopcomputer")
             }
+            Picker(selection: $translateTarget) {
+                Text("Device Language (\(PageTranslator.displayName(for: PageTranslator.deviceLanguage)))").tag("")
+                ForEach(translationLanguages.all) { option in
+                    Text(option.name).tag(option.id)
+                }
+            } label: {
+                Label("Translate To", systemImage: "translate")
+            }
             Button {
                 showBookmarkImporter = true
             } label: {
@@ -113,7 +127,7 @@ struct BrowserSettingsView: View {
             if vm.newTabPage == .custom && vm.customNewTabURL == nil {
                 Text("Enter a web address. Until then, new tabs open \(vm.defaultSearchEngine.displayName).")
             } else {
-                Text("The search engine is used for searches typed in the address bar.")
+                Text("The search engine is used for searches typed in the address bar. Translate To is the language pages are translated into; translation happens on this device.")
             }
         }
     }
@@ -148,6 +162,27 @@ struct BrowserSettingsView: View {
         }
     }
 
+    private var spotlightSection: some View {
+        Section {
+            Toggle("Bookmarks", isOn: $spotlightBookmarks)
+                .onChange(of: spotlightBookmarks) { _, _ in
+                    BrowserSpotlightIndexer.shared.settingChanged(.bookmarks)
+                }
+            Toggle("Saved browser tasks", isOn: $spotlightSavedTasks)
+                .onChange(of: spotlightSavedTasks) { _, _ in
+                    BrowserSpotlightIndexer.shared.settingChanged(.savedTasks)
+                }
+            Toggle("History", isOn: $spotlightHistory)
+                .onChange(of: spotlightHistory) { _, _ in
+                    BrowserSpotlightIndexer.shared.settingChanged(.history)
+                }
+        } header: {
+            Text("Spotlight")
+        } footer: {
+            Text("Private browsing is never shown in Spotlight.")
+        }
+    }
+
     private var appearanceSection: some View {
         Section("Appearance") {
             Toggle(isOn: $darkModeService.isDarkMode) {
@@ -178,72 +213,33 @@ struct BrowserSettingsView: View {
 
     private var aiSection: some View {
         Section {
-            webAIAccountRow(for: .chatgpt, isSignedIn: isChatGPTSignedIn)
-            webAIAccountRow(for: .gemini, isSignedIn: isGeminiSignedIn)
-        } header: {
-            Text("AI Accounts")
-        } footer: {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Sign in inside Vortex so the in-app ChatGPT and Gemini assistants reuse your session.")
-                if let webAIStatusMessage, !webAIStatusMessage.isEmpty {
-                    Text(webAIStatusMessage)
-                }
-            }
-        }
-    }
-
-    private func webAIAccountRow(for provider: WebAIProvider, isSignedIn: Bool) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(provider.displayName)
-                Label(
-                    isSignedIn ? "Signed in" : "Not signed in",
-                    systemImage: isSignedIn ? "checkmark.circle.fill" : "circle.dashed"
-                )
-                .font(.caption)
-                .foregroundStyle(isSignedIn ? AnyShapeStyle(.green) : AnyShapeStyle(.secondary))
-            }
-            Spacer()
-            if isSignedIn {
-                Button("Sign Out", role: .destructive) {
-                    onSignOut(provider)
-                }
-                .accessibilityLabel("Sign out of \(provider.displayName)")
-            } else {
-                Button("Sign In") {
-                    onSignIn(provider)
-                }
-                .accessibilityLabel("Sign in to \(provider.displayName)")
-            }
-        }
-        .buttonStyle(.borderless)
-    }
-
-    private var advancedSection: some View {
-        Section("Advanced") {
-            if ChatGPTPlanAvailability.isEnabled {
-                NavigationLink {
-                    ChatGPTPlanSettingsView()
-                } label: {
-                    Label("ChatGPT Plan", systemImage: "person.badge.key")
-                }
-            }
             NavigationLink {
-                MLXAdvancedSettingsView(
-                    isLoadingModel: $isLoadingMLXModel,
-                    downloadProgress: $mlxDownloadProgress,
-                    loadError: $mlxLoadError,
-                    onDownload: onDownloadMLXModel,
-                    onCancelDownload: onCancelMLXDownload
+                AISettingsView(
+                    isChatGPTSignedIn: isChatGPTSignedIn,
+                    isGeminiSignedIn: isGeminiSignedIn,
+                    webAIStatusMessage: webAIStatusMessage,
+                    isLoadingMLXModel: $isLoadingMLXModel,
+                    mlxDownloadProgress: $mlxDownloadProgress,
+                    mlxLoadError: $mlxLoadError,
+                    onSignIn: onSignIn,
+                    onSignOut: onSignOut,
+                    onDownloadMLXModel: onDownloadMLXModel,
+                    onCancelMLXDownload: onCancelMLXDownload
                 )
             } label: {
-                Label("On-Device Models (MLX)", systemImage: "cpu")
+                LabeledContent {
+                    Text(AISettingsView.modelMenuTitle(for: aiService.backend))
+                } label: {
+                    Label("AI", systemImage: "sparkles")
+                }
             }
+        } footer: {
+            Text("Choose the AI model, the agent and voice answers.")
         }
     }
 }
 
-private struct MLXAdvancedSettingsView: View {
+struct MLXAdvancedSettingsView: View {
     @Binding var isLoadingModel: Bool
     @Binding var downloadProgress: Progress?
     @Binding var loadError: String?
@@ -281,7 +277,7 @@ private struct MLXAdvancedSettingsView: View {
     private var activeModelStatus: String {
         if isActiveModelExternal { return "Saved folder" }
         return isActiveModelDownloaded
-            ? "Downloaded to Vortex"
+            ? "Downloaded to Vortyra"
             : "Not downloaded yet. It downloads the first time you use it."
     }
 
@@ -379,7 +375,7 @@ private struct MLXAdvancedSettingsView: View {
             } header: {
                 Text("Add a Model")
             } footer: {
-                Text("Paste an MLX model ID from Hugging Face. Download saves it in Vortex so it works offline. Download to Folder saves it somewhere you choose, like iCloud Drive. The new model becomes the active model.")
+                Text("Paste an MLX model ID from Hugging Face. Download saves it in Vortyra so it works offline. Download to Folder saves it somewhere you choose, like iCloud Drive. The new model becomes the active model.")
             }
 
             Section("Generation") {

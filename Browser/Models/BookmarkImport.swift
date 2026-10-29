@@ -250,7 +250,7 @@ nonisolated enum ZipArchiveReader {
         var errorDescription: String? {
             switch self {
             case .unreadable: return "This zip file couldn't be read. Try exporting it again."
-            case .unsupported: return "This zip file uses a format Vortex can't open. Unzip it in the Files app and import the .html file inside."
+            case .unsupported: return "This zip file uses a format Vortyra can't open. Unzip it in the Files app and import the .html file inside."
             }
         }
     }

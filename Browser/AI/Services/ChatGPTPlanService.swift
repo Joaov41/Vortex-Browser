@@ -3,9 +3,8 @@
 //  Vortex
 //
 //  "Sign in with ChatGPT" plan usage: AI requests run on the user's own
-//  ChatGPT Plus/Pro plan. OpenAI currently allows this for personal apps that
-//  run locally, so the provider is only offered in development-signed installs
-//  (see ChatGPTPlanAvailability). TestFlight and App Store builds never show it.
+//  ChatGPT Plus/Pro plan. Development and TestFlight installs expose the provider;
+//  each user authorizes their own account and credentials stay on their device.
 //
 //  Flow (mirrors OpenAI's open-source SIWC devkit):
 //  OAuth + PKCE against auth.openai.com with a loopback callback on 127.0.0.1,
@@ -24,24 +23,29 @@ import UIKit
 import AppKit
 #endif
 
-// MARK: - Local-only gate
+// MARK: - Development and TestFlight availability
 
 nonisolated enum ChatGPTPlanAvailability {
-    /// True for Simulator runs and for iPhone/iPad installs signed with a development
-    /// profile (Xcode Run, Debug or Release). Archives exported for TestFlight or the
-    /// App Store are distribution-signed, so the provider stays hidden there. The Mac
-    /// (Catalyst) build never offers it.
+    /// Available in Simulator, development installs, and TestFlight on iPhone/iPad.
+    /// Public App Store and Mac Catalyst installs retain the existing restriction.
     static let isEnabled: Bool = {
         #if targetEnvironment(macCatalyst)
         return false
         #elseif targetEnvironment(simulator)
         return true
         #elseif os(iOS)
-        return provisioningProfileAllowsDebugging()
+        return supportsIOSInstall(
+            allowsDebugging: provisioningProfileAllowsDebugging(),
+            receiptURL: Bundle.main.appStoreReceiptURL
+        )
         #else
         return false
         #endif
     }()
+
+    static func supportsIOSInstall(allowsDebugging: Bool, receiptURL: URL?) -> Bool {
+        allowsDebugging || receiptURL?.lastPathComponent == "sandboxReceipt"
+    }
 
     #if os(iOS)
     private static func provisioningProfileAllowsDebugging() -> Bool {
@@ -108,6 +112,9 @@ nonisolated struct ChatGPTPlanError: LocalizedError {
 nonisolated struct ChatGPTPlanModel: Codable, Hashable, Identifiable {
     let slug: String
     let displayName: String
+    /// Modalities reported by the account's model catalog. Missing values keep
+    /// older cached model records decodable.
+    var inputModalities: [String]? = nil
     /// Reasoning efforts the catalog lists for this model; empty when it lists none.
     let reasoningEfforts: [String]
     let defaultReasoningEffort: String?
@@ -116,6 +123,11 @@ nonisolated struct ChatGPTPlanModel: Codable, Hashable, Identifiable {
     var fastTierDescription: String? = nil
 
     var id: String { slug }
+
+    var supportsImageInput: Bool? {
+        guard let inputModalities else { return nil }
+        return inputModalities.contains { $0.caseInsensitiveCompare("image") == .orderedSame }
+    }
 }
 
 nonisolated enum ChatGPTPlanCapability: String, Codable {
@@ -207,6 +219,7 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
 
     private static let connectionAccount = "connection"
     private static let clientIDAccount = "client_id"
+    private static let hostIDAccount = "host_id"
     private static let modelsDefaultsKey = "chatGPTPlan.models"
     // v2: the first build marked Fast unsupported from the response echo alone.
     private static let reasoningSupportDefaultsKey = "chatGPTPlan.reasoningSupport.v2"
@@ -284,6 +297,10 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
         selectedModel.isEmpty ? (models.first?.slug ?? "") : selectedModel
     }
 
+    func catalogModel(for slug: String) -> ChatGPTPlanModel? {
+        models.first { $0.slug == slug }
+    }
+
     func selectModel(_ slug: String) {
         selectedModel = slug
         UserDefaults.standard.set(slug, forKey: Self.selectedModelDefaultsKey)
@@ -347,6 +364,12 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
         refreshTask = nil
         connection = nil
         ChatGPTPlanKeychain.delete(Self.connectionAccount)
+        // A dynamic registration belongs to one account/workspace. A later sign-in
+        // after Disconnect must let the user register a different account.
+        ChatGPTPlanKeychain.delete(Self.clientIDAccount)
+        UserDefaults.standard.removeObject(forKey: Self.lastEmailDefaultsKey)
+        models = []
+        UserDefaults.standard.removeObject(forKey: Self.modelsDefaultsKey)
         status = .disconnected
         planUsageGranted = false
         accountName = nil
@@ -354,7 +377,7 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
         lastError = nil
 
         // Revoking the refresh token ends the renewable session on OpenAI's side.
-        // The registered client ID is kept so a later sign-in reuses it.
+        // Keep the installation host ID, but discard the account registration.
         guard let current else { return }
         do {
             let discovery = try await discovery()
@@ -365,8 +388,18 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
                 ("client_id", current.clientID)
             ], expectsJSON: false)
         } catch {
-            lastError = "Signed out here, but OpenAI did not confirm the disconnect. You can remove Vortex in ChatGPT settings."
+            lastError = "Signed out here, but OpenAI did not confirm the disconnect. You can remove Vortyra in ChatGPT settings."
         }
+    }
+
+    private static func installationHostID() throws -> String {
+        if let existing = ChatGPTPlanKeychain.string(for: hostIDAccount) { return existing }
+        let identifier = "urn:uuid:" + UUID().uuidString.lowercased()
+        ChatGPTPlanKeychain.set(identifier, for: hostIDAccount)
+        guard ChatGPTPlanKeychain.string(for: hostIDAccount) == identifier else {
+            throw ChatGPTPlanError(code: "credential_storage_failed", message: "Vortyra could not save the ChatGPT sign-in setup securely. Please try again.")
+        }
+        return identifier
     }
 
     private func authorize() async throws -> ChatGPTPlanConnection {
@@ -387,6 +420,7 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
         }
         var items = [
             URLQueryItem(name: "client_id", value: savedClientID ?? Self.initialClientID),
+            URLQueryItem(name: "ext_agent_host_id", value: try Self.installationHostID()),
             URLQueryItem(name: "response_type", value: "code"),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
             URLQueryItem(name: "scope", value: Self.scopes),
@@ -397,9 +431,9 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
             URLQueryItem(name: "code_challenge", value: challenge)
         ]
         if savedClientID == nil {
-            items.append(URLQueryItem(name: "agent_name_hint", value: "Vortex"))
+            items.append(URLQueryItem(name: "agent_name_hint", value: "Vortyra"))
         }
-        if let email = connection?.email ?? UserDefaults.standard.string(forKey: Self.lastEmailDefaultsKey) {
+        if let email = connection?.email {
             items.append(URLQueryItem(name: "login_hint", value: email))
         }
         components.queryItems = items
@@ -481,7 +515,8 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
                 Task { @MainActor in finish(.success(callback)) }
             }
             session.presentationContextProvider = self
-            session.prefersEphemeralWebBrowserSession = false
+            // Use a fresh account session instead of inheriting browser login cookies.
+            session.prefersEphemeralWebBrowserSession = true
             authSession = session
             if !session.start() {
                 finish(.failure(ChatGPTPlanError(code: "browser_failed", message: "The ChatGPT sign-in window could not be opened.")))
@@ -695,7 +730,11 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
         #endif
         writeDiagnostic(data, named: "chatgpt-model-catalog.json")
 
-        if let catalog = object?["models"] as? [[String: Any]] {
+        return try parseModelCatalog(object ?? [:], status: status)
+    }
+
+    nonisolated static func parseModelCatalog(_ object: [String: Any], status: Int = 200) throws -> [ChatGPTPlanModel] {
+        if let catalog = object["models"] as? [[String: Any]] {
             return catalog.compactMap { entry in
                 guard entry["visibility"] as? String == "list",
                       let slug = (entry["slug"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !slug.isEmpty else {
@@ -708,6 +747,7 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
                 return ChatGPTPlanModel(
                     slug: slug,
                     displayName: displayName,
+                    inputModalities: entry["input_modalities"] as? [String],
                     reasoningEfforts: reasoningEfforts(in: entry),
                     defaultReasoningEffort: (entry["default_reasoning_level"] as? String)
                         ?? (entry["default_reasoning_effort"] as? String),
@@ -723,10 +763,16 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
             }
         }
         // Standard API shape, in case the catalog route returns it.
-        if let list = object?["data"] as? [[String: Any]] {
+        if let list = object["data"] as? [[String: Any]] {
             return list.compactMap { entry in
                 guard let slug = entry["id"] as? String, !slug.isEmpty else { return nil }
-                return ChatGPTPlanModel(slug: slug, displayName: slug, reasoningEfforts: [], defaultReasoningEffort: nil)
+                return ChatGPTPlanModel(
+                    slug: slug,
+                    displayName: slug,
+                    inputModalities: entry["input_modalities"] as? [String],
+                    reasoningEfforts: [],
+                    defaultReasoningEffort: nil
+                )
             }
         }
         throw ChatGPTPlanError(code: "invalid_model_catalog", message: "ChatGPT returned an unexpected model list. Try again.", status: status)
@@ -754,8 +800,19 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
         prompt: String,
         onPartial: (@MainActor @Sendable (String) -> Void)?
     ) async throws -> String {
+        var options = try await requestOptions()
+        let result = try await send(prompt: prompt, options: &options, onPartial: onPartial)
+        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            throw ChatGPTPlanError(code: "empty_response", message: "ChatGPT returned no text. Try again.")
+        }
+        return text
+    }
+
+    /// The model, reasoning effort and speed tier the user chose in Settings.
+    private func requestOptions() async throws -> ChatGPTPlanRequestOptions {
         guard ChatGPTPlanAvailability.isEnabled else {
-            throw ChatGPTPlanError(code: "unavailable", message: "ChatGPT plan usage is only available in local development builds.")
+            throw ChatGPTPlanError(code: "unavailable", message: "ChatGPT Plan is available in development and TestFlight installs on iPhone and iPad.")
         }
         var model = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
         if model.isEmpty {
@@ -766,17 +823,11 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
             model = first
         }
         let effort = reasoningEffort.trimmingCharacters(in: .whitespacesAndNewlines)
-        var options = ChatGPTPlanRequestOptions(
+        return ChatGPTPlanRequestOptions(
             model: model,
             reasoningEffort: effort.isEmpty || reasoningSupport == .unsupported ? nil : effort,
             serviceTier: fastMode && fastSupport != .unsupported ? fastTier(forModel: model)?.id : nil
         )
-        let result = try await send(prompt: prompt, options: &options, onPartial: onPartial)
-        let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            throw ChatGPTPlanError(code: "empty_response", message: "ChatGPT returned no text. Try again.")
-        }
-        return text
     }
 
     /// Sends one request, refreshing an expired token once and dropping fields
@@ -786,18 +837,27 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
         options: inout ChatGPTPlanRequestOptions,
         onPartial: (@MainActor @Sendable (String) -> Void)?
     ) async throws -> ChatGPTStreamResult {
+        try await withPlanRetries(options: &options) { accessToken, options in
+            let result = try await Self.streamResponse(
+                accessToken: accessToken,
+                prompt: prompt,
+                options: options,
+                onPartial: onPartial
+            )
+            self.recordCapabilities(sent: options, result: result)
+            return result
+        }
+    }
+
+    private func withPlanRetries<Value>(
+        options: inout ChatGPTPlanRequestOptions,
+        _ request: (String, ChatGPTPlanRequestOptions) async throws -> Value
+    ) async throws -> Value {
         var didRefresh = false
         for _ in 0..<4 {
             let current = try await validConnection()
             do {
-                let result = try await Self.streamResponse(
-                    accessToken: current.accessToken,
-                    prompt: prompt,
-                    options: options,
-                    onPartial: onPartial
-                )
-                recordCapabilities(sent: options, result: result)
-                return result
+                return try await request(current.accessToken, options)
             } catch let error as ChatGPTPlanError {
                 if error.status == 401, !didRefresh {
                     didRefresh = true
@@ -822,6 +882,45 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
             }
         }
         throw ChatGPTPlanError(code: "request_failed", message: "ChatGPT could not complete the request. Try again.")
+    }
+
+    // MARK: Agent
+
+    /// One step of the browser agent: sends the conversation so far with the
+    /// tool schema and returns the model's output items, text and tool calls.
+    /// Requests use store:false, so the caller resends `outputItems` next turn.
+    func agentTurn(
+        instructions: String,
+        input: [[String: Any]],
+        tools: [[String: Any]]
+    ) async throws -> ChatGPTAgentTurn {
+        var options = try await requestOptions()
+        let wrappedInput = UncheckedJSON(input)
+        let wrappedTools = UncheckedJSON(tools)
+        do {
+            return try await withPlanRetries(options: &options) { accessToken, options in
+                try await Self.agentResponse(
+                    accessToken: accessToken,
+                    instructions: instructions,
+                    input: wrappedInput,
+                    tools: wrappedTools,
+                    options: options,
+                    includeEncryptedReasoning: true
+                )
+            }
+        } catch let error as ChatGPTPlanError where error.rejectsParameter("include") || error.rejectsValue(of: "include") {
+            // Models without reasoning can reject the encrypted-reasoning include.
+            return try await withPlanRetries(options: &options) { accessToken, options in
+                try await Self.agentResponse(
+                    accessToken: accessToken,
+                    instructions: instructions,
+                    input: wrappedInput,
+                    tools: wrappedTools,
+                    options: options,
+                    includeEncryptedReasoning: false
+                )
+            }
+        }
     }
 
     private func recordCapabilities(sent options: ChatGPTPlanRequestOptions, result: ChatGPTStreamResult) {
@@ -1075,6 +1174,130 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
         return result
     }
 
+    nonisolated private static func agentResponse(
+        accessToken: String,
+        instructions: String,
+        input: UncheckedJSON<[[String: Any]]>,
+        tools: UncheckedJSON<[[String: Any]]>,
+        options: ChatGPTPlanRequestOptions,
+        includeEncryptedReasoning: Bool
+    ) async throws -> ChatGPTAgentTurn {
+        var request = URLRequest(url: responsesURL)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+        var body: [String: Any] = [
+            "model": options.model,
+            "instructions": instructions,
+            "input": input.value,
+            "tools": tools.value,
+            "tool_choice": "auto",
+            "parallel_tool_calls": false,
+            "store": false,
+            "stream": true
+        ]
+        if includeEncryptedReasoning {
+            body["include"] = ["reasoning.encrypted_content"]
+        }
+        if let effort = options.reasoningEffort {
+            body["reasoning"] = ["effort": effort]
+        }
+        if let serviceTier = options.serviceTier {
+            body["service_tier"] = serviceTier
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (bytes, response) = try await httpSession.bytes(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard (200...299).contains(status) else {
+            var data = Data()
+            for try await byte in bytes {
+                data.append(byte)
+                if data.count > 262_144 { break }
+            }
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            throw apiError(from: object, status: status, fallback: "ChatGPT request failed (HTTP \(status)).")
+        }
+
+        var streamedItems: [[String: Any]] = []
+        var finalItems: [[String: Any]]?
+        var completed = false
+        var pending = ""
+        do {
+            for try await line in bytes.lines {
+                try Task.checkCancellation()
+                guard line.hasPrefix("data:") else { continue }
+                var payload = String(line.dropFirst(5))
+                if payload.hasPrefix(" ") { payload.removeFirst() }
+                guard payload != "[DONE]" else { continue }
+                let candidate = pending.isEmpty ? payload : pending + "\n" + payload
+                guard let data = candidate.data(using: .utf8),
+                      let event = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                    pending = candidate.count > 4_194_304 ? "" : candidate
+                    continue
+                }
+                pending = ""
+
+                switch event["type"] as? String {
+                case "response.output_item.done":
+                    if let item = event["item"] as? [String: Any] {
+                        streamedItems.append(item)
+                    }
+                case "response.completed":
+                    completed = true
+                    if let output = (event["response"] as? [String: Any])?["output"] as? [[String: Any]], !output.isEmpty {
+                        finalItems = output
+                    }
+                case "response.failed":
+                    throw apiError(from: event["response"] as? [String: Any], status: status, fallback: "ChatGPT could not complete the response.")
+                case "error":
+                    throw apiError(from: event, status: status, fallback: "ChatGPT could not complete the response.")
+                case "response.incomplete":
+                    let reason = ((event["response"] as? [String: Any])?["incomplete_details"] as? [String: Any])?["reason"] as? String
+                    throw ChatGPTPlanError(
+                        code: "response_incomplete",
+                        message: "ChatGPT stopped before finishing\(reason.map { " (\($0))" } ?? ""). Try again."
+                    )
+                default:
+                    break
+                }
+                if completed { break }
+            }
+        } catch let error as ChatGPTPlanError {
+            throw error
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            throw ChatGPTPlanError(code: "stream_interrupted", message: "The connection to ChatGPT was interrupted. Try again.")
+        }
+        guard completed else {
+            throw ChatGPTPlanError(code: "stream_interrupted", message: "The ChatGPT response ended before completion. Try again.")
+        }
+
+        var items = finalItems ?? streamedItems
+        if !includeEncryptedReasoning {
+            // Without encrypted content a stateless request can't resend reasoning items.
+            items.removeAll { ($0["type"] as? String) == "reasoning" }
+        }
+        var turn = ChatGPTAgentTurn()
+        turn.outputItems = items
+        for item in items {
+            switch item["type"] as? String {
+            case "message":
+                for part in item["content"] as? [[String: Any]] ?? [] where (part["type"] as? String) == "output_text" {
+                    turn.text += part["text"] as? String ?? ""
+                }
+            case "function_call":
+                guard let callID = item["call_id"] as? String, let name = item["name"] as? String else { continue }
+                turn.calls.append(ChatGPTAgentFunctionCall(callID: callID, name: name, arguments: item["arguments"] as? String ?? "{}"))
+            default:
+                break
+            }
+        }
+        return turn
+    }
+
     nonisolated private static func formRequest(
         endpoint: String,
         fields: [(String, String)],
@@ -1121,7 +1344,7 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
             ?? (object?["detail"] as? String)
             ?? fallback
         if code == ChatGPTPlanError.usageLimitCode {
-            message = "You've reached your ChatGPT plan's usage limit for apps. Vortex won't switch to paid billing; wait for the limit to reset or manage usage at chatgpt.com/settings/usage."
+            message = "You've reached your ChatGPT plan's usage limit for apps. Vortyra won't switch to paid billing; wait for the limit to reset or manage usage at chatgpt.com/settings/usage."
         } else if status == 401, nested == nil, object?["error"] == nil {
             message = "ChatGPT rejected the saved sign-in. Sign in again in Settings → ChatGPT Plan."
         }
@@ -1138,6 +1361,25 @@ final class ChatGPTPlanService: NSObject, ObservableObject {
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
         return Data(bytes).base64URLEncodedString()
     }
+}
+
+nonisolated struct ChatGPTAgentFunctionCall: Sendable {
+    let callID: String
+    let name: String
+    let arguments: String
+}
+
+nonisolated struct ChatGPTAgentTurn: @unchecked Sendable {
+    /// Output items to append to the next request's input unchanged.
+    var outputItems: [[String: Any]] = []
+    var text = ""
+    var calls: [ChatGPTAgentFunctionCall] = []
+}
+
+/// JSON values built by the caller and only read by the request builder.
+nonisolated struct UncheckedJSON<Value>: @unchecked Sendable {
+    let value: Value
+    init(_ value: Value) { self.value = value }
 }
 
 nonisolated struct ChatGPTStreamResult {
@@ -1276,13 +1518,13 @@ nonisolated final class ChatGPTLoopbackListener: @unchecked Sendable {
         let value: (String) -> String? = { name in items.first { $0.name == name }?.value }
         let states = items.filter { $0.name == "state" }
         guard !delivered, states.count == 1, states[0].value == expectedState else {
-            send(status: "400 Bad Request", body: "This sign-in link is no longer valid. Return to Vortex and try again.", on: connection)
+            send(status: "400 Bad Request", body: "This sign-in link is no longer valid. Return to Vortyra and try again.", on: connection)
             return
         }
         delivered = true
         send(
             status: "200 OK",
-            body: "<h1>Return to Vortex</h1><p>Vortex is finishing your ChatGPT connection. This window closes on its own.</p>",
+            body: "<h1>Return to Vortyra</h1><p>Vortyra is finishing your ChatGPT connection. This window closes on its own.</p>",
             on: connection
         )
         onCallback?(ChatGPTLoopbackCallback(
@@ -1294,7 +1536,7 @@ nonisolated final class ChatGPTLoopbackListener: @unchecked Sendable {
     }
 
     private func send(status: String, body: String, on connection: NWConnection) {
-        let html = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>Vortex</title><body style=\"font:17px -apple-system,system-ui;max-width:32rem;margin:18vh auto;padding:24px\">\(body)</body></html>"
+        let html = "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width\"><title>Vortyra</title><body style=\"font:17px -apple-system,system-ui;max-width:32rem;margin:18vh auto;padding:24px\">\(body)</body></html>"
         let response = "HTTP/1.1 \(status)\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: \(html.utf8.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n\(html)"
         connection.send(content: Data(response.utf8), completion: .contentProcessed { _ in
             connection.cancel()

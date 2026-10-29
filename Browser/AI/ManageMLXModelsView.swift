@@ -67,7 +67,7 @@ struct ManageMLXModelsView: View {
                             Text(hubModelID)
                                 .font(.body)
                             Text(MLXModelStorage.isDownloaded(modelID: hubModelID)
-                                 ? "Downloaded to Vortex"
+                                 ? "Downloaded to Vortyra"
                                  : "Hugging Face (downloads on first use)")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
@@ -118,7 +118,7 @@ struct ManageMLXModelsView: View {
                     } header: {
                         Text("Downloaded Models")
                     } footer: {
-                        Text("Models downloaded into Vortex. Swipe to delete a model and free up its storage.")
+                        Text("Models downloaded into Vortyra. Swipe to delete a model and free up its storage.")
                     }
                 }
             }
@@ -268,7 +268,7 @@ struct ManageMLXModelsView: View {
 
     private func deleteDownloadedModel(_ model: ModelItem) {
         guard model.hubModelID != nil else {
-            errorMessage = "\(model.name) is shared with other apps, so Vortex won't delete it."
+            errorMessage = "\(model.name) is shared with other apps, so Vortyra won't delete it."
             return
         }
         if model.isSelected {
