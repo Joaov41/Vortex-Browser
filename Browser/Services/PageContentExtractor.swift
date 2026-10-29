@@ -22,6 +22,11 @@ enum PageContentExtractor {
     private static let redditSummaryTimeout: TimeInterval = 30
     private static let redditFastQueryTimeout: TimeInterval = 20
 
+    /// The whole page, deliberately. Picking a "main" element guessed wrong on
+    /// listing pages, where every story sits in its own <article> and
+    /// querySelector returned only the first of them — macrumors.com's home
+    /// page sent 1,545 of its 39,214 characters. Reddit never reaches here;
+    /// extractContent answers it from RedditAPI so comments come through.
     private static let articleExtractionScript: String = {
         """
         (function() {
@@ -31,30 +36,7 @@ enum PageContentExtractor {
             }
 
             var title = normalize(document.title || '');
-            var body = '';
-            var selectors = [
-              'article',
-              'main article',
-              '[role="main"] article',
-              '.post-content',
-              '.entry-content',
-              '.article-content',
-              '.article',
-              'main'
-            ];
-
-            for (var i = 0; i < selectors.length && !body; i++) {
-              var candidate = document.querySelector(selectors[i]);
-              if (!candidate) { continue; }
-              var candidateText = normalize(candidate.innerText || candidate.textContent || '');
-              if (candidateText.length >= 120) {
-                body = candidateText;
-              }
-            }
-
-            if (!body) {
-              body = normalize(document.body && (document.body.innerText || document.body.textContent) || '');
-            }
+            var body = normalize(document.body && (document.body.innerText || document.body.textContent) || '');
 
             if (!body) { return null; }
             if (body.length > 60000) {
