@@ -96,7 +96,11 @@ extension View {
                 .opacity(frosted ? 1 : 0)
                 .animation(.easeOut(duration: 0.25), value: frosted)
         }
-        .glassEffectCompat(in: shape, material: .ultraThinMaterial, strokeOpacity: 0.18)
+        // Not interactive: interactive glass takes touches of its own, and the
+        // toolbar sits under the bottom row of any menu opened from it, so the
+        // AI menu's last item ("Open Assistant") swallowed the first tap. The
+        // buttons on top stay tappable; only the backdrop stops reacting.
+        .glassEffectCompat(in: shape, material: .ultraThinMaterial, strokeOpacity: 0.18, isInteractive: false)
     }
 
     @ViewBuilder

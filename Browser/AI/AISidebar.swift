@@ -95,6 +95,9 @@ struct AISidebar: View {
     @State private var compactForQuickRequest = false
     /// Do a Task and Talk use the agent for the next send even when Agent mode is off.
     @State private var agentForNextSend = false
+    /// Do a Task switched Agent mode on, so closing the panel switches it back
+    /// off. A toggle the user flipped by hand clears this and stays put.
+    @State private var agentModeFromTask = false
     /// Talk reads the next answer aloud; the reply shown before the request is skipped.
     @State private var speakNextReply = false
     @State private var replyBeforeSpokenRequest: UUID?
@@ -352,6 +355,7 @@ struct AISidebar: View {
         }
         .onDisappear {
             isSidebarVisible = false
+            resetAgentModeIfTaskTurnedItOn()
             publishAgentReadiness(isReady: false)
         }
         .onChange(of: scenePhase) { _, phase in
@@ -365,7 +369,10 @@ struct AISidebar: View {
         .onChange(of: isAgentTaskSidebarVisible) { _, isVisible in
             publishAgentReadiness(isReady: isVisible)
             if isVisible { startPendingAgentTaskIfPossible() }
-            if !isVisible { isInputFocused = false }
+            if !isVisible {
+                isInputFocused = false
+                resetAgentModeIfTaskTurnedItOn()
+            }
         }
         .onChange(of: agent.isRunning) { _, _ in
             publishAgentReadiness(isReady: true)
@@ -562,20 +569,41 @@ struct AISidebar: View {
                     .accessibilityLabel(isPinned.wrappedValue ? "Unpin AI sidebar" : "Pin AI sidebar")
                     .accessibilityHint("When pinned, tapping the page keeps the sidebar open")
                 }
-                Button {
-                    onDismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.caption.weight(.bold))
-                        .foregroundColor(secondaryText)
-                        .padding(6)
-                        .background(
-                            Circle().fill(iconBackground)
-                        )
+                // While a reply streams, dragging the panel away and tapping the page
+                // are both refused, so this is the way out until it finishes. The xmark
+                // means close and nothing else; clearing the chat is the pencil beside it.
+                if aiService.isProcessing {
+                    Button {
+                        onDismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(secondaryText)
+                            .padding(6)
+                            .background(
+                                Circle().fill(iconBackground)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel("Close AI assistant")
                 }
-                .buttonStyle(.plain)
-                .frame(width: 44, height: 44)
-                .accessibilityLabel("Close AI assistant")
+                if canClearConversation {
+                    Button {
+                        clearConversation()
+                    } label: {
+                        Image(systemName: "square.and.pencil")
+                            .font(.caption.weight(.bold))
+                            .foregroundColor(secondaryText)
+                            .padding(6)
+                            .background(
+                                Circle().fill(iconBackground)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .frame(width: 44, height: 44)
+                    .accessibilityLabel("Clear conversation")
+                }
             }
         }
     }
@@ -693,7 +721,13 @@ struct AISidebar: View {
 
     private var agentModeRow: some View {
         rowContainer {
-            Toggle(isOn: $isAgentMode) {
+            Toggle(isOn: Binding(
+                get: { isAgentMode },
+                set: { newValue in
+                    isAgentMode = newValue
+                    agentModeFromTask = false
+                }
+            )) {
                 HStack(spacing: 10) {
                     iconContainer {
                         Image(systemName: "cursorarrow.click.2")
@@ -948,10 +982,6 @@ struct AISidebar: View {
                 sectionLabelFontSize: sectionLabelFontSize,
                 trimmedSelectionText: trimmedSelectionText,
                 showsEmptyPrompt: !agentModeActive,
-                onClearConversation: {
-                    cancelAppleInformationRunIfNeeded()
-                    onClearConversation?() ?? aiService.reset()
-                },
                 saveAgentReplyID: agentTaskReplyEligible?.replyID,
                 savedAgentReplyIDs: savedAgentReplyIDs,
                 onSaveAgentReply: { replyID in
@@ -1307,6 +1337,12 @@ struct AISidebar: View {
                 aiService.appendAssistantMessage("Tasks need a model that can use the browser. Choose one in Settings → AI.")
                 return
             }
+            // Do a Task asks for the agent, so Agent mode turns on and the panel
+            // says so. Follow-up questions then stay with the agent too.
+            if !isAgentMode {
+                isAgentMode = true
+                agentModeFromTask = true
+            }
             submitOrFocus(text, useAgent: true, busy: busy)
         case .spoken(let text):
             guard !busy else { return }
@@ -1317,6 +1353,16 @@ struct AISidebar: View {
             // The agent's router decides: questions get answers, jobs become tasks.
             submitOrFocus(text, useAgent: agent.canOfferAgent(for: aiService.backend), busy: busy)
         }
+    }
+
+    /// Agent mode that Do a Task switched on lasts as long as the panel is open.
+    /// One the user flipped by hand is theirs and stays. The iPad panel keeps this
+    /// view mounted while hidden, so closing it arrives as a visibility change
+    /// rather than onDisappear.
+    private func resetAgentModeIfTaskTurnedItOn() {
+        guard agentModeFromTask else { return }
+        agentModeFromTask = false
+        isAgentMode = false
     }
 
     private func submitOrFocus(_ text: String?, useAgent: Bool, busy: Bool) {
@@ -1368,6 +1414,7 @@ struct AISidebar: View {
         var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         let useAgent = agentModeActive
+        let forceAgent = isAgentMode
         agentForNextSend = false
         if useAgent {
             if let mode = BrowserAppleWebLookup.requestMode(text: text, backend: aiService.backend) {
@@ -1390,6 +1437,15 @@ struct AISidebar: View {
                 startAgent(task: task, preset: .research)
                 return
             case .chat(let question):
+                // Agent mode is an explicit choice, and Do a Task turns it on, so the
+                // agent takes the message even when it reads like a question. Grammar used
+                // to decide: "go to X and summarize" matched an action verb and ran,
+                // while "summarize today's articles" landed here in chat, which has no
+                // page tools and sees only the extracted page snapshot.
+                if forceAgent {
+                    startAgent(task: question)
+                    return
+                }
                 text = question
             }
         }
@@ -1515,6 +1571,20 @@ struct AISidebar: View {
         }
     }
 
+    /// True while there is a chat to clear, so the control bar's X only
+    /// appears when it has something to do.
+    private var canClearConversation: Bool {
+        !displayedMessages.isEmpty || aiService.isProcessing
+    }
+
+    /// Resets the chat. This is the panel's only clear control; it lives in the
+    /// top control bar, in the trailing slot where the X used to close the sidebar.
+    /// Closing moved to the drag handle, and to an xmark shown while a reply streams.
+    private func clearConversation() {
+        cancelAppleInformationRunIfNeeded()
+        onClearConversation?() ?? aiService.reset()
+    }
+
     private func cancelAppleInformationRunIfNeeded() {
         if agent.isAppleInformationRun {
             agent.stop()
@@ -1546,7 +1616,6 @@ private struct AISidebarMessagesSection: View {
     let sectionLabelFontSize: CGFloat
     let trimmedSelectionText: String?
     let showsEmptyPrompt: Bool
-    let onClearConversation: () -> Void
     let saveAgentReplyID: UUID?
     let savedAgentReplyIDs: Set<UUID>
     let onSaveAgentReply: (UUID) -> Void
@@ -1590,15 +1659,6 @@ private struct AISidebarMessagesSection: View {
                 HStack {
                     sectionHeader("Conversation", systemImage: "bubble.left.and.bubble.right")
                     Spacer()
-                    if !messages.isEmpty || !renderedStreamingResponse.isEmpty || !pendingStreamingResponse.isEmpty {
-                        Button(action: onClearConversation) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(secondaryText)
-                        }
-                        .accessibilityLabel("Clear conversation")
-                        .buttonStyle(.plain)
-                        .frame(width: 44, height: 44)
-                    }
                 }
 
                 AISidebarConversationHistoryView(
