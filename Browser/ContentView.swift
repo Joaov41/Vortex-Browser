@@ -2053,7 +2053,9 @@ struct ContentView: View {
         Button {
             openAIPanel(expanded: true)
         } label: {
-            Label("Open Assistant", systemImage: "sparkles")
+            // "Open Assistant" hyphenates mid-word in the menu at large text
+            // sizes on the narrower phone width; the shorter label fits a line.
+            Label(isPhone ? "Assistant" : "Open Assistant", systemImage: "sparkles")
         }
     }
 
